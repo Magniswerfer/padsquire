@@ -57,7 +57,7 @@ Open:
    refused toggles, auto-sleep and profiles, remapping).
 2. **Gamepad output stops after a write**, intermittently, mostly through the receiver; a restart
    clears it (PROTOCOL.md "Open: gamepad output..."). Reproduce with `GAMESIR_DEBUG=1` (logs every
-   frame) and an evdev events-per-second monitor; not tried by cable.
+   frame) and an evdev events-per-second monitor; by cable it didn't happen in 19 remaps.
 3. **Recovery if the firmware no longer starts**: TBD (PROTOCOL.md section 3, "Recovery").
 4. Remap combinations (the controller stores up to 3 targets; the GUI sets one).
 5. Controller firmware updates through the receiver (JieLi's HID over-the-air updater): research.
