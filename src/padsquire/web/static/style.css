@@ -605,3 +605,8 @@ input[type="color"] {
 .remap-pick select { width: 100%; }
 .btn.link { background: none; border: 0; padding: .125rem 0; color: var(--accent); text-align: left; box-shadow: none; }
 .btn.link:hover { text-decoration: underline; background: none; }
+
+/* the source-code link (AGPL section 13: keep it in modified versions) */
+.source { margin: 1rem .25rem 0; color: var(--faint); font-size: .8125rem; }
+.source a { color: var(--muted); }
+.source a:hover { color: var(--accent); }

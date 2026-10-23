@@ -219,3 +219,9 @@ def test_devices_lists_what_is_plugged_in(tmp_path):
         d = (await (await c.get("/api/devices", headers=API)).json())["data"]
         assert d["usb"] == [] and d["lost"] is False         # nothing was connected, nothing lost
     run(go, tmp_path, usb_finder=lambda: plugged)
+
+
+def test_app_links_its_source_code():
+    from importlib.resources import files
+    page = (files("padsquire.web") / "static" / "index.html").read_text()
+    assert 'href="https://github.com/Magniswerfer/padsquire"' in page and "Source code" in page
