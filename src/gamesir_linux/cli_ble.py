@@ -212,6 +212,6 @@ def _add_actions(p, link: str) -> None:
 def run(args) -> int:
     try:
         return asyncio.run(args.run(args))
-    except (ble.BleError, hid.HidError, ProtocolError, NotApplied) as e:
+    except (ble.BleError, hid.HidError, ProtocolError, NotApplied, ValueError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1

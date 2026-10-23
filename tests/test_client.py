@@ -39,7 +39,7 @@ def test_settings_roundtrip():
 def test_restore():
     sim = SimulatedNova()
     nova = NovaClient(sim)
-    run(nova.set_dead_zone(DeadZone.LEFT_STICK_OUTER, 40))
+    run(nova.set_dead_zone(DeadZone.LEFT_STICK_OUTER, 20))
     run(nova.restore_defaults())
     assert run(nova.dead_zone(DeadZone.LEFT_STICK_OUTER)) == 0   # factory default
 
@@ -114,3 +114,12 @@ def test_vibration_test_sends_the_grip_report_and_stops():
     assert sim.log[-2:] == [bytes.fromhex("045008000800080008"), gcm.rumble(0, 0)]
     with pytest.raises(ValueError):
         gcm.rumble(101, 0)
+
+
+def test_outer_dead_zone_is_capped_at_25():
+    from gamesir_linux.gcm import DeadZone
+    nova = NovaClient(SimulatedNova())
+    asyncio.run(nova.set_dead_zone(DeadZone.LEFT_STICK_OUTER, 25))
+    with pytest.raises(ValueError, match="firmware"):
+        asyncio.run(nova.set_dead_zone(DeadZone.RIGHT_STICK_OUTER, 26))
+    asyncio.run(nova.set_dead_zone(DeadZone.LEFT_STICK_INNER, 40))     # only the outer ones

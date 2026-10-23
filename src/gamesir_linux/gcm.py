@@ -127,6 +127,12 @@ class DeadZone(IntEnum):
     RIGHT_STICK_ANTI = 10
 
 
+# Firmware 8201 overflows above this outer dead zone: from 26% a stick at full tilt comes out as
+# the opposite extreme (16-bit wrap-around), at 30-50% somewhere random. Confirmed 2026-10-23.
+OUTER_DEAD_ZONE_MAX = 25
+OUTER_ZONES = {DeadZone.LEFT_STICK_OUTER, DeadZone.RIGHT_STICK_OUTER}
+
+
 def dead_zone_query(zone: DeadZone) -> bytes:
     return _small(CMD_DEAD_ZONE, zone, None)
 

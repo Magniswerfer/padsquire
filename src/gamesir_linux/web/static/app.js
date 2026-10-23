@@ -526,7 +526,7 @@ function panelSticks() {
       const zone = zones[key];
       if (errOf(entries[key])) { rows.append(row(label, help, unavailable(entries[key]))); continue; }
       rows.append(slider({
-        label, help, value: values[key], unit: "%", max: 50,
+        label, help, value: values[key], unit: "%", max: key === "outer" ? 25 : 50,
         onInput: (v) => { values[key] = v; pic.update(values); },
         onCommit: (v, mark) => save("/api/dead-zone", { zone, value: v }, (got) => { d.dead_zones[zone] = { value: got }; }, mark),
       }));
@@ -539,7 +539,7 @@ function panelSticks() {
     featureToggle("SWAP_STICKS", "Swap left and right stick"),
     featureToggle("SWAP_LEFT_STICK_DPAD", "Swap left stick and D-pad")));
   wrap.append(h("p", { class: "note" }, liveNote("The dot shows where each stick is now, as the computer receives it. ") +
-    "Values are shown as percentages of full travel. That's an assumption until it has been checked on a real controller."));
+    "The outer dead zone stops at 25%: above that the controller's firmware gets full tilt wrong, and the stick jumps to the opposite side."));
   app.live = (st) => live.forEach((f) => f(st));
   return wrap;
 }

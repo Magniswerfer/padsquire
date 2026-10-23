@@ -184,7 +184,7 @@ Read-only results from one controller (firmware 7701), i.e. its out-of-the-box v
 | Setting | Value | What it says about units |
 |---|---|---|
 | Dead zones, stick inner / outer / anti | 5 / 0 / 0 | |
-| Dead zones, trigger front / back | 5 / 95 | percent; **"back" is the full-press point** (confirmed 2026-10-23: held halfway, the trigger reads ~34%, so it is not a 95% end dead zone): the end dead zone is 100 − back. Every value 0–255 is stored exactly, for all dead zones |
+| Dead zones, trigger front / back | 5 / 95 | percent; **"back" is the full-press point** (confirmed 2026-10-23: held halfway, the trigger reads ~34%, so it is not a 95% end dead zone): the end dead zone is 100 − back. Every value 0–255 is stored exactly, for all dead zones. **Outer dead zone above 25% is broken in 8201**: with the stick at full tilt, 26–28% outputs the opposite extreme (−32768 for full right) and 30–50% something random: a 16-bit overflow when the firmware scales up. The tools refuse more than 25% |
 | Vibration, grips / triggers | 75 / 0 | percent, **not** 0–4 |
 | Features (`0x23`) | all off except auto-power-on-dock | |
 | Host info battery | `0x52` = 82, bit 7 clear | on the cable, yet "not charging" by the bit-7 rule; basic info byte 18 said `0xff` |

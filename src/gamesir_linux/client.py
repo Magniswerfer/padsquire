@@ -75,6 +75,9 @@ class NovaClient:
         return gcm.dead_zone_parse(q, await self._ask(q))
 
     async def set_dead_zone(self, zone: DeadZone, value: int) -> None:
+        if zone in gcm.OUTER_ZONES and value > gcm.OUTER_DEAD_ZONE_MAX:
+            raise ValueError(f"outer dead zone above {gcm.OUTER_DEAD_ZONE_MAX}% breaks the stick at full tilt "
+                             "(a bug in the controller's firmware)")
         await self._set(gcm.dead_zone_set(zone, value))
         if (now := await self.dead_zone(zone)) != value:
             raise NotApplied(f"{zone.name}: asked for {value}, controller reports {now}")
