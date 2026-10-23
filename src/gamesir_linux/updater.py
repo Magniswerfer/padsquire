@@ -111,7 +111,7 @@ def candidate_urls(feed_url: str, release: Release) -> list[str]:
     base = feed_url.rsplit("/", 1)[0] + "/"
     name = urllib.parse.quote(release.file)
     if "/" in release.file:
-        return [urllib.parse.urljoin(base, release.file)]
+        return [urllib.parse.urljoin(base, name)]   # 1.16.7+: "1.16.7/GameSir Connect Setup …"
     return [f"{base}{release.version}/{name}", f"{base}releases/{release.version}/{name}", f"{base}{name}"]
 
 
@@ -192,10 +192,10 @@ def update(fw_dir: Path, *, feed_url: str = FEED_URL, check_only: bool = False, 
         tmp = Path(tmp)
         exe = tmp / (Path(release.file).name or "setup.exe")
         result.url = download(release, feed_url, exe, progress)
+        if keep_installer:   # before extracting, so a failed extract can be inspected
+            shutil.copy2(exe, keep_installer)
         staged = tmp / "firmware"
         result.manifest = installer.extract(exe, staged)
-        if keep_installer:
-            shutil.copy2(exe, keep_installer)
         # Swap in the new firmware only once everything above succeeded.
         old = tmp / "previous"
         if fw_dir.exists():

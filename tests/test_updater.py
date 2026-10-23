@@ -55,6 +55,13 @@ def test_candidate_urls_match_known_download_location():
     assert urls[0] == "https://pc-connect-update.gamesir-cdn.com/1.14.5/GameSir%20Connect%20Setup%201.14.5.exe"
 
 
+def test_candidate_urls_quote_feed_paths():
+    # Since 1.16.7 the feed's url includes the version folder.
+    r = Release("1.16.7", "1.16.7/GameSir Connect Setup 1.16.7.exe", "x", None, None)
+    assert updater.candidate_urls(updater.FEED_URL, r) == [
+        "https://pc-connect-update.gamesir-cdn.com/1.16.7/GameSir%20Connect%20Setup%201.16.7.exe"]
+
+
 # -- end to end against a local server --------------------------------------------
 
 @pytest.fixture

@@ -27,8 +27,9 @@ def write_asar(path: Path, files: dict[str, bytes]) -> None:
     path.write_bytes(struct.pack("<II", 4, len(pickle)) + pickle + blob)
 
 
-def fake_installer(path: Path, version: str, fw_version: int = 8201) -> Path:
-    """An archive laid out like the GameSir Connect NSIS installer (7-Zip opens both)."""
+def fake_installer(path: Path, version: str, fw_version: int = 8201, nested: bool = False) -> Path:
+    """An archive laid out like the GameSir Connect NSIS installer (7-Zip opens both).
+    nested: the 1.16.7+ layout, with the app inside $PLUGINSDIR/app-32.7z."""
     intl, cn = f"T4Nlite2_V{fw_version}_intl.ufw", f"T4Nlite2_V{fw_version - 1}_cn.ufw"
     js = ('dd={Type:"Internal",Version:"2800",Path:"packages/DOG.ufw",Identifier:"T4N2Dongle"},'
           f'pd=[{{Model:"T4N2",PackedFirmware:[{{Type:"Internal",Version:"{fw_version - 1}",'
@@ -44,8 +45,17 @@ def fake_installer(path: Path, version: str, fw_version: int = 8201) -> Path:
         (pkgs / "DOG.ufw").write_bytes(make_ufw(chip="AC632N", pid="AC632N_TRANS", vid="N2DG"))
         (pkgs / intl).write_bytes(make_ufw())
         (pkgs / cn).write_bytes(make_ufw(firmware=b"\x5a" * 3000))
-        subprocess.run([installer.find_7zip(), "a", "-t7z", str(path), "resources"],
-                       cwd=tmp, check=True, capture_output=True)
+        seven = installer.find_7zip()
+        if nested:
+            inner = Path(tmp) / "$PLUGINSDIR" / "app-32.7z"
+            inner.parent.mkdir()
+            subprocess.run([seven, "a", "-t7z", str(inner), "resources"],
+                           cwd=tmp, check=True, capture_output=True)
+            subprocess.run([seven, "a", "-t7z", str(path), "$PLUGINSDIR"],
+                           cwd=tmp, check=True, capture_output=True)
+        else:
+            subprocess.run([seven, "a", "-t7z", str(path), "resources"],
+                           cwd=tmp, check=True, capture_output=True)
     return path
 
 ISD_TEMPLATE = """[EXTRA_CFG_PARAM]

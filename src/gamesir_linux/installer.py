@@ -112,6 +112,14 @@ def find_7zip() -> str:
     raise ExtractError("7-Zip not found. On Fedora/Nobara: sudo dnf install 7zip")
 
 
+def _unpack(seven: str, archive: Path, out: Path) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [seven, "x", "-y", f"-o{out}", str(archive),
+         "resources/app.asar", "resources/dfu/packages/*", "$PLUGINSDIR/app-*.7z"],
+        capture_output=True, text=True,
+    )
+
+
 def extract(installer: str | Path, out_dir: str | Path, model: str = "T4N2") -> dict:
     """Unpack `installer`, copy the firmware for `model` into `out_dir`, and
     write out_dir/manifest.json. Returns the manifest."""
@@ -119,11 +127,12 @@ def extract(installer: str | Path, out_dir: str | Path, model: str = "T4N2") -> 
     seven = find_7zip()
     with tempfile.TemporaryDirectory(prefix="gamesir-") as tmp:
         tmp = Path(tmp)
-        proc = subprocess.run(
-            [seven, "x", "-y", f"-o{tmp}", str(installer),
-             "resources/app.asar", "resources/dfu/packages/*"],
-            capture_output=True, text=True,
-        )
+        proc = _unpack(seven, installer, tmp)
+        if not (tmp / "resources" / "app.asar").exists():
+            # Since 1.16.7 the app sits in a nested archive, $PLUGINSDIR/app-32.7z (or app-64.7z).
+            inner = sorted((tmp / "$PLUGINSDIR").glob("app-*.7z"))
+            if inner:
+                proc = _unpack(seven, inner[-1], tmp)
         asar = tmp / "resources" / "app.asar"
         if proc.returncode != 0 or not asar.exists():
             raise ExtractError(

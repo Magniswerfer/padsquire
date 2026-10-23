@@ -19,6 +19,14 @@ def test_extract_from_installer_layout(tmp_path):
         ("dongle", None), ("controller", "china"), ("controller", "international")}
     assert installer.load_manifest(tmp_path / "fw")[0].jl_vid in ("N2DG", "N2LT")
 
+@pytest.mark.skipif(not HAVE_7Z, reason="7-Zip not installed")
+def test_extract_from_nested_installer(tmp_path):
+    exe = fake_installer(tmp_path / "GameSir Connect Setup 1.16.7.exe", "1.16.7", nested=True)
+    manifest = installer.extract(exe, tmp_path / "fw")
+    assert manifest["gamesir_connect_version"] == "1.16.7"
+    assert len(manifest["firmware"]) == 3
+
+
 JS = ('var a=1,dd={Type:"Internal",Version:"2800",Path:"packages/DOG.ufw",MD5:"x",Identifier:"T4N2Dongle"},'
       'pd=[{Model:"T4N2",PackedFirmware:[{Type:"Internal",Version:"8200",Path:"packages/A.ufw",'
       'MinimumVersion:"5600",Identifier:"T4N2Internal"},{Type:"International",Version:"8201",'
