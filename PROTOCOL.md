@@ -378,6 +378,45 @@ said `0x7117 ^ (pos >> 2)`; that was wrong).
 The JieLi DLL's obfuscated strings decode (see below) to the loader resource type `LOADER`, `uboot1.00`, the chip names `br22 br23 br25 br27 br30 bd19
 bd29 uc03` (one wrapped loader resource each), `JLDGAUTH` and `jielikeji2010ipo`.
 
+## The 2.4 GHz dongle (offline analysis, 2026-10-23; nothing sent to it yet)
+
+**Seen on USB so far:** idle `3537:2106` "Zikway HID zk" (vendor `0xFF7A` interface). With the
+controller linked in blue mode it shows up for under a second as `045e:028e` (Microsoft's Xbox
+360 controller ID, no strings), then as `054c:09cc` (DualShock 4): it seems to try Xbox mode
+first. It also re-enumerates whenever the controller restarts. Never seen yet: the dongle
+carrying a controller in **green** mode.
+
+**GameSir Connect 1.16.7** (`main.js`, `proxyT4N2`):
+
+- The Nova 2 Lite has two modes in its device table: `Wired` (`ConfigModePid 4111` = `0x100F`)
+  and `Wireless` (`ConfigModePid 4248` = `0x1098`), both on the vendor page and handled by the
+  same GameSir DLL. So **configuring through the dongle is a Connect feature**, presumably the
+  same GCM protocol on the `0xFF7A` channel of `3537:1098`.
+- Over `0x1098` the basic-info query answers with the **dongle's** info: Connect files its
+  version as `dongleVersion`. The controller's version comes from the `0xF4` state reports on
+  the same channel: bytes 20–21 as hex (e.g. `82 01` → "8201"), when byte 2 ≥ 23 (older
+  firmware: "isOldProtocal"). Byte 18 is a profile checksum, byte 19 the macro-record key.
+- A `0x100F` device that reports `chargeState 0` is taken for an **old dongle still using the
+  wired ID** ("PleaseUpdateDongleFirst"; "PleaseUpdateDeviceFirst" if it reports 2600).
+- Over `0x1098` Connect refuses to configure when the stick curve types read 249/250 (old dongle).
+- The `Wireless` mode carries the dongle's update identity (`AC632N_TRANS` / `N2DG`) and package
+  (`T4N_2_LITE_DOG_V28`, 2800); "quick update" writes the same `f2 00 04 f6`. So over `0x1098`
+  that command should put **the dongle** into its download mode. Not tried.
+
+**Chip:** AC632N is JieLi's **BD19** (jl-uboot-tool: UBOOT1.00 protocol v2, MengLi upload quirk
+like BR23). Loader `bd19loader.bin` at **`0x2000`**, the same address JieLi's DLL uses for bd19.
+
+**Firmware file** (`T4N_2_LITE_DOG_V28_2025_11_05.ufw`, built with `AC630N-v0.01-cfg_tool-v0.05`):
+`EOFFSET = 0`, no `PRCT` entry, and four images: `flash.bin` / `flash3.bin` (`0x2A000` bytes,
+header byte 13 `0x10`, 4 KB layout) and `flash2.bin` / `flash4.bin` (`0x28700`, byte 13 `0x01`,
+256-byte layout); `flash`/`flash2` are laid out from 0 (`app_dir_head` CRC `0xFFFF`),
+`flash3`/`flash4` from `0x1000` (`0x00FF`). JieLi's updater picks the group from byte 13 of the
+**dongle's current** flash header. All four app directories decrypt with chip key **`0x3496`**,
+like the controller's. Layout (4 KB variant): code `0x0`–`0x29FFF`, `VM` `0x2A000` (68 KB), `BTIF`
+`0x3B000`, `EXIF` `0x3C000`, `USERIF` `0x3D000` (8 KB), `key_mac` `0x3F000`: a **256 KB** flash.
+The 256-byte variant puts `VM` at `0x28700` and `BTIF` at `0x3BF00`; writing it would need
+256-byte erases, which `jlwrite` does not do.
+
 ## Firmware files
 
 **Where new firmware comes from:** GameSir Connect contains a remote firmware feed
@@ -469,7 +508,8 @@ flashing. `script.ver` holds the JieLi build-tool version (`AC695X-v0.01-cfg_too
 
 ## Open questions (need hardware)
 
-- Dongle PID in green mode (Connect expects `0x1098`), and the update-mode identities
+- Dongle PID with the controller in green mode (Connect expects `0x1098`); whether settings can
+  be read and written through it; the dongle's update mode, chip key, flash size and layout variant
 - What `3537:2106` (idle dongle, same vendor channel) answers to
 - Whether replies really are read from `0x865F` (vs. notified); `ble.NOTIFY_REPLIES` flips it
 - Units: the full range of dead zones and vibration (percent, but is 100 the maximum?), what trigger
