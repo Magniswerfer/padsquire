@@ -236,7 +236,10 @@ class JLBoot:
         while len(out) < size:
             n = min(self.io_size, size - len(out))
             pos = addr + len(out)
-            out += self.execute(_cdb(READ_FLASH, pos.to_bytes(4, "big") + n.to_bytes(2, "big")), None, n)
+            chunk = self.execute(_cdb(READ_FLASH, pos.to_bytes(4, "big") + n.to_bytes(2, "big")), None, n)
+            if not chunk:
+                raise JLBootError(f"no data read at {pos:#x}")     # never loop forever on a bad device
+            out += chunk
         return bytes(out)
 
     def flash_crc16(self, addr: int, size: int) -> int:

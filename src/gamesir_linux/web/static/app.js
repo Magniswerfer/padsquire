@@ -778,14 +778,14 @@ async function afterJob(job) {
   if (first) return;                 // finished before this page was opened
   if (job.state === "failed") { toast(job.error, "error"); return; }
   if (job.kind === "backup") { upd.backup = job.result.backup; toast("Backup saved"); }
-  if (job.kind === "restore") toast("Backup written back. Restart the controller to use it.");
-  if (job.kind === "install") toast(`Firmware ${job.result.version} installed. Restart the controller to use it.`);
+  if (job.kind === "restore") toast("Backup written back. Restart it to use it.");
+  if (job.kind === "install") toast(`Firmware ${job.result.version} installed. Restart it to use it.`);
   if (job.kind === "enter") { app.status = await api("/api/status"); app.dev = null; renderChrome(); }
   if (job.kind === "restart") {
     try {
       const usb = (await api("/api/scan", {})).filter((d) => d.link === "usb");
       if (usb.length === 1) await connect(usb[0]);
-      toast("The controller is back in normal mode");
+      toast(job.result && job.result.device === "receiver" ? "The receiver is back in normal mode" : "The controller is back in normal mode");
     } catch (e) { toast(e.message, "error"); }
     upd.fw = await api("/api/firmware").catch(() => upd.fw);
   }
@@ -823,34 +823,47 @@ function updateView() {
     out.push(h("p", { class: "callout" }, "This computer can't reach the controller in update mode yet. Run ",
       h("code", {}, "sudo modprobe sg"), ", then reload this page."));
   }
-  const where = { download: "Update mode", normal: "Normal mode", none: "Not found" }[d.mode];
+  const device = d.device || "controller";
+  const thing = device === "receiver" ? "receiver" : "controller";
+  const where = inUpdate ? `${thing === "receiver" ? "Receiver" : "Controller"} in update mode`
+    : d.mode === "normal" ? "Normal mode" : "Not found";
   out.push(h("dl", { class: "facts" },
-    h("div", { class: "fact" }, h("dt", {}, "Controller"), h("dd", {}, where,
+    h("div", { class: "fact" }, h("dt", {}, "Device"), h("dd", {}, where,
       inUpdate && d.identity ? h("small", {}, `${d.identity.chip}, ${d.identity.flash_size / 1024} KB flash`) : null)),
-    h("div", { class: "fact" }, h("dt", {}, "Firmware on it"), h("dd", {}, d.installed_version || "Unknown"))));
+    h("div", { class: "fact" }, h("dt", {}, "Firmware on it"), h("dd", {}, (inUpdate && d.installed_version) || "Unknown"))));
 
   // 1. update mode
   const steps = h("ol", { class: "steps" });
   let first;
-  if (inUpdate) first = h("p", { class: "note" }, "The controller is in update mode. Its normal functions are off until you restart it.");
-  else if (d.mode === "normal") {
-    first = h("div", {}, h("p", { class: "note" }, "Nothing is written in this step. The controller leaves normal mode and its Home light goes out."),
-      h("div", { class: "btn-row" }, h("button", { class: "btn primary", disabled: running, onclick: () => runStep("/api/update/enter", { confirm: true },
-        "Switch to update mode?", "The controller stops working as a gamepad until you restart it from this page. Nothing is written yet.", "Switch") }, "Switch to update mode")));
-  } else first = h("p", { class: "note" }, "Connect the controller with the USB cable and switch it to PC/Xbox mode: hold Menu + View until the Home light is green.");
+  if (inUpdate) {
+    first = h("p", { class: "note" }, thing === "receiver"
+      ? "The receiver is in update mode. The controller can't connect through it until you restart it."
+      : "The controller is in update mode. Its normal functions are off until you restart it.");
+  } else if (d.mode === "normal") {
+    const enter = (target, title, text) => runStep("/api/update/enter", { confirm: true, target }, title, text, "Switch");
+    first = h("div", {}, h("p", { class: "note" }, "Nothing is written in this step."),
+      h("div", { class: "btn-row" },
+        d.cable ? h("button", { class: "btn primary", disabled: running, onclick: () => enter("controller", "Switch the controller to update mode?",
+          "The controller stops working as a gamepad until you restart it from this page. Nothing is written yet.") }, "Switch the controller to update mode") : null,
+        d.receiver ? h("button", { class: `btn${d.cable ? "" : " primary"}`, disabled: running, onclick: () => enter("receiver", "Switch the receiver to update mode?",
+          "The controller can't connect through the receiver until you restart the receiver from this page. Nothing is written yet.") }, "Switch the receiver to update mode") : null),
+      h("p", { class: "note" }, "The controller's firmware is installed by cable; the receiver's through the receiver itself."));
+  } else first = h("p", { class: "note" }, "Connect the controller by cable, or plug in the 2.4 GHz receiver with the controller on, and switch it to PC/Xbox mode: hold Menu + View until the Home light is green.");
   steps.append(h("li", { class: inUpdate ? "done" : "" }, h("h3", {}, "Switch to update mode"), first));
 
   // 2. backup
   const mine = d.identity ? d.backups.filter((b) => b.chip_key === d.identity.chip_key && b.jedec_id === d.identity.jedec_id) : d.backups;
   if (upd.backup && !mine.some((b) => b.name === upd.backup)) upd.backup = null;
   if (!upd.backup && mine.length) upd.backup = mine[0].name;
-  const backupStep = h("li", { class: mine.length ? "done" : "" }, h("h3", {}, "Back up the controller"));
+  const backupStep = h("li", { class: mine.length ? "done" : "" }, h("h3", {}, `Back up the ${thing}`));
   if (mine.length) {
     const sel = h("select", { "aria-label": "Backup", disabled: running, onchange: (e) => { upd.backup = e.target.value; pollUpdate(); } },
       mine.map((b) => h("option", { value: b.name, selected: b.name === upd.backup }, `${b.created.replace("T", " ").slice(0, 16)}  (${b.name})`)));
-    backupStep.append(h("p", { class: "note" }, d.identity ? "Backups of this controller:" : "Backups on this computer:"), sel);
+    backupStep.append(h("p", { class: "note" }, d.identity ? `Backups of this ${thing}:` : "Backups on this computer:"), sel);
   } else {
-    backupStep.append(h("p", { class: "note" }, "There is no backup of this controller yet. Every write needs one: it holds the firmware, settings, Bluetooth address and calibration."));
+    backupStep.append(h("p", { class: "note" }, thing === "receiver"
+      ? "There is no backup of this receiver yet. Every write needs one: it holds the firmware and the pairing with your controller."
+      : "There is no backup of this controller yet. Every write needs one: it holds the firmware, settings, Bluetooth address and calibration."));
   }
   backupStep.append(h("div", { class: "btn-row" }, h("button", { class: `btn${mine.length ? "" : " primary"}`, disabled: running || !inUpdate,
     onclick: () => runStep("/api/update/backup") }, mine.length ? "Make another backup" : "Make a backup")),
@@ -858,7 +871,7 @@ function updateView() {
   steps.append(backupStep);
 
   // 3. install or restore
-  const files = (upd.fw && upd.fw.available || []).filter((f) => f.target === "controller");
+  const files = (upd.fw && upd.fw.available || []).filter((f) => f.target === (thing === "receiver" ? "dongle" : "controller"));
   if (upd.file && !files.some((f) => f.file === upd.file)) upd.file = null;
   if (!upd.file && files.length) upd.file = (files.find((f) => f.matches_device_region !== false && f.newer_than_device !== false) || files[0]).file;
   const install = h("li", {}, h("h3", {}, "Install firmware"));
@@ -866,33 +879,35 @@ function updateView() {
   else {
     install.append(h("select", { "aria-label": "Firmware", disabled: running, onchange: (e) => { upd.file = e.target.value; pollUpdate(); } },
       files.map((f) => h("option", { value: f.file, selected: f.file === upd.file },
-        `Firmware ${f.version}, ${f.region === "china" ? "China" : "International"} build`))));
+        f.target === "dongle" ? `Receiver firmware ${f.version}` : `Firmware ${f.version}, ${f.region === "china" ? "China" : "International"} build`))));
     const check = upd.checks[checkKey()];
     if (!upd.backup) install.append(h("p", { class: "note" }, "Needs a backup of this controller."));
     else if (!check) install.append(h("p", { class: "note" }, "Checking…"));
     else if (check.allowed) {
-      install.append(h("p", { class: "note ok" }, `Fits this controller: ${check.partition} goes to ${addr(check.start)}–${addr(check.end - 1)}. Settings, Bluetooth address and calibration are kept.`));
+      install.append(h("p", { class: "note ok" }, `Fits this ${thing}: ${check.partition} goes to ${addr(check.start)}–${addr(check.end - 1)}. ${thing === "receiver" ? "The pairing with your controller is kept." : "Settings, Bluetooth address and calibration are kept."}`));
     } else install.append(h("ul", { class: "problems" }, check.errors.map((e) => h("li", {}, e))));
     if (check && check.warnings.length) install.append(h("ul", { class: "warnings" }, check.warnings.map((w) => h("li", {}, w))));
     const f = files.find((x) => x.file === upd.file);
     install.append(h("div", { class: "btn-row" },
       h("button", { class: "btn primary", disabled: running || !inUpdate || !(check && check.allowed), onclick: () => runStep("/api/update/install",
         { file: upd.file, backup: upd.backup, confirm: true }, `Install firmware ${f && f.version}?`,
-        "The firmware area of the controller is erased and rewritten. Keep the cable in until it finishes. If anything fails, the controller stays in update mode and you can run it again or write the backup back.",
+        `The firmware area of the ${thing} is erased and rewritten. Keep it plugged in until it finishes. If anything fails, it stays in update mode and you can run it again or write the backup back.`,
         "Install") }, `Install firmware ${f ? f.version : ""}`)));
   }
-  install.append(h("p", { class: "note" }, "To go back to the firmware in a backup, write the backup back. Settings, Bluetooth address and calibration stay as they are."),
+  install.append(h("p", { class: "note" }, thing === "receiver"
+      ? "To go back to the firmware in a backup, write the backup back. The pairing stays as it is."
+      : "To go back to the firmware in a backup, write the backup back. Settings, Bluetooth address and calibration stay as they are."),
     h("div", { class: "btn-row" }, h("button", { class: "btn", disabled: running || !inUpdate || !upd.backup, onclick: () => runStep("/api/update/restore",
       { backup: upd.backup, confirm: true }, "Write the backup back?",
-      "The firmware area of the controller is erased and rewritten with the firmware in the backup. Keep the cable in until it finishes.", "Write it back") },
+      `The firmware area of the ${thing} is erased and rewritten with the firmware in the backup. Keep it plugged in until it finishes.`, "Write it back") },
       "Write the backup back")));
   steps.append(install);
 
   // 4. restart
-  steps.append(h("li", {}, h("h3", {}, "Restart the controller"),
+  steps.append(h("li", {}, h("h3", {}, `Restart the ${thing}`),
     d.stay ? h("p", { class: "callout danger" }, "The last write did not verify. Don't restart or unplug the controller: run the same step again.") : null,
     h("div", { class: "btn-row" }, h("button", { class: "btn", disabled: running || !inUpdate || d.stay,
-      onclick: () => runStep("/api/update/restart") }, "Restart controller"))));
+      onclick: () => runStep("/api/update/restart") }, `Restart ${thing}`))));
   out.push(steps);
   out.push(h("p", { class: "note" }, h("strong", {}, "Not known yet: "),
     "how to get the controller into update mode if its firmware no longer starts. The M + X + B shortcut goes through the firmware, so it wouldn't help then. That's why a write that fails keeps the controller in update mode until it has been done again: don't unplug or restart it in between."));
@@ -906,7 +921,7 @@ function updateView() {
     if (running) {
       box.append(h("p", { class: "note" }, job.label || "Starting…"),
         h("progress", { max: job.total || 1, value: job.done || 0 }),
-        ["restore", "install"].includes(job.kind) ? h("p", { class: "note" }, h("strong", {}, "Keep the cable in until this finishes.")) : null);
+        ["restore", "install"].includes(job.kind) ? h("p", { class: "note" }, h("strong", {}, "Keep it plugged in until this finishes.")) : null);
     }
     if (job.error) box.append(h("p", { class: "callout danger" }, job.error));
     if (job.log.length) box.append(h("ol", { class: "log" }, job.log.map((l) => h("li", {}, l))));

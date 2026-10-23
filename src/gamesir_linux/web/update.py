@@ -88,6 +88,12 @@ class UpdateState:
 KEY = web.AppKey("update", UpdateState)
 
 
+# Which device a download-mode disk is, by its SCSI vendor (cached by the kernel, no I/O).
+DEVICE_BY_CHIP = {"br23": "controller", "bd19": "receiver"}
+TARGET = {"controller": "controller", "receiver": "dongle"}     # safety / manifest names
+RECEIVER_PID = 0x1098
+
+
 def _identity(ident: jlboot.Identity) -> dict:
     return {"chip": ident.vendor, "chip_key": f"{ident.chip_key:#06x}", "jedec_id": f"{ident.jedec_id:#08x}",
             "flash_size": ident.flash_size}
@@ -107,12 +113,17 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
             raise web.HTTPBadRequest(text='{"ok": false, "error": "no such backup"}', content_type="application/json")
         return match
 
-    def firmware_named(name):
+    def in_update_mode() -> str | None:
+        """'controller' or 'receiver', whichever is in download mode now."""
+        found = jlboot.find()
+        return DEVICE_BY_CHIP.get(found[0].vendor.lower()) if found else None
+
+    def firmware_named(name, device: str | None):
         try:
             bundled = installer.load_manifest(fw_dir)
         except (OSError, KeyError, ValueError):
             bundled = []
-        match = next((f for f in bundled if f.file == name and f.target == "controller"), None)
+        match = next((f for f in bundled if f.file == name and f.target == TARGET.get(device)), None)
         if match is None:
             raise web.HTTPBadRequest(text='{"ok": false, "error": "no such firmware file"}',
                                      content_type="application/json")
@@ -138,10 +149,13 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
     @routes.get("/api/update")
     async def status(_):
         download = jlboot.find()
-        cable = [d.path for d in find_usb() if d.link == "cable"]
-        mode = "download" if download else "normal" if cable else "none"
+        found = find_usb()
+        cable = any(d.link == "cable" for d in found)
+        receiver = any(d.pid == RECEIVER_PID for d in found)
+        mode = "download" if download else "normal" if cable or receiver else "none"
         return ok({
             "mode": mode, "sg_missing": not Path("/sys/class/scsi_generic").exists(),
+            "device": in_update_mode(), "cable": cable, "receiver": receiver,
             "job": st.job.snapshot() if st.job else None,
             "installed_version": st.installed_version, "identity": st.identity if download else None,
             "stay": st.stay,
@@ -154,14 +168,20 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
         d = await body(request)
         if d.get("confirm") is not True:
             return fail("confirmation required")
-        cables = [x.path for x in find_usb() if x.link == "cable"]
-        if len(cables) != 1:
-            return fail("connect exactly one Nova 2 Lite by cable, in PC/Xbox mode (Home light green)")
-        path = cables[0]
+        device = d.get("target", "controller")
+        if device not in TARGET:
+            return fail("target must be controller or receiver")
+        paths = [x.path for x in find_usb() if (x.pid == RECEIVER_PID) == (device == "receiver")]
+        if len(paths) != 1:
+            return fail("connect exactly one Nova 2 Lite by cable, in PC/Xbox mode (Home light green)"
+                        if device == "controller" else
+                        "plug the 2.4 GHz receiver in, with the controller on and in PC/Xbox mode (light green)")
+        path = paths[0]
         try:
             async with session.lock:
-                # Read the firmware version while the controller still answers, then free the cable.
-                if session.connected and session.mode == "usb":
+                # Read the version while it still answers (through the receiver: the receiver's own),
+                # then free the device node.
+                if session.connected and session.address == path:
                     info = await session.client.info()
                     await session.disconnect()
                 else:
@@ -169,12 +189,13 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
                     async with hid.connect(path) as transport:
                         info = await NovaClient(transport).info()
         except (hid.HidError, ProtocolError, asyncio.TimeoutError) as e:
-            return fail(f"the controller did not answer: {e}", 422)
+            return fail(f"the {device} did not answer: {e}", 422)
         st.installed_version = int(info.firmware_version) if info.firmware_version.isdigit() else None
         st.identity = None
+        name = "Controller" if device == "controller" else "Receiver"
 
         def work(job: Job):
-            job.add(f"Controller on firmware {info.firmware_version}. Sending the update-mode command.")
+            job.add(f"{name} on firmware {info.firmware_version}. Sending the update-mode command.")
             job.progress("Waiting for update mode", 0, 1)
             dev = updatemode.enter(path)
             job.add(f"In update mode as {dev.vendor} {dev.product}.")
@@ -198,19 +219,20 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
 
     @routes.post("/api/update/check")
     async def check(request):
-        """Dry run, no device I/O: would this firmware go onto the controller in this backup?"""
+        """Dry run, no device I/O: would this firmware go onto the device in this backup?"""
         d = await body(request)
-        fw, b = firmware_named(d.get("file")), backup_named(d.get("backup"))
+        device = in_update_mode()
+        fw, b = firmware_named(d.get("file"), device), backup_named(d.get("backup"))
         errors, warnings = [], []
         if st.installed_version is None:
-            errors.append("the firmware version on the controller is unknown; connect it normally first")
+            errors.append("the firmware version on it is unknown; connect it normally first")
         else:
             try:
                 dump, key = safety.load_backup(b.path)
                 pid, vid = jlflash.identity(dump, jlflash.find(dump, key).base)
             except (OSError, ValueError, KeyError, jlflash.FlashError) as e:
                 return ok({"allowed": False, "errors": [f"cannot use the backup: {e}"], "warnings": []})
-            plan = safety.plan_update(safety.DeviceState("controller", pid, vid, st.installed_version),
+            plan = safety.plan_update(safety.DeviceState(TARGET[device], pid, vid, st.installed_version),
                                       fw, fw_dir / fw.file, bundled=installer.load_manifest(fw_dir))
             errors += plan.errors
             warnings += plan.warnings
@@ -236,9 +258,9 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
         d = await body(request)
         if d.get("confirm") is not True:
             return fail("confirmation required")
-        fw, b = firmware_named(d.get("file")), backup_named(d.get("backup"))
+        fw, b = firmware_named(d.get("file"), in_update_mode()), backup_named(d.get("backup"))
         if st.installed_version is None:
-            return fail("the firmware version on the controller is unknown; connect it normally first")
+            return fail("the firmware version on it is unknown; connect it normally first")
         version = st.installed_version
 
         def work(job: Job, boot):
@@ -253,6 +275,8 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
         if st.stay:
             return fail("the last write did not verify; run it again before restarting", 409)
 
+        device = in_update_mode()
+
         def work(job: Job):
             dev, boot = updatemode.open_device()
             try:
@@ -260,11 +284,11 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
                 updatemode.restart(boot, st.loader_cache)
             finally:
                 dev.close()
-            job.add("Asked the controller to restart.")
-            found = updatemode.wait_for_normal_mode(20)
-            job.add(f"Back in normal mode on {found[0].path}.")
+            job.add(f"Asked the {device or 'device'} to restart.")
+            found = updatemode.wait_for_normal_mode(20, receiver=device == "receiver")
+            job.add("Back in normal mode" + (f" on {found[0].path}." if found else "."))
             st.identity = None
-            return {"path": found[0].path}
+            return {"path": found[0].path if found else None, "device": device}
         return ok(st.start("restart", work).snapshot())
 
     return st

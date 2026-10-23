@@ -157,6 +157,8 @@ serve fake update feeds from a local HTTP server.
 8. ~~USB update mode: flash backup, restore and firmware update (first update 7701 → 8201)~~
 9. ~~2.4 GHz receiver: update mode, backup and restore on hardware~~ (`gamesir-linux uboot ... --receiver`);
    install when GameSir ships firmware newer than 2800, and in the settings app
+10. Controller firmware updates through the 2.4 GHz receiver (JieLi's over-the-air updater,
+    `JL_upgradeUtility` over HID; GameSir Connect doesn't use it for this controller): research
 
 ## Disclaimer
 

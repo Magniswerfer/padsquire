@@ -27,6 +27,8 @@ BACKUP_DIR = _XDG_DATA / "gamesir-linux" / "backups"
 LOADER_CACHE = _XDG_CACHE / "gamesir-linux" / "loaders"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ATTEMPTS = 3
+# What is in download mode, by chip: the safety rules' target names (safety.DeviceState).
+TARGET_BY_CHIP = {"br23": "controller", "bd19": "dongle"}
 
 Log = Callable[[str], None]
 Progress = Callable[[str, int, int], None]
@@ -297,14 +299,14 @@ def restore(boot: jlboot.JLBoot, backup_path: Path, cache_dir: Path = LOADER_CAC
 
 
 def plan_flash(ufw_path: Path, backup_path: Path, installed_version: int, fw_dir: Path,
-               live: bytes, layout: jlflash.Layout, reinstall: bool = False):
+               live: bytes, layout: jlflash.Layout, reinstall: bool = False, target: str = "controller"):
     """All the checks for a firmware update. Returns (FirmwareInfo, FlashChoice, errors)."""
     bundled = installer.load_manifest(fw_dir)
     fw = next((f for f in bundled if (fw_dir / f.file).resolve() == ufw_path.resolve()), None)
     if fw is None:
         return None, None, [f"{ufw_path.name} is not in the firmware manifest in {fw_dir}"]
     pid, vid = jlflash.identity(live, layout.base)
-    plan = safety.plan_update(safety.DeviceState("controller", pid, vid, installed_version),
+    plan = safety.plan_update(safety.DeviceState(target, pid, vid, installed_version),
                               fw, ufw_path, bundled=bundled, reinstall=reinstall)
     choice = safety.choose_flash_image(ufw_path, backup_path)
     return fw, choice, plan.errors + choice.errors
@@ -315,7 +317,9 @@ def flash(boot: jlboot.JLBoot, ufw_path: Path, backup_path: Path, installed_vers
           log: Log = _quiet, progress: Progress = _quiet) -> int:
     """Install a firmware update exactly as GameSir Connect would. Returns the new version."""
     live, layout, _dump = same_controller(boot, backup_path, cache_dir, log, progress)
-    fw, choice, errors = plan_flash(ufw_path, backup_path, installed_version, fw_dir, live, layout, reinstall)
+    target = TARGET_BY_CHIP.get(boot.inquiry()[0].lower(), "unknown")
+    fw, choice, errors = plan_flash(ufw_path, backup_path, installed_version, fw_dir, live, layout,
+                                    reinstall, target)
     if errors:
         raise Blocked(errors)
     image = safety.update_image(ufw_path, choice)

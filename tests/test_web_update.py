@@ -139,3 +139,46 @@ def test_one_job_at_a_time_and_mode(env, monkeypatch):
         monkeypatch.setattr(jlboot, "find", lambda: [])
         assert (await get(c))["mode"] == "none"
     run(env, go)
+
+
+def test_the_receiver_goes_through_the_same_steps(tmp_path, monkeypatch):
+    from test_jlflash import make_receiver_dump, make_receiver_image
+    receiver_loader = jlboot.Loader("bd19", 0x2000, "https://example.invalid/bd19loader.bin",
+                                    hashlib.sha256(LOADER_BLOB).hexdigest(), ram_end=0x10000)
+    monkeypatch.setitem(jlboot.LOADERS, "bd19", receiver_loader)
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    (cache / "bd19loader.bin").write_bytes(LOADER_BLOB)
+    flash = make_receiver_dump(make_receiver_image(key=CHIP_KEY))
+    chip = FakeUboot(flash, vendor="BD19", jedec=0x1240CD, buffer_size=0x8000)   # 256 KB
+    real_execute = chip.execute
+
+    def execute(cdb, out, n):                 # the fake checks the BR23 loader address on jump
+        if cdb[:2] == b"\xfb\x08":
+            assert int.from_bytes(cdb[2:6], "big") == 0x2000
+            chip.loader = True
+            return (cdb[:2]).ljust(16, b"\0")
+        if cdb[:2] == b"\xfb\x06":
+            chip.cdbs.append(cdb)
+            return b""
+        return real_execute(cdb, out, n)
+    monkeypatch.setattr(updatemode, "open_device", lambda path=None: (
+        type("D", (), {"close": lambda s: None})(), jlboot.JLBoot(execute)))
+    monkeypatch.setattr(jlboot, "find", lambda: [jlboot.UbootDevice("/dev/sg9", "BD19", "UBOOT1.00")])
+    fw_dir = tmp_path / "fw"
+    fw_dir.mkdir()
+    env = dict(chip=chip, fw_dir=fw_dir, backups=tmp_path / "backups", cache=cache)
+
+    async def go(c, app):
+        d = await get(c)
+        assert d["mode"] == "download" and d["device"] == "receiver"
+        await post(c, "/api/update/backup")
+        d = await finish(c)
+        assert d["job"]["state"] == "done", d["job"]
+        (b,) = d["backups"]
+        chip.flash[0x5000:0x5004] = b"\0\0\0\0"
+        assert (await post(c, "/api/update/restore", {"backup": b["name"], "confirm": True}))[0] == 200
+        d = await finish(c)
+        assert d["job"]["state"] == "done", d["job"]
+        assert bytes(chip.flash) == flash
+    run(env, go)
