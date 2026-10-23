@@ -100,3 +100,12 @@ def test_no_reply_raises():
             asyncio.run(transport.request(bytes.fromhex("26010600002d")))
     finally:
         fake.close()
+
+
+def test_update_mode_command_is_one_padded_report():
+    fake = FakeHidraw({})
+    hid.send_update_mode(fake.host.fileno())
+    fake.close()
+    fake.thread.join(1)
+    # As GameSir's DLL sends it: report ID 0, then f2 00 04 f6 and zeros.
+    assert fake.writes == [b"\x00\xf2\x00\x04\xf6" + bytes(60)]

@@ -69,6 +69,27 @@ values the controller reports look sensible (percent-like, and 0–4)?
 
 If the swap carries over, "configure over Bluetooth, play on the dongle" works today.
 
+## 5. Flash backup (download mode)
+
+Only after checking with each other first: every step below talks to the controller's USB
+download mode. Nothing is erased or written: the tool refuses those commands outright. Run one
+step at a time and read its output before the next.
+
+```sh
+sudo modprobe sg                                   # /dev/sgN nodes (persist: echo sg | sudo tee /etc/modules-load.d/sg.conf)
+gamesir-linux uboot enter --confirm                # cable in, LED green; it comes back as a USB disk
+gamesir-linux uboot info                           # chip, chip key, flash ID and size
+gamesir-linux uboot backup                         # reads the flash twice, compares, saves both files
+gamesir-linux uboot restart                        # back to normal firmware
+```
+
+The backup goes to `~/.local/share/gamesir-linux/backups/` (a `.bin` and a `.json` with its
+SHA-256), readable only by you: it holds the controller's Bluetooth pairing keys. Copy it
+somewhere safe. `backup` refuses to save inside the repo.
+
+`info` and `backup` download jl-uboot-tool's BR23 loader once (pinned commit, SHA-256 checked)
+and run it in the controller's RAM; a restart clears it.
+
 ## If something goes wrong
 
 Hold Home + M for about 10 seconds to force the controller off. `gamesir-linux ble restore --yes`

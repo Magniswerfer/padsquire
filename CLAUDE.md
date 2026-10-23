@@ -9,12 +9,13 @@ tested against a **simulated** controller. The first real hardware session start
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -e '.[gui,test]'   # no system pip on this box; 7zip for update/extract
-pytest                                   # 101 tests; GAMESIR_INSTALLER=<setup.exe> adds a real-installer test
+pytest                                   # 134 tests; GAMESIR_INSTALLER=<setup.exe> adds a real-installer test
 gamesir-linux probe --guided             # read-only report of the controller in every mode -> JSON
 gamesir-linux ble scan | info | deadzone | feature | vibration | sleep | restore
 gamesir-linux usb ...                    # same actions over the cable (green LED mode), via hid.py
 gamesir-linux gui [--simulate]           # browser app on 127.0.0.1
 gamesir-linux update | extract | ufw | plan
+gamesir-linux uboot find | enter --confirm | info | backup | restart   # download mode, read-only
 ```
 
 ## Layout
@@ -25,6 +26,8 @@ gamesir-linux update | extract | ufw | plan
 - `web/server.py` + `web/static/`: aiohttp GUI (no build step; vanilla JS, strict CSP). Connects
   over BLE or USB; over USB it skips the reads in `USB_UNSUPPORTED` (no reply, 2.2 s timeout each).
 - `ufw.py`, `jlcrypt.py`, `installer.py`, `updater.py`, `safety.py`: firmware side.
+- `jlboot.py` + `cli_uboot.py`: JieLi USB download mode over SG_IO, read-only (an allowlist refuses
+  erase, flash write and the chip-key write). Needs the `sg` kernel module (`sudo modprobe sg`).
 - `probe.py`: read-only hardware probe. `PROTOCOL.md`: all reverse-engineering notes.
 
 ## First hardware session: what to confirm, in order

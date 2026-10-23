@@ -124,6 +124,33 @@ class HidTransport:
             return await asyncio.to_thread(self._exchange, frame, accept or (lambda _r: True))
 
 
+# GameSir's UpdateFirmware for PID 0x100F (sapjoyuniapis_t4n2, SAPJoyUniDevice_UpdateFirmware):
+# one zero-padded report, no reply awaited, then the handle is closed and the controller drops off
+# USB to come back as JieLi's USB download disk. Nothing is erased or written by this command.
+UPDATE_MODE = bytes.fromhex("f20004f6")
+
+
+def send_update_mode(fd: int) -> None:
+    os.write(fd, b"\x00" + UPDATE_MODE + bytes(REPORT_SIZE - len(UPDATE_MODE)))
+
+
+def enter_update_mode(path: str) -> None:
+    """Switch the controller on `path` into its USB download (firmware update) mode."""
+    try:
+        fd = os.open(path, os.O_RDWR)
+    except PermissionError:
+        raise HidError(f"no permission to open {path}. Install the udev rules in "
+                       "contrib/udev/ (see HARDWARE.md), then replug the controller") from None
+    except OSError as e:
+        raise HidError(f"could not open {path}: {e.strerror}") from e
+    try:
+        send_update_mode(fd)
+    except OSError as e:
+        raise HidError(f"could not write to {path}: {e.strerror}") from e
+    finally:
+        os.close(fd)
+
+
 class connect:
     """async with connect("/dev/hidraw11") as transport: ..."""
 

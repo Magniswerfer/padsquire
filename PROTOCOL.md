@@ -221,12 +221,12 @@ Not yet verified on this controller.
 | `FD 07 addr32 size16` | read RAM | `FUN_1000ad80` |
 | `FB 08 addr32 arg16` | jump (start the loader) | `FUN_1000b190` |
 | `FC 0A` | online device: flash type and JEDEC ID | `FUN_1000c140` |
-| `FC 09 AC 69 00` | read chip key, unlocks flash reads | `FUN_1000c4d0` |
+| `FC 09 00 AC 69 00` | read chip key, unlocks flash reads | `FUN_1000c4d0` |
 | `FC 14` | USB buffer size | `FUN_1000c6e0` |
 | `FD 05 addr32 size16` | read flash (loader) | |
 | `FB 01 addr32` / `FB 42 addr32` | erase 4 KB sector / smaller erase near the end | `FUN_1000bf60` / `FUN_1000bd80` |
 | `FB 04 addr32 size16 – crc16` | write flash | `FUN_1000b440` |
-| `FC 13 addr32 size16` | flash CRC16 (verification) | `FUN_1000b2f0` |
+| `FC 13 addr32 size16` | flash CRC16, raw (verification; jl-uboot-tool's `FLASH_CRC16_RAW`) | `FUN_1000b2f0` |
 | `FC 0C addr32` | run app / reset | `FUN_1000c7e0` |
 | `FC 85`, `FC 86`, `FC 1A 01` | vendor reads used while building the image (not decoded) | |
 | **`FC 12 key16`** | **write chip key into eFuses: irreversible. The DLL never calls it** (checked in the decompiled code and the machine code) | `FUN_1000c5e0` |
@@ -239,6 +239,40 @@ as jl-uboot-tool's), then builds a full flash image and burns it with `FUN_1000b
 2. Erase `0x2000`…end of the writable area, write the image top-down in 4 KB chunks.
 3. Rewrite sectors `0x0000` and `0x1000` last.
 4. CRC16-verify every 4 KB chunk (`FC 13`); retry the whole burn up to 5 times; `FC 0C` to restart.
+
+**Our read-only side** (`jlboot.py`, `gamesir-linux uboot`; tested against a simulated chip only).
+The ROM answers only `FB 06`, `FD 07` and `FB 08`; everything else, restart included, needs the
+loader running. The loader file is sent as-is: the BR23 ROM decrypts MengLi uploads in place
+(jl-uboot-tool's `memory-rw-mengli-crypt` quirk). Before uploading, a 64-byte `FD 07` at the
+loader address tells whether the loader is already running: the ROM MengLi-encrypts memory
+reads and the loader doesn't, so the loader's first bytes only read back decrypted from the
+loader itself. `backup` reads the flash twice in 4 KB steps, compares the reads, then checks
+each sector against `FC 13`; if every sector disagrees the CRC variant is not XMODEM, which the
+first dump will settle.
+
+**Confirmed on hardware (2026-10-23, firmware 7701):**
+
+| What | Result |
+|---|---|
+| `f2 00 04 f6` on the `0xFF7A` channel | the controller drops off USB and is back within ~1 s as `4c4a:2342`, "BR23UBOOT1.00", full speed, `usb-storage` |
+| SCSI INQUIRY | vendor `BR23`, product `UBOOT1.00`, revision `1.00` |
+| Loader upload and jump | br23loader from jl-uboot-tool at `0x12000`, argument `0x0001`, sent as-is: works; RAM then reads back as the decrypted loader |
+| SCSI residue | **unusable**: the ROM sends the data but reports all of it as residue (`resid` = length), so it is ignored |
+| Chip key (`FC 09`) | `0x3496`, the same as the block-scrambling key base of the `.ufw` config partitions |
+| Online device (`FC 0A`) | type 3 (SPI NOR on SPI0), JEDEC ID bytes `14 60 85`: Puya (`0x85`), capacity `0x14` = **1 MB** |
+| USB buffer size (`FC 14`) | 32768 bytes |
+| Full dump (`gamesir-linux uboot backup`) | 1 MB read twice in 5 s, both reads identical |
+| Flash CRC (`FC 13`) | **CRC-16/XMODEM** (`jlcrypt.crc16`): matched the dump in all 256 sectors |
+
+First look at the dump (kept outside the repo): sector `0x0000` is blank (all `FF`); the image
+header is at `0x1000` with the chip identity `AC695X_TRANS` in plain ASCII; the last used
+sector is `0x7B000`, about half the flash; 154 of 256 sectors are blank.
+
+**Restart** (`FC 0C`, argument 1) boots the firmware in flash. The controller first shows up
+briefly as `3537:2106` "Zikway HID zk" (the identity seen before only on the idle dongle), then
+as `3537:100F` in green mode within about a second. Afterwards firmware, MAC and settings were
+unchanged (`7701`, dead zone 5). A 2.4 GHz dongle plugged in elsewhere re-enumerated at the
+same moment.
 
 **Still to decode:** how the image is built from the `.ufw`: which of `flash.bin` / `flash2.bin`
 (`UFW_ELEMENT=0x10-0,0x10-1`, same size, different contents) is used, whether it is re-encrypted
@@ -328,7 +362,8 @@ flashing. `script.ver` holds the JieLi build-tool version (`AC695X-v0.01-cfg_too
 4. Region digit must match; enforce the `MinimumVersion` chain; no downgrades;
    same version only with `--reinstall`.
 5. Warn when the dongle is older than the dongle firmware shipped in the same release.
-6. Still to build: flash dump before the first write (if `jl-uboot-tool` can reach it),
+6. Still to build: a flash dump before the first write (`gamesir-linux uboot backup` exists,
+   first one taken 2026-10-23, verified by two reads and the device CRC),
    and a dry run that does everything except the final write.
 
 ## Open questions (need hardware)
@@ -340,6 +375,4 @@ flashing. `script.ver` holds the JieLi build-tool version (`AC695X-v0.01-cfg_too
   "back" means, auto-sleep (assumed minutes; no reply over USB), battery encoding (bit 7 looks wrong)
 - Whether the BLE config channel works from BlueZ while the controller is in PC (XInput) mode
 - SAPJoy HID report layouts
-- What `f2 00 04 f6` really enumerates as (expected: `BR23` / `UBOOT1.00`), and that the controller
-  returns to normal from it without a flash
 - A full flash dump through the BR23 loader; then the image-building details listed in section 3

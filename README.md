@@ -138,7 +138,8 @@ serve fake update feeds from a local HTTP server.
 5. ~~First real hardware: configuration over the USB cable, live input, button guide~~
 6. Test the 2.4 GHz dongle (expected as `3537:1098`) and Bluetooth on hardware
 7. Remap every button and record macros (`f5` / `f6` commands, still to decode)
-8. USB update mode: device detection, flash dump, then a first supervised update
+8. USB update mode: device detection and flash dump (`gamesir-linux uboot`, first backup taken
+   on hardware), then a first supervised update
 
 ## Disclaimer
 

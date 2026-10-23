@@ -162,9 +162,10 @@ def main(argv=None) -> int:
     pl.add_argument("--reinstall", action="store_true")
     pl.set_defaults(func=cmd_plan)
 
-    from . import cli_ble, cli_probe
+    from . import cli_ble, cli_probe, cli_uboot
     cli_ble.register(sub)
     cli_probe.register(sub)
+    cli_uboot.register(sub)
 
     g = sub.add_parser("gui", help="open the graphical settings app in your browser")
     g.add_argument("--simulate", action="store_true", help="start connected to a simulated controller")
