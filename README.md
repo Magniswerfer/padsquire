@@ -94,6 +94,14 @@ gamesir-linux ble vibration --left-grip 5 --right-grip 5
 gamesir-linux ble --simulate info                   # try it without a controller
 ```
 
+Or over the USB cable: hold Menu + View until the LED is green (PC/Xbox mode), then use the same
+commands with `usb` instead of `ble`:
+
+```sh
+gamesir-linux usb info
+gamesir-linux usb deadzone
+```
+
 Settings are stored on the controller, so (if that holds on real hardware) you can configure
 over Bluetooth and then switch back to the 2.4 GHz dongle.
 

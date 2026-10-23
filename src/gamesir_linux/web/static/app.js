@@ -437,8 +437,6 @@ function panelTriggers() {
   return wrap;
 }
 
-const RUMBLE = [[0, "Off"], [1, "Low"], [2, "Medium"], [3, "High"], [4, "Max"]];
-
 function panelVibration() {
   const d = app.dev;
   const wrap = h("div", {}, h("h1", {}, "Vibration"), h("p", { class: "lede" }, "Rumble strength for the motor in each grip."));
@@ -446,12 +444,12 @@ function panelVibration() {
   const v = val(d.vibration);
   const rows = h("div", { class: "rows" });
   for (const [field, label] of [["left_grip", "Left grip"], ["right_grip", "Right grip"]]) {
-    const mark = savedMark();
-    const options = RUMBLE.some(([n]) => n === v[field]) ? RUMBLE : [...RUMBLE, [v[field], `Custom (${v[field]})`]];
-    rows.append(row(label, null, [mark, segmented(field, options.map(([n, t]) => [String(n), t]), String(v[field]), (n) =>
-      save("/api/vibration", { [field]: +n }, (got) => { d.vibration = { value: got }; }, mark))]));
+    rows.append(slider({
+      label, value: v[field], unit: "%",
+      onCommit: (n, mark) => save("/api/vibration", { [field]: n }, (got) => { d.vibration = { value: got }; }, mark),
+    }));
   }
-  wrap.append(rows, h("p", { class: "note" }, "The five steps follow GameSir's PC app. How the controller scales them hasn't been confirmed yet."));
+  wrap.append(rows, h("p", { class: "note" }, "A real controller reports 75% out of the box. 100% as the maximum hasn't been confirmed yet."));
   return wrap;
 }
 

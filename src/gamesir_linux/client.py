@@ -1,7 +1,7 @@
 """High-level controller configuration over any GCM transport.
 
-A transport is anything with `async request(frame, accept) -> bytes`: the real
-Bluetooth one (ble.py) or the simulator (simulator.py). Every setter writes,
+A transport is anything with `async request(frame, accept) -> bytes`: Bluetooth
+(ble.py), USB HID (hid.py) or the simulator (simulator.py). Every setter writes,
 then reads the value back and raises if the controller did not take it.
 """
 
@@ -38,7 +38,7 @@ class NovaClient:
     # -- info ---------------------------------------------------------------
 
     async def info(self) -> BasicInfo:
-        reply = await self.t.request(gcm.basic_info_query(), lambda r: len(r) in (19, 20))
+        reply = await self.t.request(gcm.basic_info_query(), lambda r: len(r) >= 19)
         return gcm.basic_info_parse(reply)
 
     async def battery(self) -> Battery:

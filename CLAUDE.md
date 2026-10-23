@@ -8,10 +8,11 @@ tested against a **simulated** controller. The first real hardware session start
 ## Commands
 
 ```sh
-pip install --user -e '.[gui,test]'      # deps: bleak, aiohttp; 7zip needed for update/extract
-pytest                                   # 93 tests; GAMESIR_INSTALLER=<setup.exe> adds a real-installer test
+python3 -m venv .venv && .venv/bin/pip install -e '.[gui,test]'   # no system pip on this box; 7zip for update/extract
+pytest                                   # 100 tests; GAMESIR_INSTALLER=<setup.exe> adds a real-installer test
 gamesir-linux probe --guided             # read-only report of the controller in every mode -> JSON
 gamesir-linux ble scan | info | deadzone | feature | vibration | sleep | restore
+gamesir-linux usb ...                    # same actions over the cable (green LED mode), via hid.py
 gamesir-linux gui [--simulate]           # browser app on 127.0.0.1
 gamesir-linux update | extract | ufw | plan
 ```
@@ -20,6 +21,7 @@ gamesir-linux update | extract | ufw | plan
 
 - `gcm.py`: GCM protocol frames (pure functions). `client.py`: NovaClient, write then read back.
 - `ble.py`: bleak transport (write 0x865F, wait 60 ms, read 0x865F). `simulator.py`: fake device.
+- `hid.py`: USB transport, GCM in 64-byte reports on the `0xFF7A` hidraw interface (confirmed).
 - `web/server.py` + `web/static/`: aiohttp GUI (no build step; vanilla JS, strict CSP).
 - `ufw.py`, `jlcrypt.py`, `installer.py`, `updater.py`, `safety.py`: firmware side.
 - `probe.py`: read-only hardware probe. `PROTOCOL.md`: all reverse-engineering notes.
@@ -30,16 +32,20 @@ Follow HARDWARE.md. Run `gamesir-linux probe --guided` first and read its JSON b
 
 1. **BLE reply path.** `bluetooth.experiments[].verdict` says `read:865f` or `notify:865f`.
    If notify, set `NOTIFY_REPLIES = True` in `ble.py`. If neither, inspect the raw reads/notifications.
-2. **Basic info layout.** Check `firmware_version` from `ble info` matches what GameSir reports
-   (parsed as `hex(b11) + hex(b12)` in `gcm.basic_info_parse`).
-3. **Battery encoding.** The bit 7 = charging assumption is in `gcm.Battery`.
-4. **Units.** Dead zones are assumed to be percent (GUI shows 0–50), vibration 0–4, auto-sleep minutes.
-   Read the current values before writing anything; adjust the GUI ranges in `web/static/app.js`.
+2. **Basic info layout.** Confirmed over USB: the `01 01` reply on the wired `0xFF7A` HID channel
+   parses with `gcm.basic_info_parse(reply[:19])` and gives firmware `7701`, as Connect would.
+   Still check the BLE reply (20 bytes with `0xC9`?).
+3. **Battery encoding.** The bit 7 = charging assumption is in `gcm.Battery`. Over USB, on the
+   cable, host info gave `0x52` (bit 7 clear), so the assumption looks wrong. Check over BLE.
+4. **Units.** Read over USB: dead zones look like percent 0–100 (trigger back = 95), vibration
+   is percent (75 by default; the GUI now uses a 0–100 slider). Still open: is 100 the maximum,
+   what trigger "back" means, and auto-sleep (no reply over USB). Original values are in PROTOCOL.md.
 5. **Profiles (0x29).** Does the controller answer? The GUI hides the page if not.
 6. **Persistence.** Do settings made over Bluetooth survive switching to the 2.4 GHz dongle?
-7. **USB IDs.** The probe's `usb[].pid` per mode. Connect's table says wired config PID 0x100F,
-   dongle config PID 0x1098; update-mode identity should be `AC695X_TRANS` / `N2LT` (controller)
-   and `AC632N_TRANS` / `N2DG` (dongle).
+7. **USB IDs.** Partly confirmed: wired green mode is 0x100F with a `0xFF7A` vendor HID channel;
+   blue mode emulates a DualShock 4 (054c:09cc; probe it with `--device 054c:09cc`); the idle
+   dongle is 0x2106. See PROTOCOL.md. Still open: the dongle in green mode (Connect says 0x1098)
+   and update mode (`AC695X_TRANS` / `N2LT`, `AC632N_TRANS` / `N2DG`).
 
 ## Rules
 

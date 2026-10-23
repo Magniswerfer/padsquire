@@ -194,7 +194,10 @@ class BasicInfo:
 
 def basic_info_parse(reply: bytes) -> BasicInfo:
     """Reply is 20 bytes starting 0xC9, or 19 bytes without it. The app only
-    checks its length (and the MAC), so there is no checksum to verify."""
+    checks its length (and the MAC), so there is no checksum to verify.
+    Over USB HID the 19-byte form arrives padded to a 64-byte report (confirmed)."""
+    if len(reply) > 20:
+        reply = reply[:19]
     if len(reply) == 19:
         reply = b"\xc9" + reply
     if len(reply) < 20 or reply[0] != 0xC9:

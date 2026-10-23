@@ -15,9 +15,11 @@ class SimulatedNova:
     def __init__(self, firmware: str = "8201", battery: int = 0x80 | 76):
         self.firmware = firmware
         self.battery = battery
-        self.dead_zones = {z: 5 for z in gcm.DeadZone}
+        # A real controller's defaults (read over USB): 5 inner, 0 outer, 5 / 95 trigger, 0 anti.
+        self.dead_zones = {z: 95 if "BACK" in z.name else 0 if z.name.endswith(("OUTER", "ANTI")) else 5
+                           for z in gcm.DeadZone}
         self.features = {f: False for f in gcm.Feature}
-        self.vibration = gcm.Vibration(3, 3, False, False, 3, 3, False, False)
+        self.vibration = gcm.Vibration(75, 0, False, False, 75, 0, False, False)   # a real controller's defaults
         self.auto_sleep = 10
         self.mappings: dict[int, tuple[int, int]] = {gcm.Key.L4: (0, 0xFF), gcm.Key.R4: (0, 0xFF)}
         self.quick_trigger = (False, False)
