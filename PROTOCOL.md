@@ -1,9 +1,12 @@
+<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
 # GameSir Nova 2 Lite — protocol notes
 
 Reverse-engineering notes for a Linux-native config and firmware tool.
 Sources: GameSir Connect 1.14.5 and 1.16.7 (Windows, Electron) and GameSir app 5.8.20 (Android).
 Status: most of this is now **confirmed on hardware** (a Nova 2 Lite on firmware 7701 and 8201, and
 its receiver on 2800); sections say what was confirmed and when. Bluetooth is still static analysis only.
+
+These notes are licensed under [CC BY-SA 4.0](LICENSES/CC-BY-SA-4.0.txt); the code is AGPL-3.0-or-later.
 
 GameSir's internal name for this controller is **T4N2** (Nova 2 Lite). Don't confuse it with
 **T4N lite** (the original Nova Lite): different hardware and firmware. Flashing one with the

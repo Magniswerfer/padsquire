@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """JieLi primitives: the CRC-16 used in .ufw headers and the "ENC" header scrambling.
 
 Both are reverse-engineered from GameSir Connect's bundled firmware files.

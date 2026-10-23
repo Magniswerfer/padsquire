@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """First-run checks for the settings app: what this computer still needs, and the command for it.
 
 Everything here only looks (files, sysfs, PATH); nothing is changed. The page shows each check

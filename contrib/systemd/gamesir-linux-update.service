@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 [Unit]
 Description=Fetch new GameSir firmware via GameSir Connect's update feed
 Wants=network-online.target

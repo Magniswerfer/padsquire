@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Firmware installation in the settings app: the download-mode steps as background jobs.
 
 Each step (updatemode) runs in a worker thread as a job; the page polls GET /api/update for its

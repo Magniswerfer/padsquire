@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Let the logged-in user talk to GameSir controllers without sudo.
 # Install:  sudo cp 70-gamesir.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger
 #

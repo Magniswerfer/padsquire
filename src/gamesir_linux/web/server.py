@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Local web UI: an aiohttp server on 127.0.0.1 that the browser talks to.
 
 Security model: the server binds to loopback only, rejects requests whose Host

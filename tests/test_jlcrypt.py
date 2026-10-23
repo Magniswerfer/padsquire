@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 from gamesir_linux.jlcrypt import crc16, enc, enc_blocks
 
 

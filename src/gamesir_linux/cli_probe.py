@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """`gamesir-linux probe`: read-only first contact with a controller."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """A simulated Nova 2 Lite that speaks GCM, for tests and --simulate.
 
 It behaves the way static analysis says the real controller does. It proves

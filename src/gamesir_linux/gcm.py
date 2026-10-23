@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """GCM: GameSir's controller configuration protocol, as used over Bluetooth LE.
 
 Reverse-engineered from the GameSir Android app 5.8.20 (com.xiaoji.sdk.gcm).

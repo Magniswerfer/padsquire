@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Live stick, trigger and button state, from the gamepad device Linux creates for the controller.
 
 Over the cable in PC/Xbox mode the kernel's xpad driver turns the controller into an evdev

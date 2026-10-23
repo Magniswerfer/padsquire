@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """High-level controller configuration over any GCM transport.
 
 A transport is anything with `async request(frame, accept) -> bytes`: Bluetooth

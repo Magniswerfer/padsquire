@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """USB HID transport for the GCM protocol: the cable (and, presumably, the 2.4 GHz dongle).
 
 In PC/Xbox mode (green LED) the controller enumerates as 3537:100F with a vendor HID interface

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """JieLi BR23 flash images: read the layout, and check that an update keeps the reserved areas.
 
 Decoded from the first flash dump of a Nova 2 Lite (PROTOCOL.md, section 3, "Flash layout"):

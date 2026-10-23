@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Extract firmware and its metadata from a GameSir Connect Windows installer.
 
 GameSir Connect is an Electron app packed in an NSIS installer. Firmware lives

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """`gamesir-linux uboot ...`: the controller's USB download mode.
 
 The steps, each its own command so they can be run (and checked) one at a time:

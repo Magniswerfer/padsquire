@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Read-only first-contact probe: collect everything about a connected controller.
 
 USB: reads sysfs only (IDs, interfaces, bound drivers, HID report descriptors,

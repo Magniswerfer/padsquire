@@ -166,4 +166,16 @@ controller, and include a fake chip in update mode for the firmware writer.
 
 Unofficial and not affiliated with GameSir. Firmware updates can brick hardware. The safety
 checks above reduce that risk but cannot remove it. Tested on one controller and one receiver so
-far. MIT licensed; see [LICENSE](LICENSE).
+far.
+
+## Licence
+
+The code is free software under the [GNU Affero General Public License](LICENSE), version 3 or
+any later version (`AGPL-3.0-or-later`). You may use, change and share it. If you share a
+changed version, or run one for others over a network, you must offer its source code under the
+same licence. The settings app's "Source code" link does that for you as long as you keep it.
+
+The protocol notes in [PROTOCOL.md](PROTOCOL.md) are under
+[Creative Commons Attribution-ShareAlike 4.0](LICENSES/CC-BY-SA-4.0.txt), so other projects can
+reuse them. The bundled Barlow fonts keep their own
+[SIL Open Font License](src/gamesir_linux/web/static/fonts/OFL.txt).

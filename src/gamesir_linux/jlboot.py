@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Read-only access to a JieLi chip in its mask-ROM USB download mode ("UBOOT1.00").
 
 In this mode the controller is a USB disk that takes JieLi's vendor SCSI commands (see

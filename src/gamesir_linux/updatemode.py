@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The controller's USB download mode as steps, shared by the command line and the settings app.
 
 Each step reports through two callbacks, log(text) and progress(label, done, total), and raises

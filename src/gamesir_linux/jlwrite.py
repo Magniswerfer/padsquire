@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Flash writes in JieLi's USB download mode: erase and write, nothing else.
 
 Kept apart from jlboot (read-only) on purpose. A Writer may send exactly two more commands,

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Keep extracted firmware current by following GameSir Connect's own update feed.
 
 GameSir has no standalone firmware feed (the app has one, but it is disabled and

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 from gamesir_linux import installer, safety
 from gamesir_linux.safety import DeviceState
 

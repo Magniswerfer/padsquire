@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Parser for JieLi .ufw firmware containers, as shipped by GameSir.
 
 Layout (all little-endian, reverse-engineered and checked against every .ufw

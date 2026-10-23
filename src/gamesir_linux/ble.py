@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Bluetooth LE transport for the GCM protocol, via bleak (BlueZ on Linux).
 
 What the Android app does for a Nova 2 Lite (BluetoothLeService):

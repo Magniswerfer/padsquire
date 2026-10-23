@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """Decide whether a firmware file may be flashed onto a device.
 
 Every rule here exists because breaking it can brick the device or leave the

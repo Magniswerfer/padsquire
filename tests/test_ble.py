@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 """The Bluetooth transport, driven by a fake bleak client in front of the simulator."""
 
 import asyncio
