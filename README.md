@@ -16,7 +16,7 @@ Linux-native configuration and firmware tools for GameSir controllers, starting 
   Back-button mapping, dead zones (drawn live as you drag), quick triggers, vibration, Home light
   colour, profiles, power settings, factory reset and firmware downloads. Works in any browser on
   any distro; `--simulate` lets you try it without a controller.
-- **Configure over Bluetooth** (`gamesir-linux ble`): firmware version and battery, dead zones,
+- **Configure over Bluetooth or the USB cable** (`gamesir-linux ble`, `gamesir-linux usb`): firmware version and battery, dead zones,
   feature toggles (stick swap, D-pad diagonal lock, axis inversion, …), vibration strength,
   auto-sleep, factory reset. Every change is read back to confirm the controller took it.
   `--simulate` runs any command against a simulated controller.
@@ -50,6 +50,10 @@ GUI). To use the controller without `sudo`, install the udev rules in `contrib/u
 gamesir-linux gui                # opens in your default browser
 gamesir-linux gui --simulate     # try it without a controller
 ```
+
+**Find controllers** lists the controller over the USB cable (in PC mode: hold Menu + View until
+the LED is green) and over Bluetooth. By cable, auto-sleep and profiles aren't available; the
+controller doesn't answer those over USB.
 
 It runs a small server on `127.0.0.1` only and opens a one-time link. The link sets a session
 cookie; the server rejects requests without it, requests for any other host name (DNS rebinding),

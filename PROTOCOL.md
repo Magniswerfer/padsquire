@@ -175,6 +175,7 @@ section 1 frames are sent zero-padded to 64 bytes. Replies come in two shapes:
 |---|---|---|
 | A fresh GCM frame | `24 01 05 52 7c 00 …` (host info) | inside the frame, at `length - 1` |
 | The request echoed with the value filled in | `07 01 06 00 05 0e 00 … 21` (dead zone) | byte 63, over the whole report; the in-frame checksum is the request's |
+| No length byte, one byte longer than the request | `1f 00 01 00 00 00 20 00 …` (key mapping L4) | last byte of the frame, then zero padding |
 
 Read-only results from one controller (firmware 7701), i.e. its out-of-the-box values:
 
@@ -186,6 +187,10 @@ Read-only results from one controller (firmware 7701), i.e. its out-of-the-box v
 | Features (`0x23`) | all off except auto-power-on-dock | |
 | Host info battery | `0x52` = 82, bit 7 clear | on the cable, yet "not charging" by the bit-7 rule; basic info byte 18 said `0xff` |
 | Auto-sleep (`0x26`) | no reply | not supported over USB, or not on this firmware |
+| Config slots (`0x29`) | no reply | the GUI hides profiles over USB |
+| Trigger quick mode (`0x21`) | both off | |
+| Home light (`0x05`) | white, effect 1 | |
+| Back buttons L4 / R4 (`0x1F`) | scan 0, flag 0: not assigned | |
 
 Still to decode: the `f5` gamepad-param and `f6` macro layouts.
 

@@ -183,7 +183,7 @@ function renderChrome() {
   const st = $("#status");
   st.replaceChildren();
   if (app.status.connected) {
-    const via = app.status.mode === "simulated" ? "Simulated controller" : "Connected over Bluetooth";
+    const via = { simulated: "Simulated controller", usb: "Connected by cable" }[app.status.mode] || "Connected over Bluetooth";
     st.append(h("span", { class: "conn on" }, via));
     const bat = app.dev && val(app.dev.battery);
     if (bat) {
@@ -243,9 +243,10 @@ function wireMap() {
 function panelConnect() {
   const wrap = h("div", {},
     h("h1", {}, "Connect your controller"),
-    h("p", { class: "lede" }, "Settings are read from the controller and written back to it over Bluetooth. Nothing is stored on this computer."),
+    h("p", { class: "lede" }, "Settings are read from the controller and written back to it, by cable or over Bluetooth. Nothing is stored on this computer."),
     h("ol", { class: "steps" },
-      h("li", {}, "Turn the controller on in Bluetooth mode. The phone app uses Android mode: hold Home and A for 3 seconds until the light turns yellow."),
+      h("li", {}, "By cable: plug the controller in and hold Menu and View for 2 seconds until the light turns green (PC mode)."),
+      h("li", {}, "Or over Bluetooth: turn the controller on in Android mode by holding Home and A for 3 seconds until the light turns yellow."),
       h("li", {}, "Find it below and connect.")),
   );
   const findBtn = h("button", { class: "btn primary", onclick: scan, disabled: app.scanning },
@@ -256,11 +257,11 @@ function panelConnect() {
   if (app.found) {
     if (app.found.length === 0) {
       wrap.append(h("p", { class: "note" },
-        "No Nova 2 Lite found. Check it is in Bluetooth mode and close to this computer, then search again. If it still doesn't appear, pair it once in your system's Bluetooth settings."));
+        "No Nova 2 Lite found. By cable, check the light is green. Over Bluetooth, check it is in Android mode and close to this computer. If it still doesn't appear, pair it once in your system's Bluetooth settings."));
     } else {
       wrap.append(h("ul", { class: "found" }, app.found.map((d) =>
-        h("li", {}, h("span", {}, d.name, h("span", { class: "addr" }, d.address)),
-          h("button", { class: "btn primary small", onclick: () => connect({ address: d.address, name: d.name }) }, "Connect")))));
+        h("li", {}, h("span", {}, d.name, h("span", { class: "addr" }, d.link === "usb" ? `USB cable, ${d.address}` : d.address)),
+          h("button", { class: "btn primary small", onclick: () => connect({ address: d.address, name: d.name, link: d.link }) }, "Connect")))));
     }
   }
   wrap.append(h("p", { class: "callout" },
@@ -277,7 +278,7 @@ function panelController() {
     h("h1", {}, app.status.name || "Nova 2 Lite"),
     h("p", { class: "lede" }, app.status.mode === "simulated"
       ? "This is the simulator: changes behave like the real controller but go nowhere."
-      : `Connected to ${app.status.address}. Every value shown here was read back from the controller.`),
+      : `${app.status.mode === "usb" ? `Connected by cable (${app.status.address})` : `Connected to ${app.status.address}`}. Every value shown here was read back from the controller.`),
     h("dl", { class: "facts" },
       fact("Battery", bat ? `${bat.level}%` : null, bat && bat.charging ? "charging" : null),
       fact("Firmware", info && info.firmware_version, info ? regionName(info.firmware_version) : null),
@@ -306,7 +307,7 @@ function panelButtons() {
     const entry = d.mappings[source];
     if (errOf(entry)) { rows.append(row(labels[source], null, unavailable(entry))); continue; }
     const m = val(entry);
-    const current = m.kind === "disabled" ? "" : (m.kind === "key" ? m.targets[0] : `__${m.kind}`);
+    const current = m.kind === "disabled" ? "" : (m.kind === "key" ? (m.targets[0] ?? "") : `__${m.kind}`);
     const select = h("select", { "aria-label": labels[source] },
       h("option", { value: "" }, "Do nothing"),
       h("optgroup", { label: "Buttons" }, app.meta.targets.map((k) => h("option", { value: k }, labels[k]))),

@@ -45,6 +45,7 @@ def test_trim_handles_both_reply_shapes():
     assert hid._trim(BATTERY_REPLY) == bytes.fromhex("240105527c")   # framed: own checksum
     assert hid._trim(DEAD_ZONE_REPLY) == DEAD_ZONE_REPLY             # whole-report checksum
     assert hid._trim(INFO_REPLY) == INFO_REPLY
+    assert hid._trim(_report("1f000100000020")) == bytes.fromhex("1f000100000020")   # no length byte
 
 
 class FakeHidraw:

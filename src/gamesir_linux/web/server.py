@@ -18,7 +18,7 @@ from pathlib import Path
 
 from aiohttp import web
 
-from .. import __version__, ble, gcm, installer, updater
+from .. import __version__, ble, gcm, hid, installer, updater
 from ..client import NotApplied, NovaClient
 from ..gcm import DeadZone, Feature, Key, ProtocolError, Vibration
 from ..simulator import SimulatedNova
@@ -27,7 +27,12 @@ STATIC = Path(__file__).parent / "static"
 COOKIE = "gamesir_session"
 API_HEADER = "X-GameSir"
 
-ERRORS = (NotApplied, ProtocolError, ble.BleError, ValueError, KeyError, asyncio.TimeoutError)
+ERRORS = (NotApplied, ProtocolError, ble.BleError, hid.HidError, ValueError, KeyError,
+          asyncio.TimeoutError)
+
+# Reads that get no reply over the USB cable (firmware 7701). Asking costs 11 x 200 ms each,
+# so the state read skips them and the GUI shows them as unavailable.
+USB_UNSUPPORTED = {"auto_sleep", "slots"}
 
 
 def _key_name(code: int):
@@ -82,10 +87,10 @@ class Session:
 
     def __init__(self):
         self.client: NovaClient | None = None
-        self.mode: str | None = None          # "ble" | "simulated"
+        self.mode: str | None = None          # "ble" | "usb" | "simulated"
         self.address: str | None = None
         self.name: str | None = None
-        self._ble_ctx = None
+        self._ctx = None
         self.lock = asyncio.Lock()
 
     @property
@@ -99,18 +104,24 @@ class Session:
 
     async def connect_ble(self, address: str, name: str | None = None):
         await self.disconnect()
-        ctx = ble.connect(address)
+        await self._open(ble.connect(address), "ble", address, name)
+
+    async def connect_usb(self, path: str, name: str | None = None):
+        await self.disconnect()
+        await self._open(hid.connect(path), "usb", path, name)
+
+    async def _open(self, ctx, mode: str, address: str, name: str | None):
         transport = await ctx.__aenter__()
-        self._ble_ctx = ctx
-        self.client, self.mode, self.address, self.name = NovaClient(transport), "ble", address, name
+        self._ctx = ctx
+        self.client, self.mode, self.address, self.name = NovaClient(transport), mode, address, name
 
     async def disconnect(self):
-        if self._ble_ctx is not None:
+        if self._ctx is not None:
             try:
-                await self._ble_ctx.__aexit__(None, None, None)
+                await self._ctx.__aexit__(None, None, None)
             except Exception:
                 pass
-        self._ble_ctx = None
+        self._ctx = None
         self.client = self.mode = self.address = self.name = None
 
     def status(self) -> dict:
@@ -125,7 +136,10 @@ async def _try(coro):
         return {"error": str(e)}
 
 
-async def read_state(nova: NovaClient) -> dict:
+async def read_state(nova: NovaClient, skip: set[str] = frozenset()) -> dict:
+    async def maybe(name, read):
+        return {"error": "not available over this connection"} if name in skip else await _try(read())
+
     info = await _try(nova.info())
     state = {
         "info": info,
@@ -133,10 +147,10 @@ async def read_state(nova: NovaClient) -> dict:
         "dead_zones": {z.name: await _try(nova.dead_zone(z)) for z in DeadZone},
         "features": {f.name: await _try(nova.feature(f)) for f in Feature},
         "vibration": await _try(nova.vibration()),
-        "auto_sleep": await _try(nova.auto_sleep()),
+        "auto_sleep": await maybe("auto_sleep", nova.auto_sleep),
         "mappings": {k.name: await _try(nova.mapping(k)) for k in gcm.NOVA_REMAPPABLE},
         "trigger_quick": await _try(nova.trigger_quick()),
-        "slots": await _try(nova.slots()),
+        "slots": await maybe("slots", nova.slots),
         "light": await _try(nova.light()),
     }
     fw = info.get("value", {}).get("firmware_version") if "value" in info else None
@@ -168,9 +182,10 @@ def _firmware_status(fw_dir: Path, device_version: str | None) -> dict:
 
 
 def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
-              simulate: bool = False, scanner=None) -> web.Application:
+              simulate: bool = False, scanner=None, usb_finder=None) -> web.Application:
     session = Session()
     scan = scanner or ble.scan
+    find_usb = usb_finder or hid.find
 
     @web.middleware
     async def guard(request: web.Request, handler):
@@ -198,6 +213,9 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
 
     app = web.Application(middlewares=[guard])
     routes = web.RouteTableDef()
+
+    async def state_of(nova: NovaClient) -> dict:
+        return await read_state(nova, USB_UNSUPPORTED if session.mode == "usb" else frozenset())
 
     def need_client():
         if not session.connected:
@@ -248,8 +266,14 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     @routes.post("/api/scan")
     @guarded
     async def do_scan(_):
-        found = await scan()
-        return ok([{"address": a, "name": n} for a, n in found])
+        usb = [{"address": d.path, "name": d.name or "GameSir Nova 2 Lite", "link": "usb"} for d in find_usb()]
+        try:
+            found = await scan()
+        except ble.BleError:
+            if not usb:
+                raise
+            found = []     # Bluetooth is off or missing; the cable still works
+        return ok(usb + [{"address": a, "name": n, "link": "ble"} for a, n in found])
 
     @routes.post("/api/connect")
     @guarded
@@ -261,7 +285,14 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
             address = data.get("address")
             if not isinstance(address, str) or not address:
                 return fail("address required")
-            await session.connect_ble(address, data.get("name"))
+            if data.get("link") == "usb":
+                # Only open device nodes we found ourselves, never a path from the request.
+                match = next((d for d in find_usb() if d.path == address), None)
+                if match is None:
+                    return fail("that USB controller is no longer connected; search again")
+                await session.connect_usb(match.path, data.get("name") or match.name)
+            else:
+                await session.connect_ble(address, data.get("name"))
         return ok(session.status())
 
     @routes.post("/api/disconnect")
@@ -273,7 +304,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     @routes.get("/api/state")
     @guarded
     async def state(_):
-        return ok(await read_state(need_client()))
+        return ok(await state_of(need_client()))
 
     # -- settings ---------------------------------------------------------------
     def _byte(v, name):
@@ -354,7 +385,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
         d = await body(request)
         nova = need_client()
         await nova.switch_slot(_byte(d.get("slot"), "slot"))
-        return ok(await read_state(nova))
+        return ok(await state_of(nova))
 
     @routes.post("/api/light")
     @guarded
@@ -375,7 +406,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
             return fail("confirmation required")
         nova = need_client()
         await nova.restore_defaults()
-        return ok(await read_state(nova))
+        return ok(await state_of(nova))
 
     # -- firmware ---------------------------------------------------------------
     @routes.get("/api/firmware")

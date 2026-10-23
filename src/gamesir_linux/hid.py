@@ -74,9 +74,18 @@ def find(sys_root: Path = Path("/sys"), dev_root: Path = Path("/dev")) -> list[H
 
 
 def _trim(reply: bytes) -> bytes:
+    """Cut a padded report down to the GCM frame inside it, where one can be found."""
     n = reply[2] if len(reply) > 2 else 0
     if 3 <= n < len(reply) and reply[n - 1] == gcm.checksum(reply[:n]):
-        return reply[:n]
+        return reply[:n]                     # framed reply with a length byte
+    if reply[-1:] == bytes([gcm.checksum(reply)]):
+        return reply                         # checksum over the whole report
+    # Commands without a length byte (key mapping 0x1F): the shortest zero-padded frame
+    # that ends in a valid checksum.
+    end = len(reply.rstrip(b"\x00"))
+    for n in range(max(end, 3), len(reply)):
+        if reply[n - 1] == gcm.checksum(reply[:n]):
+            return reply[:n]
     return reply
 
 
