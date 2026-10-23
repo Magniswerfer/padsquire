@@ -274,11 +274,40 @@ as `3537:100F` in green mode within about a second. Afterwards firmware, MAC and
 unchanged (`7701`, dead zone 5). A 2.4 GHz dongle plugged in elsewhere re-enumerated at the
 same moment.
 
-**Still to decode:** how the image is built from the `.ufw`: which of `flash.bin` / `flash2.bin`
-(`UFW_ELEMENT=0x10-0,0x10-1`, same size, different contents) is used, whether it is re-encrypted
-with the chip key, and how the reserved areas from `isd_config.ini` are kept: `BTIF` (Bluetooth
-MAC and pairing, 4 KB), `EXIF` (4 KB), `USERIF` (16 KB at the end), `VM` (settings, 8 KB), all
-`_OPT=1`. A full flash dump will answer most of this and is the backup to restore from.
+**Flash layout, from the dump** (2026-10-23, firmware 7701; offline analysis, nothing sent).
+The flash is 1 MB but the layout only uses the first 512 KB; `0x80000`–`0xFFFFF` is blank.
+
+| Range | What | Notes |
+|---|---|---|
+| `0x00000`–`0x00FFF` | blank | `NEED_RESERVED_4K=YES` |
+| `0x01000` | flash header, 32 bytes | `N2LT` and `AC695X_TRANS` in plain text; the CRC fields don't match a plain CRC-16 of the raw bytes (not decoded) |
+| `0x01020` | file table, 4 x 32 bytes, each ENC key `0xFFFF` | `u8 type, u8 ?, u16 crc, u32 offset, u32 length, u32 index, char name[16]`; offsets relative to `0x1000` |
+| `0x010A0` | `uboot.boot`, `0x1FE8` bytes | second-stage boot; CRC field not a plain CRC-16 of the raw bytes |
+| `0x03088` | `isd_config.ini`, `0x89` bytes | CRC-16/XMODEM of the raw bytes matches |
+| `0x04000` | `app_dir_head`: the app area | scrambled per 32-byte block with ENC key **`chip_key ^ ((addr - 0x4000) >> 2)`**, chip key `0x3496` |
+| `0x04000`–`0x63FFF` | `PRCT` ("CODE"): `app_area_head`, `app.bin` (mapped at `0x1E00120`, the ini's `ENTRY`), `cfg_tool.bin` | the last 32 bytes (`0x63FE0`) hold runtime data that isn't in GameSir's image (see below) |
+| `0x64000`–`0x77FFF` | `VM`, settings store | starts `55 AA AA 55`; 0x1B7 bytes used |
+| `0x79000` | `BTIF` | `22 66 60 00` then `8d 38 f1 25 df d9`, likely the Bluetooth address |
+| `0x7A000` | `EXIF` | blank |
+| `0x7B000`–`0x7EFFF` | `USERIF` ("FEND") | ~930 bytes of 16-bit values `0x200`–`0x3C0`: looks like factory stick/trigger calibration |
+| `0x7F000` (file table) | `key_mac` | blank |
+
+**Which image:** `flash.bin` is laid out from address 0 (`PRCT` at 0, `VM` at `0x63000`);
+`flash2.bin` from `0x1000` (`PRCT` at `0x1000`, `VM` at `0x64000`), the layout on this
+controller. JieLi's DLL presumably picks one with `JL_queryDeviceConfigEOffset` (the ini has
+`EOFFSET = 1`). **This controller takes `flash2.bin`, written at `0x1000`.**
+
+**What an 8201 update would change:** the 8201 `flash2.bin` (`0x63000` bytes) covers exactly
+`0x1000`–`0x63FFF`. Its boot area (`0x1000`–`0x3FFF`: header, file table, `uboot.boot`,
+`isd_config.ini`) is byte-identical to this controller's, and its app directory decrypts with
+key `0x3496`, so it ships scrambled for this chip key and needs no re-encryption. Every
+reserved area (`VM`, `BTIF`, `EXIF`, `USERIF`, `key_mac`) is at the same address in 7701 and
+8201, outside the image.
+
+**Open:** the last 32 bytes of the code area. GameSir's image has 6 bytes at `0x63FF8`; this
+controller has `a4 00 30 a0 07 00 00 00` at `0x63FE0`, `22 84` at `0x63FF0` and 8 bytes at
+`0x63FF8`. Possibly the boot tag that `f2 00 04 f6` sets (the dump was taken right after it),
+possibly written at production. The official updater overwrites this region with the image.
 
 The JieLi DLL's obfuscated strings are hex, then ENC with key `0x7117 ^ (pos >> 2)`: they decode
 to the loader resource type `LOADER`, `uboot1.00`, the chip names `br22 br23 br25 br27 br30 bd19
