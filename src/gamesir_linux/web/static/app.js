@@ -374,8 +374,46 @@ function panelButtons() {
       featureToggle("SWAP_LT_LB", "Swap LB and LT"),
       featureToggle("SWAP_RT_RB", "Swap RB and RT")));
   wrap.append(h("p", { class: "note" }, "On this firmware a button can act as another button, but not as a stick direction, and it can't be switched off."),
-    h("p", { class: "note" }, "If the controller stops responding after a change, turn it off and on again (hold Home and M for 10 seconds). The change is kept."));
+    restartBox());
   return wrap;
+}
+
+// Occasionally, right after a change, the controller stops sending input until it restarts.
+function restartBox() {
+  const receiver = app.status.mode === "usb" && app.status.via === "dongle";
+  const sg = !(app.setup || []).some((c) => c.id === "sg" && !c.ok);
+  const box = h("div", { class: "callout" },
+    h("p", {}, h("strong", {}, "If the controller stops responding after a change. "),
+      "This happens now and then, mostly through the receiver; the change itself is kept. A restart fixes it."),
+    app.status.mode === "usb" && sg
+      ? h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: restartDevice }, receiver ? "Restart the receiver" : "Restart the controller"))
+      : app.status.mode === "usb" ? h("p", {}, "The restart button needs a one-time setup: ", h("a", { href: "#setup" }, "see Setup and help"), ".") : null,
+    h("p", { class: "note" }, receiver
+      ? "If restarting the receiver doesn't help, turn the controller off and on: hold Home and M for about 10 seconds, turn it on, and hold Menu and View until the light is green."
+      : "Or by hand: hold Home and M for about 10 seconds, turn it on, and hold Menu and View until the light is green."));
+  return box;
+}
+
+async function restartDevice() {
+  const receiver = app.status.via === "dongle";
+  const yes = await confirmDialog(receiver ? "Restart the receiver?" : "Restart the controller?",
+    receiver ? "The receiver restarts and the controller links to it again, in a few seconds. Nothing is changed or erased."
+             : "The controller restarts in a few seconds. Your settings are kept; nothing is changed or erased.", "Restart");
+  if (!yes) return;
+  try { await api("/api/update/reboot", { confirm: true }); }
+  catch (e) { toast(e.message, "error"); return; }
+  app.status = await api("/api/status"); app.dev = null;
+  toast("Restarting…");
+  render();
+  for (let i = 0; i < 80; i++) {
+    await new Promise((r) => setTimeout(r, 500));
+    const job = ((await api("/api/update").catch(() => null)) || {}).job;
+    if (job && job.kind === "reboot" && job.state !== "running") {
+      toast(job.state === "done" ? (receiver ? "The receiver restarted" : "The controller restarted") : job.error,
+        job.state === "done" ? "info" : "error");
+      return;        // watchDevices connects again once it is back
+    }
+  }
 }
 
 async function resetRemaps() {
@@ -516,7 +554,10 @@ function panelTriggers() {
   const live = [];
   for (const [side, prefix, qi, axis] of [["Left trigger", "LEFT", 0, "lt"], ["Right trigger", "RIGHT", 1, "rt"]]) {
     const zones = { start: `${prefix}_TRIGGER_FRONT`, end: `${prefix}_TRIGGER_BACK` };
-    const values = { start: val(d.dead_zones[zones.start]) ?? 0, end: val(d.dead_zones[zones.end]) ?? 0 };
+    // "back" is where full press is reached (95 out of the box, confirmed with the live view), so the
+    // end dead zone is 100 minus it.
+    const back = val(d.dead_zones[zones.end]);
+    const values = { start: val(d.dead_zones[zones.start]) ?? 0, end: back == null ? 0 : Math.max(0, 100 - back) };
     const startEl = h("span", { class: "dead start" });
     const endEl = h("span", { class: "dead end" });
     const paint = () => { startEl.style.width = `${values.start}%`; endEl.style.width = `${values.end}%`; };
@@ -531,13 +572,14 @@ function panelTriggers() {
       h("div", { class: "travel", role: "img", "aria-label": `${side}: first ${values.start}% and last ${values.end}% of travel ignored` }, startEl, endEl, levelEl),
       h("div", { class: "travel-scale" }, h("span", {}, "Released"), h("span", {}, "Fully pressed")), readout);
     const rows = h("div", { class: "rows" });
-    for (const [key, label, help] of [["start", "Start dead zone", "Ignored at the beginning of the pull"], ["end", "End dead zone", "Full press is reached this early"]]) {
+    for (const [key, label, help] of [["start", "Start dead zone", "Ignored at the beginning of the pull"], ["end", "End dead zone", "Full press is reached this much before the end of the pull"]]) {
       const zone = zones[key];
       if (errOf(d.dead_zones[zone])) { rows.append(row(label, help, unavailable(d.dead_zones[zone]))); continue; }
       rows.append(slider({
         label, help, value: values[key], unit: "%", max: 50,
         onInput: (v) => { values[key] = v; paint(); },
-        onCommit: (v, mark) => save("/api/dead-zone", { zone, value: v }, (got) => { d.dead_zones[zone] = { value: got }; }, mark),
+        onCommit: (v, mark) => save("/api/dead-zone", { zone, value: key === "end" ? 100 - v : v },
+          (got) => { d.dead_zones[zone] = { value: got }; }, mark),
       }));
     }
     if (errOf(d.trigger_quick)) rows.append(row("Quick trigger", null, unavailable(d.trigger_quick)));
@@ -1222,7 +1264,8 @@ async function panelSetup() {
       "By cable, try another cable or port: some cables only charge. Through the receiver, turn the controller on and wait for it to link before switching to green.",
       "If it shows up but can't be opened, the device permissions above aren't in place yet, or the controller was plugged in before they were: unplug it and plug it in again."),
     qa("The live view or the controller stops responding",
-      "Turn the controller off and on again: hold Home and M for about 10 seconds, then turn it on and switch to green. Settings you changed are kept. This has been seen through the receiver right after a change, and is being looked into."),
+      "This has been seen right after a change, mostly through the receiver. Use Restart on the Buttons page: by cable it restarts the controller, through the receiver it restarts the receiver. Nothing is changed or erased, and settings are kept.",
+      "If that doesn't help, turn the controller off and on: hold Home and M for about 10 seconds, turn it on, and switch to green."),
     qa("Bluetooth doesn't find it",
       "Put the controller in Android mode: hold Home and A for 2 seconds until the light flashes yellow. Pair it once in your system's Bluetooth settings, then use Find controllers here."),
     qa("Switching to update mode doesn't work",

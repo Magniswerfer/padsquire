@@ -184,7 +184,7 @@ Read-only results from one controller (firmware 7701), i.e. its out-of-the-box v
 | Setting | Value | What it says about units |
 |---|---|---|
 | Dead zones, stick inner / outer / anti | 5 / 0 / 0 | |
-| Dead zones, trigger front / back | 5 / 95 | percent on a 0–100 scale; "back" looks like the full-press point, not an end dead zone (unconfirmed) |
+| Dead zones, trigger front / back | 5 / 95 | percent; **"back" is the full-press point** (confirmed 2026-10-23: held halfway, the trigger reads ~34%, so it is not a 95% end dead zone): the end dead zone is 100 − back. Every value 0–255 is stored exactly, for all dead zones |
 | Vibration, grips / triggers | 75 / 0 | percent, **not** 0–4 |
 | Features (`0x23`) | all off except auto-power-on-dock | |
 | Host info battery | `0x52` = 82, bit 7 clear | on the cable, yet "not charging" by the bit-7 rule; basic info byte 18 said `0xff` |

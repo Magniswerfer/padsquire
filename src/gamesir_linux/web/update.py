@@ -204,6 +204,37 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
 
         return ok(st.start("enter", work).snapshot())
 
+    @routes.post("/api/update/reboot")
+    async def reboot(request):
+        """Restart the connected controller (by cable) or receiver, through update mode and straight
+        out again. Nothing is erased or written; it takes a few seconds."""
+        d = await body(request)
+        if d.get("confirm") is not True:
+            return fail("confirmation required")
+        if not Path("/sys/class/scsi_generic").exists():
+            return fail("restarting needs the sg kernel module; see Setup and help", 409)
+        path = session.address if session.mode == "usb" else None
+        if path is None:
+            return fail("connect the controller by cable or through the receiver first", 409)
+        device = "receiver" if session.via == "dongle" else "controller"
+        async with session.lock:
+            await session.disconnect()
+
+        def work(job: Job):
+            job.progress("Switching to update mode", 0, 3)
+            updatemode.enter(path)
+            job.progress("Restarting", 1, 3)
+            dev, boot = updatemode.open_device()
+            try:
+                updatemode.restart(boot, st.loader_cache)
+            finally:
+                dev.close()
+            job.progress("Waiting for it to come back", 2, 3)
+            updatemode.wait_for_normal_mode(25, receiver=device == "receiver")
+            job.add(f"The {device} restarted.")
+            return {"device": device}
+        return ok(st.start("reboot", work).snapshot())
+
     @routes.post("/api/update/identify")
     async def do_identify(_):
         return ok(st.start("identify", with_device(identify)).snapshot())
