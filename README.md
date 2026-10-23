@@ -109,6 +109,8 @@ Found on firmware 8201. The app works around each one:
   keeps its value. The app shows them read-only. Bluetooth is not tested yet.
 - **Outer dead zone above 25% is broken.** The stick at full tilt comes out on the opposite side.
   The app stops at 25%.
+- **The anti-dead zone has no effect by cable or receiver.** The controller stores the value
+  but doesn't use it. Bluetooth is not tested yet.
 - **Vibration strength goes in steps of 25%.** Other values are rounded down. The Nova 2 Lite has
   two vibration motors, in the grips, and none in the triggers.
 - **Remapping takes buttons only:** a button can't act as a stick direction or be switched off.

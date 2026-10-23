@@ -472,55 +472,70 @@ function panelBackButtons() {
   return wrap;
 }
 
-// stick dead-zone picture: outer rim = full travel
-function deadZonePicture() {
-  const svg = s("svg", { class: "dz", viewBox: "0 0 160 160", role: "img" });
-  const outer = s("circle", { class: "outer", cx: 80, cy: 80, r: 70 });
-  const live = s("circle", { class: "live", cx: 80, cy: 80, r: 70 });
-  const inner = s("circle", { class: "inner", cx: 80, cy: 80, r: 0 });
-  const anti = s("circle", { class: "anti", cx: 80, cy: 80, r: 0 });
-  const rim = s("circle", { class: "rim", cx: 80, cy: 80, r: 70 });
-  const dot = s("circle", { class: "dot", cx: 80, cy: 80, r: 3 });
-  svg.append(outer, live, inner, anti, rim, dot);
-  const update = ({ inner: i, outer: o, anti: a }) => {
-    live.setAttribute("r", Math.max(0, 70 * (1 - o / 100)));
-    inner.setAttribute("r", 70 * Math.min(i, 100) / 100);
-    anti.setAttribute("r", 70 * Math.min(a, 100) / 100);
-    svg.setAttribute("aria-label", `Inner dead zone ${i}%, outer dead zone ${o}%, anti-dead zone ${a}%`);
+// stick response curve: how far the stick is pushed (across) against what the computer gets (up).
+// Assumes the usual scaling: output rises evenly from the inner dead zone to full at the outer one.
+// `anti` is drawn only where the controller applies it (not by cable or receiver, firmware 8201).
+function responseCurve(antiApplied) {
+  const X0 = 30, Y0 = 136, W = 160, H = 124;              // plot area: (X0, Y0) is travel 0, output 0
+  const px = (t) => X0 + W * t / 100, py = (o) => Y0 - H * o / 100;
+  const svg = s("svg", { class: "curve", viewBox: "0 0 200 168", role: "img" });
+  const low = s("rect", { class: "ignored", y: py(100), height: H });
+  const high = s("rect", { class: "ignored", y: py(100), height: H });
+  const axes = s("path", { class: "axis", d: `M${X0} ${py(100)} V${Y0} H${X0 + W}` });
+  const line = s("polyline", { class: "line" });
+  const dot = s("circle", { class: "dot", r: 4, cx: px(0), cy: py(0) });
+  const label = (x, y, text, extra = {}) => { const t = s("text", { x, y, ...extra }); t.textContent = text; return t; };
+  svg.append(low, high, axes, line, dot,
+    label(X0 + W / 2, 160, "Stick pushed", { "text-anchor": "middle" }),
+    label(14, py(50), "Output", { "text-anchor": "middle", transform: `rotate(-90 14 ${py(50)})` }),
+    label(X0 - 4, py(100) + 4, "100", { "text-anchor": "end", class: "tick" }),
+    label(X0 - 4, Y0 + 4, "0", { "text-anchor": "end", class: "tick" }));
+  let z = { inner: 0, outer: 0, anti: 0 };
+  const update = (values) => {
+    z = { ...values, anti: antiApplied ? values.anti : 0 };
+    const full = 100 - z.outer;
+    low.setAttribute("x", px(0)); low.setAttribute("width", px(z.inner) - px(0));
+    high.setAttribute("x", px(full)); high.setAttribute("width", px(100) - px(full));
+    line.setAttribute("points", [[0, 0], [z.inner, 0], [z.inner, z.anti], [full, 100], [100, 100]]
+      .map(([t, o]) => `${px(t)},${py(o)}`).join(" "));
+    svg.setAttribute("aria-label", `Inner dead zone ${values.inner}%, outer dead zone ${values.outer}%, anti-dead zone ${values.anti}%`);
   };
-  // live stick position, -1..1 per axis (y: up is negative), clamped to the rim
-  const move = (x, y) => {
-    const m = Math.hypot(x, y);
-    const k = m > 1 ? 1 / m : 1;
-    dot.setAttribute("cx", 80 + 70 * x * k);
-    dot.setAttribute("cy", 80 + 70 * y * k);
-    return Math.min(m, 1);
+  // live output, 0..1: placed on the curve, at the least stick travel that gives it
+  const show = (m) => {
+    const o = 100 * Math.min(m, 1), full = 100 - z.outer;
+    const t = o <= 0 ? 0 : o >= 100 ? full : o <= z.anti ? z.inner
+      : z.inner + (o - z.anti) / (100 - z.anti) * (full - z.inner);
+    dot.setAttribute("cx", px(t)); dot.setAttribute("cy", py(o));
+    return Math.round(o);
   };
-  return { svg, update, move };
+  return { svg, update, show };
 }
 
 function panelSticks() {
   const d = app.dev;
   const wrap = h("div", {},
     h("h1", {}, "Sticks"),
-    h("p", { class: "lede" }, "Dead zones decide how far a stick must move before it counts, and where it reaches full tilt. Shaded areas are ignored."));
+    h("p", { class: "lede" }, "Dead zones decide how far a stick must move before it counts, and where it reaches full tilt."));
   const pair = h("div", { class: "pair" });
   const live = [];
+  // Firmware 8201 stores the anti-dead zone but doesn't apply it by cable or receiver (2026-10-23).
+  const antiApplied = app.status.mode !== "usb";
   for (const [side, prefix, axes] of [["Left stick", "LEFT", ["lx", "ly"]], ["Right stick", "RIGHT", ["rx", "ry"]]]) {
     const zones = { inner: `${prefix}_STICK_INNER`, outer: `${prefix}_STICK_OUTER`, anti: `${prefix}_STICK_ANTI` };
     const entries = Object.fromEntries(Object.entries(zones).map(([k, z]) => [k, d.dead_zones[z]]));
     const values = Object.fromEntries(Object.entries(entries).map(([k, e]) => [k, val(e) ?? 0]));
-    const pic = deadZonePicture();
+    const pic = responseCurve(antiApplied);
     pic.update(values);
     const readout = h("p", { class: "live-readout", "aria-live": "off" });
-    live.push((st) => { readout.textContent = `Tilt ${Math.round(100 * pic.move(st[axes[0]], st[axes[1]]))}%`; });
+    live.push((st) => { readout.textContent = `Output ${pic.show(Math.hypot(st[axes[0]], st[axes[1]]))}%`; });
     const col = h("div", {}, h("h2", {}, side), pic.svg, readout,
-      h("div", { class: "legend" }, h("span", {}, h("i"), "Ignored"), h("span", {}, h("i", { class: "a" }), "Output starts here")));
+      h("div", { class: "legend" }, h("span", {}, h("i"), "Stick travel that is ignored"), h("span", {}, h("i", { class: "a" }), "What the computer gets")));
     const rows = h("div", { class: "rows" });
     const spec = [
       ["inner", "Inner dead zone", "Movement near the centre is ignored"],
       ["outer", "Outer dead zone", "Full tilt is reached this far before the edge"],
-      ["anti", "Anti-dead zone", "Output jumps to this value as soon as the stick moves"],
+      ["anti", "Anti-dead zone", antiApplied ? "Output jumps to this value as soon as the stick moves"
+        : "Stored, but the controller ignores it by cable and through the receiver"],
     ];
     for (const [key, label, help] of spec) {
       const zone = zones[key];
@@ -538,7 +553,7 @@ function panelSticks() {
   wrap.append(pair, h("h2", {}, "Both sticks"), h("div", { class: "rows" },
     featureToggle("SWAP_STICKS", "Swap left and right stick"),
     featureToggle("SWAP_LEFT_STICK_DPAD", "Swap left stick and D-pad")));
-  wrap.append(h("p", { class: "note" }, liveNote("The dot shows where each stick is now, as the computer receives it. ") +
+  wrap.append(h("p", { class: "note" }, liveNote("The line shows what the computer gets for each amount of stick travel, and the dot shows each stick now. ") +
     "The outer dead zone stops at 25%: above that the controller's firmware gets full tilt wrong, and the stick jumps to the opposite side."));
   app.live = (st) => live.forEach((f) => f(st));
   return wrap;

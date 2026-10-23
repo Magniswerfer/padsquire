@@ -358,19 +358,19 @@ input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer;
 .pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1.75rem; margin-top: 1rem; }
 .pair h2 { margin-top: 0; }
 .pair > div > h2 { margin: 0 0 .75rem; }
-.dz {
-  display: block; width: 100%; max-width: 13rem; height: auto; aspect-ratio: 1; margin: 0 auto .75rem; padding: 1rem;
+.curve {
+  display: block; width: 100%; max-width: 17rem; height: auto; margin: 0 auto .75rem; padding: .75rem;
   background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-m);
+  font: 500 9px var(--body); fill: var(--muted);
 }
-.dz .rim { fill: none; stroke: var(--plastic-edge); stroke-width: 1.5; }
-.dz .outer { fill: var(--ignored); }
-.dz .live { fill: var(--panel); }
-.dz .inner { fill: var(--ignored); }
-.dz .anti { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 3 3; }
-.dz .dot { fill: var(--accent); stroke: var(--panel); stroke-width: 1.5; }
+.curve .ignored { fill: var(--ignored); }
+.curve .axis { fill: none; stroke: var(--plastic-edge); stroke-width: 1.25; }
+.curve .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+.curve .dot { fill: var(--accent); stroke: var(--panel); stroke-width: 1.5; }
+.curve .tick { font-size: 8px; }
 .legend { display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center; color: var(--muted); font-size: .8125rem; margin: -.25rem 0 1rem; }
 .legend i { display: inline-block; width: .75rem; height: .75rem; border-radius: 3px; margin-right: .375rem; vertical-align: -1px; background: var(--ignored); }
-.legend i.a { background: none; border: 1.5px dashed var(--accent); border-radius: 50%; }
+.legend i.a { background: none; height: 0; border-top: 2px solid var(--accent); border-radius: 0; vertical-align: 3px; }
 
 .travel {
   position: relative; height: 2.25rem; border: 1px solid var(--line-strong); border-radius: var(--radius-s);
