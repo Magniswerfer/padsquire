@@ -49,6 +49,7 @@ class Loader:
     address: int
     url: str
     sha256: str
+    ram_end: int            # the loader must fit below this
     block: int = 512
 
 
@@ -56,9 +57,14 @@ _JLUT = "https://raw.githubusercontent.com/kagaimiq/jl-uboot-tool/adb3f18889e88a
 LOADERS = {
     # Same load address as JieLi's own updater uses for br23 (jl_firmware_upgrade_x86.dll).
     "br23": Loader("br23", 0x12000, f"{_JLUT}/data/loaderblobs/usb/br23loader.bin",
-                   "7384429e33ee1f340fbffe46aa928a0099c163e1374a40f6f9f27468a6f16ddf"),
+                   "7384429e33ee1f340fbffe46aa928a0099c163e1374a40f6f9f27468a6f16ddf",
+                   ram_end=0x2C000),            # BR23 ram0
+    # The 2.4 GHz receiver (AC632N). Same address as JieLi's DLL uses for bd19. jl-uboot-tool has
+    # no memory map for it; the bound is conservative (the loader ends at 0x7A00).
+    "bd19": Loader("bd19", 0x2000, f"{_JLUT}/data/loaderblobs/usb/bd19loader.bin",
+                   "faa1b519a3ff1b082f11ccafac8c73d31150161ac972ef9f1934002bcbb8df4f",
+                   ram_end=0x10000),
 }
-RAM_END = 0x2C000           # BR23 ram0; the loader must fit below this
 LOADER_ARG = 0x0001         # SPI NOR flash, default clock, half-duplex SPI
 
 
@@ -199,7 +205,7 @@ class JLBoot:
             return False
 
     def upload_loader(self, loader: Loader, blob: bytes) -> None:
-        if loader.address + len(blob) > RAM_END:
+        if loader.address + len(blob) > loader.ram_end:
             raise JLBootError("loader does not fit in RAM")
         for off in range(0, len(blob), loader.block):
             block = blob[off:off + loader.block]

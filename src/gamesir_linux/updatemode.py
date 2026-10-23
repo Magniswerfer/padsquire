@@ -97,13 +97,33 @@ def enter(hid_path: str, timeout: float = 20.0) -> jlboot.UbootDevice:
     return wait_for_download_mode(before, timeout)
 
 
-def wait_for_normal_mode(timeout: float) -> list[hid.HidDevice]:
+RECEIVER_PIDS = {0x2106, 0x1098}       # idle, and carrying a green-mode controller
+
+
+def receiver_present(sys_root: Path = Path("/sys")) -> bool:
+    for dev in (sys_root / "bus" / "usb" / "devices").glob("*"):
+        try:
+            if (int((dev / "idVendor").read_text(), 16) == hid.VENDOR_ID
+                    and int((dev / "idProduct").read_text(), 16) in RECEIVER_PIDS):
+                return True
+        except (OSError, ValueError):
+            continue
+    return False
+
+
+def wait_for_normal_mode(timeout: float, receiver: bool = False) -> list[hid.HidDevice]:
+    """Wait until download mode is gone and the controller's cable interface (or, for the
+    receiver, the receiver in any normal identity) is back."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if not jlboot.find():
-            found = [d for d in hid.find() if d.link == "cable"]
-            if found:
-                return found
+            if receiver:
+                if receiver_present():
+                    return [d for d in hid.find() if d.pid == 0x1098]
+            else:
+                found = [d for d in hid.find() if d.link == "cable"]
+                if found:
+                    return found
         time.sleep(0.5)
     if jlboot.find():
         raise Failed("it is still in download mode. Unplug it and hold Home + M for about 10 seconds, "

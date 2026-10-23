@@ -454,6 +454,13 @@ like the controller's. Layout (4 KB variant): code `0x0`–`0x29FFF`, `VM` `0x2A
 The 256-byte variant puts `VM` at `0x28700` and `BTIF` at `0x3BF00`; writing it would need
 256-byte erases, which `jlwrite` does not do.
 
+**Support in the tools (not yet run on the receiver):** `jlboot` knows the bd19 loader (pinned,
+SHA-256 checked); `jlflash` takes the firmware area of an image without `PRCT` as running from
+its placement (the `app_dir_head` CRC tag) up to `VM`, and refuses a layout that is not on 4 KB
+boundaries; `jlwrite.burn` handles a header at 0 the way JieLi does (copy into `0x1000` first,
+sector 0 then `0x1000` last); `gamesir-linux uboot enter --receiver` sends `f2 00 04 f6` on
+`0x1098`, and `restart --receiver` waits for the receiver to come back.
+
 ## Firmware files
 
 **Where new firmware comes from:** GameSir Connect contains a remote firmware feed

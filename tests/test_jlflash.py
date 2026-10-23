@@ -160,3 +160,45 @@ def test_real_backup_and_firmware():
     choice = safety.choose_flash_image(os.environ["GAMESIR_UFW"], os.environ["GAMESIR_BACKUP"])
     assert choice.errors == [] and choice.partition == "flash2.bin"
     assert (choice.start, choice.end) == (0x1000, 0x64000)
+
+
+# -- the 2.4 GHz receiver: header at 0, no PRCT entry, 256 KB ---------------------------------------
+
+def make_receiver_image(vm=(0x2A000, 0x11000), key=KEY, placement=0xFFFF, seed=1) -> bytes:
+    """Shaped like the receiver's flash.bin: laid out from 0, the firmware area ends at VM."""
+    files = [_entry("uboot.boot", 0x19, 0xA0, 0x12DF), _entry("isd_config.ini", 0xE0, 0x137F, 0x90),
+             _entry("app_dir_head", 0x01, 0x2000, 0xFFFFFFFF, crc=placement),
+             _entry("key_mac", 0xB6, 0x3F000, 0x1000)]
+    areas = [_entry("app.bin", 0x52, 0x120, 0x25D60), _entry("VM", 0x6E, *vm),
+             _entry("BTIF", 0x04, 0x3B000, 0x1000), _entry("EXIF", 0x8A, 0x3C000, 0x1000),
+             _entry("USERIF", 0x6E, 0x3D000, 0x2000), ALL_FF]
+    img = bytearray(b"\xff" * vm[0])
+    img[0x100:0x1400] = random.Random(seed + 100).randbytes(0x1300)     # uboot.boot, isd_config.ini
+    img[0x2400:len(img) - 0x100] = random.Random(seed).randbytes(len(img) - 0x2500)
+    img[0:32] = HEADER
+    for i, e in enumerate(files):
+        img[32 * (i + 1):32 * (i + 2)] = jlcrypt.enc(e, 0xFFFF)
+    for i, e in enumerate(areas):
+        img[0x2000 + 32 * i:0x2000 + 32 * (i + 1)] = jlcrypt.enc(e, key ^ ((32 * i) >> 2))
+    return bytes(img)
+
+
+def make_receiver_dump(image: bytes) -> bytes:
+    flash = bytearray(b"\xff" * 0x40000)
+    flash[:len(image)] = image
+    flash[0x2A000:0x2A010] = b"\x55\xaa\xaa\x55" + bytes(12)          # VM
+    flash[0x3B000:0x3B010] = bytes(range(16))                         # BTIF
+    return bytes(flash)
+
+
+def test_receiver_layout_and_update_check():
+    device = jlflash.find(make_receiver_dump(make_receiver_image()), KEY)
+    assert device.base == 0 and device.code == (0, 0x2A000)
+    assert device.area("BTIF") == (0x3B000, 0x3C000)
+    plan = jlflash.check_update(device, make_receiver_image(seed=2), KEY)
+    assert plan.ok and (plan.start, plan.end) == (0, 0x2A000), plan.problems
+    # An image meant for 0x1000 is refused, as is the 256-byte layout.
+    assert not jlflash.check_update(device, make_receiver_image(placement=0x00FF), KEY).ok
+    odd = jlflash.find(make_receiver_dump(make_receiver_image(vm=(0x28700, 0x13800))), KEY)
+    problems = jlflash.check_update(odd, make_receiver_image(vm=(0x28700, 0x13800), seed=2), KEY).problems
+    assert any("256-byte erases" in p for p in problems)

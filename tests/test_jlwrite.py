@@ -173,3 +173,18 @@ def test_cli_flash_installs_an_update(chip, tmp_path, capsys):
     assert bytes(chip.flash[0x1000:0x64000]) == expected
     assert bytes(chip.flash[0x64000:]) == OLD[0x64000:]
     assert "flash2.bin at 0x1000-0x63fff" in capsys.readouterr().out
+
+
+def test_burn_with_the_header_at_zero_uses_sector_0x1000_as_spare(cache):
+    from test_jlflash import make_receiver_dump, make_receiver_image
+    old = make_receiver_dump(make_receiver_image(key=CHIP_KEY))
+    new = make_receiver_image(key=CHIP_KEY, seed=2)
+    dev = FakeUboot(old, jedec=0x1240C8, buffer_size=0x8000)
+    boot = jlboot.JLBoot(dev.execute)
+    jlboot.start(boot, cli_uboot.LOADER_CACHE)
+    w = jlwrite.Writer(boot, 0, len(new), keep=[(len(new), len(old))])
+    jlwrite.burn(w, new, 0)
+    assert bytes(dev.flash[:len(new)]) == new and bytes(dev.flash[len(new):]) == old[len(new):]
+    assert dev.writes[:3] == [("erase", 0x1000, 0x1000), ("write", 0x1000, 0x40), ("erase", 0, 0x1000)]
+    assert dev.writes[-4:] == [("erase", 0, 0x1000), ("write", 0, 0x1000),
+                               ("erase", 0x1000, 0x1000), ("write", 0x1000, 0x1000)]

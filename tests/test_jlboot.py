@@ -12,7 +12,7 @@ JEDEC = 0x1240C8            # as online_device() decodes it: capacity 0x12 = 256
 CHIP_KEY = 0x1234
 LOADER_BLOB = random.Random(1).randbytes(1300)        # 3 blocks, last one short
 LOADER = jlboot.Loader("br23", 0x12000, "https://example.invalid/br23loader.bin",
-                       hashlib.sha256(LOADER_BLOB).hexdigest())
+                       hashlib.sha256(LOADER_BLOB).hexdigest(), ram_end=0x2C000)
 FORBIDDEN = [0xFB00, 0xFB01, 0xFB02, 0xFB42, 0xFB04, 0xFC12, 0xFC0D, 0xFC00]
 
 

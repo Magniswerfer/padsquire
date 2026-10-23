@@ -88,17 +88,22 @@ def a_enter(args) -> int:
         print(ENTER_WARNING, file=sys.stderr)
         return 2
     path = args.device
+    what = "2.4 GHz receiver" if args.receiver else "cable"
     if not path:
-        cables = [d.path for d in hid.find() if d.link == "cable"]
-        if not cables:
-            raise hid.HidError("no Nova 2 Lite on the cable. Connect it and switch to PC/Xbox mode "
-                               "(hold Menu + View until the LED is green), or pass --device")
-        if len(cables) > 1:
-            raise hid.HidError("several controllers on the cable, pick one with --device: " + ", ".join(cables))
-        path = cables[0]
+        found = [d.path for d in hid.find() if (d.pid == 0x1098) == args.receiver]
+        if not found:
+            raise hid.HidError(f"no Nova 2 Lite on the {what}. Switch it to PC/Xbox mode (hold Menu + View "
+                               "until the LED is green), or pass --device")
+        if len(found) > 1:
+            raise hid.HidError(f"several on the {what}, pick one with --device: " + ", ".join(found))
+        path = found[0]
     # Make sure it answers like a Nova 2 Lite before asking it to change mode.
     info = asyncio.run(_controller_info(path))
-    print(f"controller    Nova 2 Lite on {path}, firmware {info.firmware_version}, MAC {info.mac}")
+    if args.receiver:
+        # Through the receiver, basic info is the receiver's, and the update command reaches it.
+        print(f"receiver      on {path}, firmware {info.firmware_version} (the receiver goes into update mode)")
+    else:
+        print(f"controller    Nova 2 Lite on {path}, firmware {info.firmware_version}, MAC {info.mac}")
     print("sending the update-mode command; waiting for the controller to come back as a USB disk...")
     d = updatemode.enter(path, args.wait)
     print(f"download mode {d.path}  {d.vendor} {d.product}")
@@ -139,9 +144,9 @@ def a_restart(args) -> int:
         updatemode.restart(boot, LOADER_CACHE)
     finally:
         dev.close()
-    print("asked the controller to restart; waiting for it to come back in normal mode...")
-    found = updatemode.wait_for_normal_mode(args.wait)
-    print("back in normal mode: " + ", ".join(f"{d.path} ({d.link})" for d in found))
+    print("asked it to restart; waiting for it to come back in normal mode...")
+    found = updatemode.wait_for_normal_mode(args.wait, receiver=args.receiver)
+    print("back in normal mode" + (": " + ", ".join(f"{d.path} ({d.link})" for d in found) if found else ""))
     return 0
 
 
@@ -235,6 +240,8 @@ def register(sub) -> None:
 
     e = acts.add_parser("enter", help="switch the controller on the cable into download mode")
     e.add_argument("--confirm", action="store_true", help="really send the command")
+    e.add_argument("--receiver", action="store_true",
+                   help="the 2.4 GHz receiver instead of the controller (controller in green mode, linked)")
     e.add_argument("--device", help="hidraw node of the cable's config interface (default: find it)")
     e.add_argument("--wait", type=float, default=20.0, help="seconds to wait for the disk (default 20)")
     e.set_defaults(run=a_enter)
@@ -278,6 +285,7 @@ def register(sub) -> None:
     r = acts.add_parser("restart", help="leave download mode and boot the firmware in flash")
     r.add_argument("--device", help="SCSI generic node, e.g. /dev/sg2 (default: find it)")
     r.add_argument("--wait", type=float, default=20.0, help="seconds to wait (default 20)")
+    r.add_argument("--receiver", action="store_true", help="it is the 2.4 GHz receiver that restarts")
     r.set_defaults(run=a_restart)
 
     p.set_defaults(func=run)

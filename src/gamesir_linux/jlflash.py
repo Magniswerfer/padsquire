@@ -29,6 +29,9 @@ HEADER_KEY = 0xFFFF
 # calibration (USERIF), and whatever EXIF holds. isd_config.ini marks them _OPT=1 ("keep").
 RESERVED = ("VM", "BTIF", "EXIF", "USERIF")
 CODE = "PRCT"
+# Where an image goes, by the CRC field of its app_dir_head entry, as JieLi's updater files them
+# (jl_firmware_upgrade_x86.dll, FUN_1000ded0): laid out from 0, from 0x1000 or from 0x10000.
+PLACEMENT = {0xFFFF: 0, 0x00FF: 0x1000, 0x0FFF: 0x10000, 0xFF00: 0x10000}
 
 
 class FlashError(ValueError):
@@ -73,7 +76,12 @@ class Layout:
 
     @property
     def code(self) -> tuple[int, int]:
-        return self.area(CODE)
+        """The firmware area: PRCT where the image declares it (the controller), otherwise from the
+        header up to the settings area (the 2.4 GHz receiver's images have no PRCT entry)."""
+        if CODE in self.areas:
+            return self.area(CODE)
+        head = next(e for e in self.files if e.name == "app_dir_head")
+        return PLACEMENT.get(head.crc, self.base), self.areas["VM"].offset
 
 
 def parse(data: bytes, base: int, chip_key: int) -> Layout:
@@ -98,7 +106,7 @@ def parse(data: bytes, base: int, chip_key: int) -> Layout:
         if not _named(e):
             break
         areas[e.name] = e
-    missing = [n for n in (CODE, *RESERVED) if n not in areas]
+    missing = [n for n in RESERVED if n not in areas]
     if missing:
         raise FlashError(f"app directory unreadable with chip key {chip_key:#06x} "
                          f"(missing {', '.join(missing)})")
@@ -126,6 +134,9 @@ def check_update(device: Layout, image: bytes, chip_key: int) -> UpdatePlan:
     except FlashError as e:
         return UpdatePlan(start, end, [f"the image doesn't fit this controller: {e}"])
 
+    if device.code[1] % 0x1000 or end % 0x1000:
+        problems.append(f"the firmware area ends at {device.code[1]:#x}, not on a 4 KB boundary: this "
+                        "layout needs 256-byte erases, which this tool does not do")
     if new.code[0] != device.code[0]:
         problems.append(f"the image's code starts at {new.code[0]:#x}, this controller's at "
                         f"{device.code[0]:#x}: it is built for the other layout")

@@ -94,12 +94,14 @@ def burn(writer: Writer, image: bytes, header: int,
          progress: Callable[[str, int, int], None] | None = None) -> None:
     """Write `image` from flash address 0, the way JieLi's updater does.
 
-    `image` covers [0, len) and its flash header sits at `header` (0x1000 on the Nova 2 Lite,
-    where sector 0 is spare). The window must be [0, len(image)). Raises WriteError if any
-    sector fails its CRC check afterwards; the caller decides whether to try again."""
+    `image` covers [0, len) and its flash header sits at `header`: 0x1000 on the controller,
+    where sector 0 is the spare, or 0 on the 2.4 GHz receiver, where 0x1000 is. The window must be
+    [0, len(image)). Raises WriteError if any sector fails its CRC check afterwards; the caller
+    decides whether to try again."""
     end = len(image)
-    if end % SECTOR or header % SECTOR or header == 0 or header >= end:
-        raise WriteError("the image must be whole sectors with its header after sector 0")
+    if end % SECTOR or header not in (0, SECTOR) or end < 3 * SECTOR:
+        raise WriteError("the image must be whole sectors, with its header at 0 or 0x1000")
+    spare = SECTOR if header == 0 else 0
     if (writer.lo, writer.hi) != (0, end):
         raise WriteError(f"the write window must be exactly {_span(0, end)}")
     sector = lambda a: image[a:a + SECTOR]
@@ -112,24 +114,23 @@ def burn(writer: Writer, image: bytes, header: int,
         if progress:
             progress(what, done, steps)
 
-    # 1. A copy of the header into sector 0, checked, so a header exists while its own sector
-    #    is rewritten. Only then is the header's sector erased.
+    # 1. A copy of the header into the spare sector, checked, so a header exists while its own
+    #    sector is rewritten. Only then is the header's sector erased.
     head = sector(header)[:0x40]
-    writer.erase(0)
-    writer.write(0, head)
-    if writer.boot.flash_crc16(0, len(head)) != jlcrypt.crc16(head):
-        raise WriteError("the header copy in sector 0 did not verify")
+    writer.erase(spare)
+    writer.write(spare, head)
+    if writer.boot.flash_crc16(spare, len(head)) != jlcrypt.crc16(head):
+        raise WriteError(f"the header copy in sector {spare:#x} did not verify")
     writer.erase(header)
     tick("header")
-    # 2. Everything above the header sector, top-down.
-    for addr in range(end - SECTOR, header, -SECTOR):
+    # 2. Everything from 0x2000 up, top-down.
+    for addr in range(end - SECTOR, 2 * SECTOR - 1, -SECTOR):
         writer.program(addr, sector(addr))
         tick(f"{addr:#x}")
-    # 3. The header sector, then sector 0 (and anything between them) last.
+    # 3. The header sector, then the spare sector, last.
     writer.program(header, sector(header))
-    for addr in range(header - SECTOR, -1, -SECTOR):
-        writer.program(addr, sector(addr))
-    tick("sector 0")
+    writer.program(spare, sector(spare))
+    tick("first two sectors")
     # 4. Every sector against the loader's CRC.
     bad = writer.mismatches(0, image)
     if bad:
