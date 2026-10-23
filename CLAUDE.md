@@ -10,12 +10,13 @@ controller (firmware 7701 and 8201) and its receiver (2800); Bluetooth is not ye
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -e '.[gui,test]'   # no system pip on this box; 7zip for update/extract
-pytest                                   # 183 tests; PADSQUIRE_INSTALLER=<setup.exe> adds a real-installer test,
+pytest                                   # 193 tests; PADSQUIRE_INSTALLER=<setup.exe> adds a real-installer test,
                                          # PADSQUIRE_BACKUP=<dump.bin> PADSQUIRE_UFW=<.ufw> a real layout check
 padsquire probe --guided             # read-only report of the controller in every mode -> JSON
 padsquire ble scan | info | deadzone | feature | vibration | sleep | restore
 padsquire usb ...                    # same actions over the cable (green LED mode), via hid.py
-padsquire gui [--simulate]           # browser app on 127.0.0.1
+padsquire gui [--simulate] [--tab]     # settings app on 127.0.0.1, own window; stops when closed
+padsquire menu [--remove] | udev-rules # app-menu entry; print the packaged udev rules
 padsquire update | extract | ufw | plan
 padsquire uboot find | enter --confirm | info | backup | restart   # download mode
 padsquire uboot test-write | restore | flash ... --confirm        # writes (need a backup)
@@ -40,6 +41,8 @@ padsquire uboot test-write | restore | flash ... --confirm        # writes (need
   `cli_uboot.py` and `web/update.py`, which runs them as background jobs for the Firmware page.
 - `web/setup.py`: Setup and help checks and `/api/devices` (sysfs polling for plug in/out).
   `web/update.py`: update-mode jobs (controller and receiver), including the restart button.
+- `desktop.py`: app-menu entry, own app window, packaged udev rules (`data/`). `install.sh`: the
+  curl installer (own venv in ~/.local/share/padsquire/venv). Releases: push a `v*` tag (PyPI).
 - `paths.py`: data and cache folders; moves the folders of the old project name once at startup.
 - `liveinput.py`: sticks, triggers and buttons from the xpad evdev node.
 - `probe.py`: read-only hardware probe. `PROTOCOL.md`: all protocol notes (CC BY-SA 4.0).

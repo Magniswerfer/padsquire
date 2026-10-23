@@ -34,31 +34,37 @@ Tested on one Nova 2 Lite (firmware 7701 and 8201) and its receiver (firmware 28
 
 ## Get started
 
-You need Linux with Python 3.11 or newer, and git.
+You need Linux and Python 3.11 or newer (most distributions have it). Run:
 
 ```sh
-git clone https://github.com/Magniswerfer/padsquire
-cd padsquire
-python3 -m venv .venv
-.venv/bin/pip install -e '.[gui]'
-.venv/bin/padsquire gui
+curl -fsSL https://raw.githubusercontent.com/Magniswerfer/padsquire/main/install.sh | sh
 ```
 
-What these do:
+`curl` downloads the [installer](install.sh) and `sh` runs it. You can also download it, read it
+first, and run it with `sh install.sh`. It needs no root, except for one step it asks about:
 
-- `git clone` downloads this project and `cd` goes into its folder.
-- `python3 -m venv .venv` makes a private Python environment in the `.venv` folder, so nothing
-  is installed system-wide ([venv](https://docs.python.org/3/library/venv.html)).
-- `pip install -e '.[gui]'` installs PadSquire into that environment, with the extras the app
-  needs: aiohttp for the web server and bleak for Bluetooth
-  ([pip install](https://pip.pypa.io/en/stable/cli/pip_install/)).
-- `padsquire gui` starts the app and opens it in your browser.
+1. It makes a private Python environment in `~/.local/share/padsquire/venv` and installs
+   PadSquire into it, so nothing is installed system-wide
+   ([venv](https://docs.python.org/3/library/venv.html)).
+2. It links the `padsquire` command into `~/.local/bin`.
+3. It adds PadSquire to your app menu.
+4. Only if you say yes, it installs a [udev](https://man7.org/linux/man-pages/man7/udev.7.html)
+   rule so you can use the controller without `sudo`. It shows the commands first; this is the
+   one step that asks for your password.
 
-Then open **Setup and help** in the app. It tells you what's still missing, usually a one-time
-permission rule so the controller can be used without `sudo`, and explains each command before
-you run it. Optional: `ln -s "$PWD/.venv/bin/padsquire" ~/.local/bin/` puts `padsquire`
-on your PATH. For an app-menu entry, copy `contrib/desktop/padsquire.desktop` to
-`~/.local/share/applications/`.
+Then open **PadSquire** from your app menu. It opens in its own window (with Chrome, Chromium,
+Brave, Edge or Vivaldi; otherwise in a browser tab) and stops by itself when you close it.
+**Setup and help** in the app tells you anything that's still missing, and explains each command
+before you run it.
+
+- **Update:** run the same command again.
+- **Remove:** `curl -fsSL https://raw.githubusercontent.com/Magniswerfer/padsquire/main/install.sh | sh -s -- --uninstall`.
+  Your firmware downloads and flash backups stay in `~/.local/share/padsquire`.
+- **With pipx** instead: `pipx install 'padsquire[gui]'`, then `padsquire menu` for the app-menu
+  entry ([pipx](https://pipx.pypa.io/)).
+- **From source**, for development: `git clone https://github.com/Magniswerfer/padsquire`, then in
+  that folder `python3 -m venv .venv && .venv/bin/pip install -e '.[gui,test]'` and
+  `.venv/bin/padsquire gui`.
 
 The app runs on `127.0.0.1` only and opens a one-time link. Other websites in your browser can't
 reach it: the server rejects requests without the link's session cookie, requests for any other

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 from pathlib import Path
 
 from .. import desktop, hid, installer, jlboot
@@ -169,10 +170,11 @@ def checks(fw_dir: Path) -> list[dict]:
                 **_cmd(None if ble and bluez else
                        _with(install_command("bluez"), "BlueZ is Linux's Bluetooth system.",
                              _doc("BlueZ", "https://github.com/bluez/bluez")) if ble else
-                       (".venv/bin/pip install -e '.[gui]'",
-                        ["Run it in the padsquire folder. pip installs this app again with its gui extras, "
-                         "which include bleak, the Bluetooth library it uses. It only changes the app's own "
-                         ".venv folder, not the system."],
+                       (f"{sys.executable} -m pip install 'padsquire[gui]'",
+                        ["This runs pip from PadSquire's own Python environment and installs PadSquire again "
+                         "with its gui extras, which include bleak, the Bluetooth library it uses. It only "
+                         "changes PadSquire's own environment, not the system. Running the installer again "
+                         "does the same."],
                         [_doc("pip install", "https://pip.pypa.io/en/stable/cli/pip_install/"),
                          _doc("bleak", "https://bleak.readthedocs.io/")]))})
 
