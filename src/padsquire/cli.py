@@ -152,7 +152,7 @@ def main(argv=None) -> int:
     e.set_defaults(func=cmd_extract)
 
     from .updater import FEED_URL
-    up = sub.add_parser("update", help="fetch the newest firmware via GameSir Connect's update feed")
+    up = sub.add_parser("update", help="check for new official firmware and download it")
     up.add_argument("--check", action="store_true", help="only report whether a newer release exists")
     up.add_argument("--force", action="store_true", help="re-download even if already current")
     up.add_argument("--firmware-dir", type=Path, default=DEFAULT_FW_DIR)

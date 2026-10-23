@@ -823,7 +823,7 @@ async function panelFirmware() {
 
   const status = h("p", { class: "note", "aria-live": "polite" });
   const check = h("button", { class: "btn", onclick: async () => {
-    check.disabled = true; status.textContent = "Checking GameSir's update feed…";
+    check.disabled = true; status.textContent = "Checking for new official firmware…";
     try {
       const r = await api("/api/firmware/check", {});
       status.textContent = r.update_available

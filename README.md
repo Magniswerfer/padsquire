@@ -1,7 +1,8 @@
 # PadSquire
 
-Configure and update the GameSir **Nova 2 Lite** on Linux, without Windows or GameSir Connect.
-Unofficial: built by reverse-engineering GameSir Connect (Windows) and the GameSir Android app.
+**Linux tools for GameSir controllers.** Configure and update the GameSir **Nova 2 Lite** on Linux,
+without Windows. Unofficial and open source, built for interoperability by studying how the
+controller talks over USB and Bluetooth.
 
 ![The settings app, Sticks page](docs/screenshot.png)
 
@@ -76,8 +77,8 @@ internet.
 
 ## Firmware updates
 
-On the app's **Firmware** page: download the firmware (fetched from GameSir's own update feed and
-checked against its checksums), switch the controller or the receiver to update mode, make a
+On the app's **Firmware** page: download the firmware (the app checks for new official firmware
+and verifies its checksums), switch the controller or the receiver to update mode, make a
 backup, install, restart. The controller's firmware is installed by cable; the receiver's through
 the receiver itself.
 

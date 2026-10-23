@@ -1,7 +1,10 @@
 <!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
 # GameSir Nova 2 Lite — protocol notes
 
-Reverse-engineering notes for a Linux-native config and firmware tool.
+Protocol notes behind PadSquire, a Linux configuration and firmware tool. They were made for
+interoperability, so that the controller can be used with Linux, as EU law allows
+(Software Directive 2009/24/EC, Article 6).
+
 Sources: GameSir Connect 1.14.5 and 1.16.7 (Windows, Electron) and GameSir app 5.8.20 (Android).
 Status: most of this is now **confirmed on hardware** (a Nova 2 Lite on firmware 7701 and 8201, and
 its receiver on 2800); sections say what was confirmed and when. Bluetooth is still static analysis only.

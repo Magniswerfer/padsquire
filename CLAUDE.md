@@ -2,8 +2,8 @@
 
 Linux tools for the GameSir **Nova 2 Lite** (GameSir model code T4N2): a browser settings app (the
 main interface) and a CLI, for configuration by cable, through the 2.4 GHz receiver or over
-Bluetooth, and firmware updates of the controller and the receiver. Built by reverse-engineering
-GameSir Connect 1.14.5/1.16.7 (Windows) and the GameSir Android app 5.8.20. Tested on one
+Bluetooth, and firmware updates of the controller and the receiver. Built for interoperability
+by studying GameSir Connect 1.14.5/1.16.7 (Windows) and the GameSir Android app 5.8.20. Tested on one
 controller (firmware 7701 and 8201) and its receiver (2800); Bluetooth is not yet tested on hardware.
 
 ## Commands
@@ -42,7 +42,7 @@ padsquire uboot test-write | restore | flash ... --confirm        # writes (need
   `web/update.py`: update-mode jobs (controller and receiver), including the restart button.
 - `paths.py`: data and cache folders; moves the old `gamesir-linux` folders once at startup.
 - `liveinput.py`: sticks, triggers and buttons from the xpad evdev node.
-- `probe.py`: read-only hardware probe. `PROTOCOL.md`: all reverse-engineering notes.
+- `probe.py`: read-only hardware probe. `PROTOCOL.md`: all protocol notes (CC BY-SA 4.0).
 
 ## Status and open questions
 
@@ -77,6 +77,9 @@ Open:
   in code once confirmed.
 - No GameSir files in the repo (`*.ufw`, `*.exe` are gitignored).
 - Keep the user-facing copy plain and in sentence case.
+- The project is PadSquire ("Linux tools for GameSir controllers"). Use "GameSir" only for what it
+  works with, never as part of our own name. Public wording leads with interoperability, not with
+  how the protocol was found; technical detail belongs in PROTOCOL.md.
 - The settings app is the product: a new capability gets its GUI path, its Setup and help entry
   and its troubleshooting text, not just a CLI command.
 - Every command shown to users explains each part in plain words (what sudo is for, what gets
