@@ -194,19 +194,61 @@ Read-only results from one controller (firmware 7701), i.e. its out-of-the-box v
 
 Still to decode: the `f5` gamepad-param and `f6` macro layouts.
 
-### 3. USB firmware update: JieLi "UDisk" mode
+### 3. USB firmware update: JieLi UBOOT1.00 (decoded from the DLLs, not yet run)
 
-Flow in GameSir Connect:
-1. The controller is put into update mode: hold **M + X + B** while plugging in,
-   or the DLL sends `SetISPMode` ("Switch MCU UDisk").
-2. It re-enumerates as a USB mass-storage device.
-3. JieLi's own `jl_firmware_upgrade_x86.dll` ("Firmware Upgrade DLL 1.21") pushes the `.ufw`
-   file with SCSI pass-through using vendor opcodes `0xFD 0xFB 0xFC`.
+Decoded 2026-10-23 from `sapjoyuniapis_t4n2_x86_v2608251.dll` (GameSir) and
+`jl_firmware_upgrade_x86.dll` (JieLi), cross-checked against
+[kagaimiq/jl-uboot-tool](https://github.com/kagaimiq/jl-uboot-tool) (MIT) and its docs.
 
-On Linux this is `SG_IO` on `/dev/sg*`, no kernel driver needed.
-Prior art: [kagaimiq/jl-uboot-tool](https://github.com/kagaimiq/jl-uboot-tool) (MIT) speaks
-JieLi's USB loader protocol and lists AC695N as working. It's worth trying first for a
-**full flash dump**, which would give a backup to restore from.
+**Entering update mode.** For PID `0x100F` GameSir's `UpdateFirmware` writes **`f2 00 04 f6`**
+on the `0xFF7A` HID channel (a GCM-style frame: command `f2`, length 4, checksum), closes the
+handle and waits for a mass-storage device ("existUDisk"). `SetISPMode` does nothing for this PID.
+Older notes also list holding **M + X + B** while plugging in. On BR23 chips the firmware can only
+hand over to the **mask-ROM "UBOOT1.00" download mode** (via an NVRAM boot tag), so the controller
+should re-enumerate as a USB disk whose SCSI INQUIRY says vendor `BR23`, product `UBOOT1.00`.
+The ROM calibrates its clock from USB SOF packets, which other full/low-speed devices on the same
+bus can disturb; a USB 2.0 hub isolates it.
+
+**Recovery.** UBOOT1.00 is in mask ROM, and a BR23 that finds no valid firmware in flash enters
+it by itself. An interrupted flash should therefore leave the controller recoverable over USB.
+Not yet verified on this controller.
+
+**Protocol.** SCSI vendor commands over `SG_IO` (16-byte CDBs, big-endian fields):
+
+| CDB | Meaning | JieLi DLL method |
+|---|---|---|
+| `FB 06 addr32 size16 – crc16` | write RAM (loader upload; BR23 ROM wants MengLi-encrypted data) | `FUN_1000ae40` |
+| `FD 07 addr32 size16` | read RAM | `FUN_1000ad80` |
+| `FB 08 addr32 arg16` | jump (start the loader) | `FUN_1000b190` |
+| `FC 0A` | online device: flash type and JEDEC ID | `FUN_1000c140` |
+| `FC 09 AC 69 00` | read chip key, unlocks flash reads | `FUN_1000c4d0` |
+| `FC 14` | USB buffer size | `FUN_1000c6e0` |
+| `FD 05 addr32 size16` | read flash (loader) | |
+| `FB 01 addr32` / `FB 42 addr32` | erase 4 KB sector / smaller erase near the end | `FUN_1000bf60` / `FUN_1000bd80` |
+| `FB 04 addr32 size16 – crc16` | write flash | `FUN_1000b440` |
+| `FC 13 addr32 size16` | flash CRC16 (verification) | `FUN_1000b2f0` |
+| `FC 0C addr32` | run app / reset | `FUN_1000c7e0` |
+| `FC 85`, `FC 86`, `FC 1A 01` | vendor reads used while building the image (not decoded) | |
+| **`FC 12 key16`** | **write chip key into eFuses: irreversible. The DLL never calls it** (checked in the decompiled code and the machine code) | `FUN_1000c5e0` |
+
+The upgrade thread (`FUN_10007260`) checks the device is `uboot1.00`, reads its chip name and
+compares it with the `.ufw`'s, uploads the chip's loader (`br23`: address **`0x12000`**, the same
+as jl-uboot-tool's), then builds a full flash image and burns it with `FUN_1000b560`:
+
+1. Erase `0x1000`, write the image's 64-byte header there and CRC-check it; only then erase `0`.
+2. Erase `0x2000`…end of the writable area, write the image top-down in 4 KB chunks.
+3. Rewrite sectors `0x0000` and `0x1000` last.
+4. CRC16-verify every 4 KB chunk (`FC 13`); retry the whole burn up to 5 times; `FC 0C` to restart.
+
+**Still to decode:** how the image is built from the `.ufw`: which of `flash.bin` / `flash2.bin`
+(`UFW_ELEMENT=0x10-0,0x10-1`, same size, different contents) is used, whether it is re-encrypted
+with the chip key, and how the reserved areas from `isd_config.ini` are kept: `BTIF` (Bluetooth
+MAC and pairing, 4 KB), `EXIF` (4 KB), `USERIF` (16 KB at the end), `VM` (settings, 8 KB), all
+`_OPT=1`. A full flash dump will answer most of this and is the backup to restore from.
+
+The JieLi DLL's obfuscated strings are hex, then ENC with key `0x7117 ^ (pos >> 2)`: they decode
+to the loader resource type `LOADER`, `uboot1.00`, the chip names `br22 br23 br25 br27 br30 bd19
+bd29 uc03` (one wrapped loader resource each), `JLDGAUTH` and `jielikeji2010ipo`.
 
 ## Firmware files
 
@@ -298,4 +340,6 @@ flashing. `script.ver` holds the JieLi build-tool version (`AC695X-v0.01-cfg_too
   "back" means, auto-sleep (assumed minutes; no reply over USB), battery encoding (bit 7 looks wrong)
 - Whether the BLE config channel works from BlueZ while the controller is in PC (XInput) mode
 - SAPJoy HID report layouts
-- Whether UDisk mode exposes enough of the loader protocol for a full flash dump
+- What `f2 00 04 f6` really enumerates as (expected: `BR23` / `UBOOT1.00`), and that the controller
+  returns to normal from it without a flash
+- A full flash dump through the BR23 loader; then the image-building details listed in section 3

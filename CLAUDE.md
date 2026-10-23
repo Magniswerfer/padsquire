@@ -50,8 +50,13 @@ Follow HARDWARE.md. Run `gamesir-linux probe --guided` first and read its JSON b
 
 ## Rules
 
-- **Never flash firmware.** There is deliberately no flash command. USB update mode comes later,
-  after the probe has confirmed what update mode looks like, and with a flash dump first.
+- **Firmware writes go in stages, each confirmed by the user before the next** (decided
+  2026-10-23; protocol in PROTOCOL.md section 3): (1) enter update mode and identify the device,
+  read-only; (2) full flash dump of that controller, read twice and compared, kept outside the
+  repo; (3) only then a flash, through `safety.py`, keeping the reserved areas (BTIF, EXIF,
+  USERIF, VM), with CRC verification. No erase or write without a verified dump of the same
+  controller.
+- **Never send `FC 12` (write chip key).** It burns eFuses and is irreversible. Don't implement it.
 - Prefer read-only experiments; when writing a setting, note the original value and restore it.
 - Never send anything to a device advertising as `GameSir-Nova 2 Lite_DFU`.
 - Mark any newly confirmed or refuted assumption in PROTOCOL.md, and drop the "ASSUMPTION" notes
