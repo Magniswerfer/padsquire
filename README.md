@@ -5,9 +5,10 @@ Linux-native configuration and firmware tools for GameSir controllers, starting 
 Connect (Windows) and the GameSir Android app.
 
 > **Status:** configuring the controller **over the USB cable works on real hardware** (Nova 2
-> Lite, firmware 7701): reading every setting, changing them, and live stick and trigger
-> feedback. Bluetooth and the 2.4 GHz dongle are built but not yet tested on hardware. Firmware
-> can be downloaded, extracted and verified, but never flashed. Reverse-engineering notes are in
+> Lite): reading every setting, changing them, and live stick and trigger feedback. **Firmware
+> updates work too**: one controller has been backed up and updated from 7701 to 8201 from the
+> settings app, keeping its settings. Bluetooth and the 2.4 GHz dongle are built but not yet
+> tested on hardware. Reverse-engineering notes are in
 > [PROTOCOL.md](PROTOCOL.md); the hardware checklist is [HARDWARE.md](HARDWARE.md).
 
 ![The settings app, Sticks page](docs/screenshot.png)
@@ -29,6 +30,11 @@ Connect (Windows) and the GameSir Android app.
   it without a controller.
 - **Command line** (`gamesir-linux usb …` and `gamesir-linux ble …`): the same settings, by cable
   or over Bluetooth. Every change is read back to confirm the controller took it.
+- **Firmware updates by cable** (Firmware page, or `gamesir-linux uboot`): switches the controller
+  to its update mode, backs up the whole flash (read twice and compared), and installs GameSir's
+  firmware exactly as GameSir Connect does. Only the firmware area is written; settings, the
+  Bluetooth address and the factory calibration are left alone, and every block is checked
+  afterwards. A backup can be written back to return to the old firmware.
 - **Firmware feed** (`gamesir-linux update`): follows GameSir Connect's own update feed, verifies
   each release's SHA-512 and extracts the firmware. A systemd timer can run it weekly.
 - **Firmware tools**: extract firmware from a GameSir Connect installer (no Windows, no Wine),
@@ -141,11 +147,12 @@ serve fake update feeds from a local HTTP server.
 5. ~~First real hardware: configuration over the USB cable, live input, button guide~~
 6. Test the 2.4 GHz dongle (expected as `3537:1098`) and Bluetooth on hardware
 7. Remap every button and record macros (`f5` / `f6` commands, still to decode)
-8. USB update mode: device detection and flash dump (`gamesir-linux uboot`, first backup taken
-   on hardware), then a first supervised update
+8. ~~USB update mode: flash backup, restore and firmware update (first update 7701 → 8201)~~
+9. Update the 2.4 GHz dongle (`AC632N`, firmware 2800)
 
 ## Disclaimer
 
-Unofficial and not affiliated with GameSir. Flashing firmware can brick hardware; there is
-deliberately no flash command yet, and when there is, the safety checks will reduce that risk but
-cannot remove it.
+Unofficial and not affiliated with GameSir. Flashing firmware can brick hardware. The safety
+checks (a verified backup of the same controller, writes limited to the firmware area, every block
+verified, no restart after a failed write) reduce that risk but cannot remove it. Tested on one
+controller so far.

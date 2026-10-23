@@ -654,7 +654,12 @@ function stopUpdatePoll() {
 
 async function pollUpdate() {
   stopUpdatePoll();
-  if (!upd.box || !upd.box.isConnected) return;
+  if (!upd.box) return;
+  if (!upd.box.isConnected) {
+    // The panel is built before render() puts it on the page: wait for it, unless we left.
+    if (app.section === "firmware") upd.timer = setTimeout(pollUpdate, 100);
+    return;
+  }
   try { upd.data = await api("/api/update"); } catch (e) { upd.data = { error: e.message }; }
   if (!upd.box.isConnected) return;
   await afterJob(upd.data.job);

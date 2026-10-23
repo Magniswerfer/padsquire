@@ -354,7 +354,11 @@ is set the record takes its bytes `0x18`–`0x1D`. For 8201 the record is
 back sector `0xFF000` (device CRC and read-back matched; whole flash unchanged afterwards), then
 `uboot restore` burned the backup's own `0x0000`–`0x63FFF` with the full JieLi sequence: every
 sector verified, everything above `0x64000` unchanged, and after `FC 0C` the controller booted
-7701 with the same MAC and settings. **M + X + B** while plugging in also reaches download mode,
+7701 with the same MAC and settings. **First firmware update (2026-10-23), from the settings app:** 7701 → 8201 (`T4Nlite2_V182`,
+`flash2.bin` at `0x1000`–`0x63FFF` with Connect's record), every sector verified, nothing above
+`0x64000` changed. After the restart the controller reported 8201 with the same MAC, and kept
+its settings (dead zones, vibration, back buttons, a custom Home light colour): 8201 reads
+7701's `VM` area as it is. **M + X + B** while plugging in also reaches download mode,
 but through the firmware (it enumerates as `2106`, then `100F`, then `BR23 UBOOT1.00`), so it is
 no way back if the firmware itself is broken.
 

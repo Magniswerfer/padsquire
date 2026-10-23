@@ -9,7 +9,7 @@ tested against a **simulated** controller. The first real hardware session start
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -e '.[gui,test]'   # no system pip on this box; 7zip for update/extract
-pytest                                   # 168 tests; GAMESIR_INSTALLER=<setup.exe> adds a real-installer test,
+pytest                                   # 171 tests; GAMESIR_INSTALLER=<setup.exe> adds a real-installer test,
                                          # GAMESIR_BACKUP=<dump.bin> GAMESIR_UFW=<.ufw> a real layout check
 gamesir-linux probe --guided             # read-only report of the controller in every mode -> JSON
 gamesir-linux ble scan | info | deadzone | feature | vibration | sleep | restore
@@ -35,6 +35,8 @@ gamesir-linux uboot test-write | restore | flash ... --confirm        # writes (
   refuses without `--backup`.
 - `jlwrite.py`: the only code that erases or writes flash (FB01, FB04), inside one window that
   may not touch a reserved area; `burn()` follows JieLi's order. Tests: `tests/test_jlwrite.py`.
+- `updatemode.py`: the download-mode steps (enter, backup, restore, flash, restart) shared by
+  `cli_uboot.py` and `web/update.py`, which runs them as background jobs for the Firmware page.
 - `probe.py`: read-only hardware probe. `PROTOCOL.md`: all reverse-engineering notes.
 
 ## First hardware session: what to confirm, in order
