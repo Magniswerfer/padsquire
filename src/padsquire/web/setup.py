@@ -11,10 +11,9 @@ import os
 import shutil
 from pathlib import Path
 
-from .. import hid, installer, jlboot
+from .. import desktop, hid, installer, jlboot
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-RULES_NAME = "70-gamesir.rules"
+RULES_NAME = desktop.RULES_NAME
 RULES_DIRS = [Path("/etc/udev/rules.d"), Path("/usr/lib/udev/rules.d"), Path("/lib/udev/rules.d")]
 
 
@@ -57,7 +56,7 @@ def install_command(package: str) -> tuple[str, list[str], list[dict]]:
 
 
 def _rules_command() -> tuple[str, list[str], list[dict]]:
-    source = REPO_ROOT / "contrib" / "udev" / RULES_NAME
+    source = desktop.rules_path()
     return (f"sudo install -m 644 {source} /etc/udev/rules.d/ && "
             "sudo udevadm control --reload && sudo udevadm trigger",
             [f"The rules file ({source}) says: devices from GameSir (USB vendor 3537) and JieLi (4c4a, "
@@ -73,7 +72,7 @@ def _rules_command() -> tuple[str, list[str], list[dict]]:
 
 
 def _rules_file() -> dict | None:
-    source = REPO_ROOT / "contrib" / "udev" / RULES_NAME
+    source = desktop.rules_path()
     try:
         return {"path": str(source), "content": source.read_text()}
     except OSError:

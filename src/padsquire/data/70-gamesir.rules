@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Let the logged-in user talk to GameSir controllers without sudo.
-# Install:  sudo cp 70-gamesir.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger
+# Installed by install.sh or the settings app's Setup and help page; `padsquire udev-rules` prints this file.
 #
 # 3537 = GameSir, 4c4a = JieLi (the controller's chip vendor; used by some update modes).
 # "uaccess" grants access to whoever is logged in at the seat, nobody else.

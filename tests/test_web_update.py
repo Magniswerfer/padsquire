@@ -15,7 +15,7 @@ from padsquire.web import update  # noqa: E402
 from padsquire.web.server import build_app  # noqa: E402
 
 TOKEN = "t"
-API = {"X-GameSir": "1", "Content-Type": "application/json"}
+API = {"X-PadSquire": "1", "Content-Type": "application/json"}
 JEDEC_1M = 0x1440C8
 OLD = make_dump(make_image(key=CHIP_KEY, app_len=0x5E000))
 

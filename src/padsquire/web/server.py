@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import secrets
+import time
 from dataclasses import asdict, is_dataclass
 from enum import Enum
 from pathlib import Path
@@ -25,8 +27,8 @@ from ..gcm import DeadZone, Feature, Key, ProtocolError, Vibration
 from ..simulator import SimulatedNova
 
 STATIC = Path(__file__).parent / "static"
-COOKIE = "gamesir_session"
-API_HEADER = "X-GameSir"
+COOKIE = "padsquire_session"
+API_HEADER = "X-PadSquire"
 
 ERRORS = (NotApplied, ProtocolError, ble.BleError, hid.HidError, ValueError, KeyError,
           asyncio.TimeoutError)
@@ -203,10 +205,37 @@ def _firmware_status(fw_dir: Path, device_version: str | None) -> dict:
     return out
 
 
+class Presence:
+    """Is a page still open? Pages poll every 2 s (once a minute in a hidden tab) and send a
+    beacon to /api/bye when they close. The server may stop once no page is left, never while a
+    firmware step runs."""
+
+    def __init__(self, grace: float = 15.0, idle: float = 600.0, clock=time.monotonic):
+        self.grace, self.idle, self.clock = grace, idle, clock
+        self.last = clock()
+        self.bye_at: float | None = None
+
+    def seen(self) -> None:
+        self.last, self.bye_at = self.clock(), None
+
+    def bye(self) -> None:
+        self.bye_at = self.clock()
+
+    def gone(self, busy: bool) -> bool:
+        if busy:
+            return False
+        now = self.clock()
+        return (self.bye_at is not None and now - self.bye_at >= self.grace) or now - self.last >= self.idle
+
+
+PRESENCE = web.AppKey("presence", Presence)
+
+
 def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
               simulate: bool = False, scanner=None, usb_finder=None,
               backup_dir: Path | None = None, loader_cache: Path | None = None) -> web.Application:
     session = Session()
+    presence = Presence()
     scan = scanner or ble.scan
     find_usb = usb_finder or hid.find
 
@@ -223,6 +252,10 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
             raise resp
         if not secrets.compare_digest(request.cookies.get(COOKIE, ""), token):
             return web.Response(status=403, text="Open the link printed by `padsquire gui`.")
+        if request.path == "/api/bye" and request.method == "POST":
+            presence.bye()                     # a beacon can't set headers; the cookie is enough
+            return web.Response(status=204)
+        presence.seen()
         if request.path.startswith("/api/") and request.headers.get(API_HEADER) != "1":
             return fail("missing header", 403)
         resp = await handler(request)
@@ -237,6 +270,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
         return resp
 
     app = web.Application(middlewares=[guard])
+    app[PRESENCE] = presence
     routes = web.RouteTableDef()
 
     async def state_of(nova: NovaClient) -> dict:
@@ -580,13 +614,40 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     return app
 
 
-def serve(fw_dir: Path, *, host: str = "127.0.0.1", port: int = 0, simulate: bool = False,
-          open_browser: bool = True) -> None:
+def _instance_file() -> Path | None:
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    return Path(runtime) / "padsquire" / "gui.json" if runtime else None
+
+
+def _running_instance() -> str | None:
+    """The address of a settings app this user already has running, if any."""
     import socket
-    import webbrowser
+    f = _instance_file()
+    try:
+        info = json.loads(f.read_text()) if f else None
+        os.kill(info["pid"], 0)
+        with socket.create_connection(("127.0.0.1", info["port"]), timeout=1):
+            return info["url"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def serve(fw_dir: Path, *, host: str = "127.0.0.1", port: int = 0, simulate: bool = False,
+          open_browser: bool = True, tab: bool = False, keep_running: bool = False) -> None:
+    import signal
+    import socket
+
+    from .. import desktop
+    from . import update
 
     if host not in ("127.0.0.1", "localhost", "::1"):
         raise SystemExit("refusing to listen on a non-loopback address")
+    single = not simulate and port == 0          # one app per user; a fixed port or a simulation is separate
+    if single and (url := _running_instance()):
+        print(f"PadSquire is already running at:\n  {url}", flush=True)
+        if open_browser:
+            desktop.open_app(url, tab)
+        return
     token = secrets.token_urlsafe(24)
     sock = socket.socket(socket.AF_INET6 if host == "::1" else socket.AF_INET)
     # Restart on the same port at once, even while an old page's connection is still closing.
@@ -595,14 +656,40 @@ def serve(fw_dir: Path, *, host: str = "127.0.0.1", port: int = 0, simulate: boo
     actual = sock.getsockname()[1]
     url = f"http://{'127.0.0.1' if host != '::1' else '[::1]'}:{actual}/?token={token}"
     app = build_app(token, fw_dir, simulate=simulate)
+    instance = _instance_file() if single else None
 
     def ready():
-        print(f"PadSquire is running at:\n  {url}\nPress Ctrl+C to stop.", flush=True)
+        stop = "Press Ctrl+C to stop." if keep_running else "It stops by itself when you close its window."
+        print(f"PadSquire is running at:\n  {url}\n{stop}", flush=True)
         if open_browser:
-            webbrowser.open(url)
+            desktop.open_app(url, tab)
 
     async def announce(_app):
         asyncio.get_running_loop().call_soon(ready)
+        if instance:
+            instance.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            fd = os.open(instance, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)   # holds the token
+            with os.fdopen(fd, "w") as f:
+                json.dump({"pid": os.getpid(), "port": actual, "url": url}, f)
+        if not keep_running:
+            _app["watch"] = asyncio.create_task(watch(_app))
+
+    async def watch(_app):
+        presence, jobs = _app[PRESENCE], _app[update.KEY]
+        while True:
+            await asyncio.sleep(2)
+            if presence.gone(jobs.busy()):
+                print("The settings app was closed, so PadSquire stops.", flush=True)
+                os.kill(os.getpid(), signal.SIGINT)      # run_app's own clean shutdown
+                return
+
+    async def forget(_app):
+        try:
+            if instance and json.loads(instance.read_text()).get("pid") == os.getpid():
+                instance.unlink()
+        except (OSError, ValueError):
+            pass
 
     app.on_startup.append(announce)
+    app.on_cleanup.append(forget)
     web.run_app(app, sock=sock, print=None)

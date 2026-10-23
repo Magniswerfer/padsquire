@@ -101,8 +101,8 @@ class SgDevice:
         try:
             self.fd = os.open(path, os.O_RDWR)
         except PermissionError:
-            raise JLBootError(f"no permission to open {path}. Install the udev rules in "
-                              "contrib/udev/, then replug the controller") from None
+            raise JLBootError(f"no permission to open {path}. Install the udev rules (the "
+                              "settings app's Setup and help page explains how), then replug the controller") from None
         self.timeout_ms = timeout_ms
 
     def execute(self, cdb: bytes, data_out: bytes | None = None, data_in_len: int = 0) -> bytes:

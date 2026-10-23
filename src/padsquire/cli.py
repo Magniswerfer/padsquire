@@ -67,7 +67,29 @@ def cmd_gui(args) -> int:
     except ImportError:
         print("the GUI needs aiohttp: pip install --user 'padsquire[gui]'", file=sys.stderr)
         return 1
-    serve(args.firmware_dir, port=args.port, simulate=args.simulate, open_browser=not args.no_browser)
+    serve(args.firmware_dir, port=args.port, simulate=args.simulate, open_browser=not args.no_browser,
+          tab=args.tab, keep_running=args.keep_running or args.no_browser)
+    return 0
+
+
+def cmd_menu(args) -> int:
+    from . import desktop
+    if args.remove:
+        gone = desktop.remove_entry()
+        print("Removed " + ", ".join(map(str, gone)) if gone else "PadSquire wasn't in the app menu.")
+        return 0
+    for f in desktop.install_entry():
+        print(f"Wrote {f}")
+    print("PadSquire is in your app menu. To take it out again: padsquire menu --remove")
+    return 0
+
+
+def cmd_udev_rules(args) -> int:
+    from . import desktop
+    if args.path:
+        print(desktop.rules_path())
+    else:
+        sys.stdout.write(desktop.rules_text())
     return 0
 
 
@@ -187,9 +209,21 @@ def main(argv=None) -> int:
     g = sub.add_parser("gui", help="open the graphical settings app in your browser")
     g.add_argument("--simulate", action="store_true", help="start connected to a simulated controller")
     g.add_argument("--port", type=int, default=0, help="port on 127.0.0.1 (default: any free port)")
-    g.add_argument("--no-browser", action="store_true", help="print the address instead of opening it")
+    g.add_argument("--no-browser", action="store_true",
+                   help="print the address instead of opening it (keeps running until Ctrl+C)")
+    g.add_argument("--tab", action="store_true", help="open in a browser tab instead of its own window")
+    g.add_argument("--keep-running", action="store_true",
+                   help="don't stop when the app's window is closed")
     g.add_argument("--firmware-dir", type=Path, default=DEFAULT_FW_DIR)
     g.set_defaults(func=cmd_gui)
+
+    m = sub.add_parser("menu", help="add PadSquire to your app menu (no root needed)")
+    m.add_argument("--remove", action="store_true", help="take it out of the app menu again")
+    m.set_defaults(func=cmd_menu)
+
+    r = sub.add_parser("udev-rules", help="print the udev rules that let you use the controller without sudo")
+    r.add_argument("--path", action="store_true", help="print where the rules file is instead")
+    r.set_defaults(func=cmd_udev_rules)
 
     args = p.parse_args(argv)
     return args.func(args)

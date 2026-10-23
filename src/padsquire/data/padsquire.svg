@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="#3355f0"/>
+  <path d="M38 42h52c12 0 19 8 22 22l5 24c2 10-4 17-12 17-6 0-10-4-14-10l-4-6H41l-4 6c-4 6-8 10-14 10-8 0-14-7-12-17l5-24c3-14 10-22 22-22z"
+        fill="#ffffff"/>
+  <path d="M40 58v20M30 68h20" stroke="#3355f0" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="88" cy="60" r="5.5" fill="#3355f0"/>
+  <circle cx="98" cy="70" r="5.5" fill="#3355f0"/>
+  <circle cx="78" cy="70" r="5.5" fill="#3355f0"/>
+  <circle cx="88" cy="80" r="5.5" fill="#3355f0"/>
+</svg>

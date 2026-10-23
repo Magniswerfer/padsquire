@@ -24,6 +24,7 @@ padsquire = "padsquire.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
+"padsquire" = ["data/*"]
 "padsquire.web" = ["static/*", "static/fonts/*"]
 
 [tool.pytest.ini_options]

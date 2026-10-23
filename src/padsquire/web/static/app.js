@@ -39,7 +39,7 @@ function s(tag, attrs = {}) {
 }
 
 async function api(path, body) {
-  const opt = { method: body === undefined ? "GET" : "POST", headers: { "X-GameSir": "1" } };
+  const opt = { method: body === undefined ? "GET" : "POST", headers: { "X-PadSquire": "1" } };
   if (body !== undefined) {
     opt.headers["Content-Type"] = "application/json";
     opt.body = JSON.stringify(body);
@@ -673,8 +673,8 @@ async function startLive(onState) {
   const ctl = new AbortController();
   liveAbort = ctl;
   try {
-    // fetch, not EventSource: the server wants the X-GameSir header on every API call
-    const res = await fetch("/api/input", { headers: { "X-GameSir": "1" }, signal: ctl.signal });
+    // fetch, not EventSource: the server wants the X-PadSquire header on every API call
+    const res = await fetch("/api/input", { headers: { "X-PadSquire": "1" }, signal: ctl.signal });
     if (!res.ok || !res.body) return;
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -1352,5 +1352,9 @@ async function start() {
   if (app.status.connected) await reload(false);
   watchDevices();
 }
+
+// Tell the server this page is closing: it stops shortly after the last page is gone (a reload
+// comes back in time). A beacon carries the cookie but no custom header; /api/bye needs neither.
+window.addEventListener("pagehide", () => navigator.sendBeacon("/api/bye"));
 
 start();

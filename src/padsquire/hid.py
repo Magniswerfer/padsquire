@@ -171,8 +171,8 @@ def enter_update_mode(path: str) -> None:
     try:
         fd = os.open(path, os.O_RDWR)
     except PermissionError:
-        raise HidError(f"no permission to open {path}. Install the udev rules in "
-                       "contrib/udev/ (see HARDWARE.md), then replug the controller") from None
+        raise HidError(f"no permission to open {path}. Install the udev rules (the "
+                       "settings app's Setup and help page explains how), then replug the controller") from None
     except OSError as e:
         raise HidError(f"could not open {path}: {e.strerror}") from e
     try:
@@ -193,8 +193,8 @@ class connect:
         try:
             self._fd = os.open(self.path, os.O_RDWR | os.O_NONBLOCK)
         except PermissionError:
-            raise HidError(f"no permission to open {self.path}. Install the udev rules in "
-                           "contrib/udev/ (see HARDWARE.md), then replug the controller") from None
+            raise HidError(f"no permission to open {self.path}. Install the udev rules (the "
+                           "settings app's Setup and help page explains how), then replug the controller") from None
         except OSError as e:
             raise HidError(f"could not open {self.path}: {e.strerror}") from e
         return HidTransport(self._fd)

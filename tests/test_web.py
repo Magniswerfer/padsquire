@@ -10,7 +10,7 @@ from aiohttp.test_utils import TestClient, TestServer  # noqa: E402
 from padsquire.web.server import build_app  # noqa: E402
 
 TOKEN = "test-token"
-API = {"X-GameSir": "1"}
+API = {"X-PadSquire": "1"}
 
 
 def run(fn, fw_dir, **kw):
@@ -225,3 +225,34 @@ def test_app_links_its_source_code():
     from importlib.resources import files
     page = (files("padsquire.web") / "static" / "index.html").read_text()
     assert 'href="https://github.com/Magniswerfer/padsquire"' in page and "Source code" in page
+
+
+def test_presence_stops_after_the_last_page_but_never_mid_update():
+    from padsquire.web.server import Presence
+    now = [0.0]
+    p = Presence(grace=15, idle=600, clock=lambda: now[0])
+    p.seen(); p.bye()
+    now[0] = 10
+    assert not p.gone(busy=False)              # a reload comes back within the grace
+    p.seen(); now[0] = 30
+    assert not p.gone(busy=False)              # the page came back: no stop
+    p.bye(); now[0] = 50
+    assert p.gone(busy=False)
+    assert not p.gone(busy=True)               # never while a firmware step runs
+    now[0] = 2000; p.bye_at = None
+    assert p.gone(busy=False)                  # no page for 10 minutes
+
+
+def test_bye_needs_the_cookie_but_no_header(tmp_path):
+    from padsquire.web.server import PRESENCE
+
+    async def go(c):
+        r = await c.post("/api/bye")
+        assert r.status == 403                     # no cookie: another site can't stop it
+        await login(c)
+        r = await c.post("/api/bye")
+        assert r.status == 204
+        assert c.server.app[PRESENCE].bye_at is not None
+        await c.get("/api/status", headers=API)
+        assert c.server.app[PRESENCE].bye_at is None
+    run(go, tmp_path)
