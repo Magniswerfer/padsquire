@@ -8,3 +8,4 @@ dist/
 *.exe
 firmware/
 .venv/
+.claude/settings.local.json

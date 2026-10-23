@@ -350,7 +350,15 @@ is set the record takes its bytes `0x18`–`0x1D`. For 8201 the record is
 `646c6c00 0115 00ff 855682ed e98c ffff`; the last 8 bytes are already in `flash2.bin`, so only
 `0x63FF0`–`0x63FF7` change.
 
-**Writing** (`jlwrite.py`, tested against the fake chip only): sector erase `FB 01 addr32`
+**Writing, confirmed on hardware (2026-10-23):** `uboot test-write` erased, wrote and erased
+back sector `0xFF000` (device CRC and read-back matched; whole flash unchanged afterwards), then
+`uboot restore` burned the backup's own `0x0000`–`0x63FFF` with the full JieLi sequence: every
+sector verified, everything above `0x64000` unchanged, and after `FC 0C` the controller booted
+7701 with the same MAC and settings. **M + X + B** while plugging in also reaches download mode,
+but through the firmware (it enumerates as `2106`, then `100F`, then `BR23 UBOOT1.00`), so it is
+no way back if the firmware itself is broken.
+
+**Writing** (`jlwrite.py`): sector erase `FB 01 addr32`
 (reply echoes the command) and flash write `FB 04 addr32 size16 00 crc16` with the data CRC
 little-endian, as jl-uboot-tool sends it; JieLi's DLL puts it big-endian at bytes 9–10 instead.
 Loaders from BR17 on are documented to ignore it, and every sector is CRC-checked afterwards
