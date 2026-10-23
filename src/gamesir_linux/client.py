@@ -41,6 +41,17 @@ class NovaClient:
         reply = await self.t.request(gcm.basic_info_query(), lambda r: len(r) >= 19)
         return gcm.basic_info_parse(reply)
 
+    async def controller_firmware(self) -> str:
+        """The controller's own firmware version, from a state report. Through the 2.4 GHz
+        receiver this is the only source: info() there reports the receiver's firmware."""
+        read = getattr(self.t, "state_report", None)
+        if read is None:
+            raise ProtocolError("not available over this connection")
+        version = gcm.state_report_version(await read())
+        if version is None:
+            raise ProtocolError("this firmware's state reports carry no version")
+        return version
+
     async def battery(self) -> Battery:
         q = gcm.host_info_query()
         return gcm.host_info_parse(q, await self._ask(q))

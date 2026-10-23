@@ -8,7 +8,7 @@ Connect (Windows) and the GameSir Android app.
 > Lite): reading every setting, changing them, and live stick and trigger feedback. **Firmware
 > updates work too**: one controller has been backed up and updated from 7701 to 8201 from the
 > settings app, keeping its settings. **The 2.4 GHz receiver works too**: everything the cable
-> does except firmware updates and showing the controller's firmware version. Bluetooth is built
+> does except firmware updates. Bluetooth is built
 > but not yet tested on hardware. Reverse-engineering notes are in
 > [PROTOCOL.md](PROTOCOL.md); the hardware checklist is [HARDWARE.md](HARDWARE.md).
 
@@ -18,7 +18,7 @@ Connect (Windows) and the GameSir Android app.
 
 | | Cable | Bluetooth | 2.4 GHz receiver |
 |---|---|---|---|
-| Firmware version, MAC, battery | yes | untested | MAC and battery; the version reported is the receiver's |
+| Firmware version, MAC, battery | yes | untested | yes (and the receiver's own firmware) |
 | Read dead zones, feature toggles, vibration, Home light, quick triggers, back buttons | yes | untested | yes |
 | Change them | yes (Home light, dead zones) | untested | yes (Home light, dead zones) |
 | Live stick and trigger positions | yes | no | yes |

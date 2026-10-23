@@ -123,6 +123,23 @@ class HidTransport:
         async with self._lock:
             return await asyncio.to_thread(self._exchange, frame, accept or (lambda _r: True))
 
+    def _state_report(self) -> bytes:
+        echo = lambda r: r[:2] == bytes([gcm.CMD_STATE_REPORT, 0x01])
+        self._exchange(gcm.state_report_set(gcm.StateReport.MAPPED), echo)
+        try:
+            for _ in range(self.attempts):
+                report = self._read(self.timeout)
+                if report and report[0] == STATE_REPORT and len(report) > 2 and report[1] == 0:
+                    return report
+            raise HidError("no state report arrived")
+        finally:
+            self._exchange(gcm.state_report_set(gcm.StateReport.OFF), echo)
+
+    async def state_report(self) -> bytes:
+        """One 0xF4 state report: switched on for the moment it takes, then off again."""
+        async with self._lock:
+            return await asyncio.to_thread(self._state_report)
+
 
 # GameSir's UpdateFirmware for PID 0x100F (sapjoyuniapis_t4n2, SAPJoyUniDevice_UpdateFirmware):
 # one zero-padded report, no reply awaited, then the handle is closed and the controller drops off

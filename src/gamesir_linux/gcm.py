@@ -47,6 +47,35 @@ def verify(request: bytes, reply: bytes | None, min_len: int = 2) -> bytes:
     return reply
 
 
+# -- gamepad state reports -----------------------------------------------------
+# SAPJoyUniDevice_SetGamepadStateReport: `f3 01 05 <mode> <sum>` turns the 0xF4 reports on the
+# vendor channel off (0) or on (1 original, 2 mapped buttons). Connect sends "mapped" when it
+# opens the controller and "off" when it closes it; the reply echoes the request. In a report,
+# bytes 20-21 are the controller's firmware version as hex digits when byte 2 is 23 or more
+# (older firmware sends shorter reports). Confirmed through the 2.4 GHz receiver, where it is the
+# only way to learn the controller's version: basic info there is the receiver's.
+
+CMD_STATE_REPORT = 0xF3
+STATE_REPORT = 0xF4
+
+
+class StateReport(IntEnum):
+    OFF = 0
+    ORIGINAL = 1
+    MAPPED = 2
+
+
+def state_report_set(mode: StateReport) -> bytes:
+    return seal(bytes([CMD_STATE_REPORT, 0x01, 0x05, int(mode), 0]))
+
+
+def state_report_version(report: bytes) -> str | None:
+    """The controller's firmware version from a 0xF4 state report, e.g. "8201"."""
+    if len(report) < 22 or report[0] != STATE_REPORT or report[1] != 0 or report[2] < 23:
+        return None
+    return f"{report[20]:02x}{report[21]:02x}"
+
+
 # -- the common 6-byte query/set shape ----------------------------------------
 # Dead zones (0x07), feature toggles (0x23) and general settings (0x26) all use
 #   query: [cmd, sub, 6, 0, 0, sum]   set: [cmd, sub, 6, 1, value, sum]

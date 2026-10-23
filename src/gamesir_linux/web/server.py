@@ -145,7 +145,7 @@ async def _try(coro):
         return {"error": str(e)}
 
 
-async def read_state(nova: NovaClient, skip: set[str] = frozenset()) -> dict:
+async def read_state(nova: NovaClient, skip: set[str] = frozenset(), through_dongle: bool = False) -> dict:
     async def maybe(name, read):
         return {"error": "not available over this connection"} if name in skip else await _try(read())
 
@@ -163,6 +163,10 @@ async def read_state(nova: NovaClient, skip: set[str] = frozenset()) -> dict:
         "light": await _try(nova.light()),
     }
     fw = info.get("value", {}).get("firmware_version") if "value" in info else None
+    if through_dongle:
+        # Basic info is the receiver's there; the controller's version comes from a state report.
+        state["controller_firmware"] = await _try(nova.controller_firmware())
+        fw = state["controller_firmware"].get("value")
     state["capabilities"] = {
         "stick_targets": bool(fw and fw.isdigit() and int(fw) >= gcm.STICK_TARGETS_MIN_FIRMWARE),
     }
@@ -227,7 +231,8 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     routes = web.RouteTableDef()
 
     async def state_of(nova: NovaClient) -> dict:
-        return await read_state(nova, USB_UNSUPPORTED if session.mode == "usb" else frozenset())
+        return await read_state(nova, USB_UNSUPPORTED if session.mode == "usb" else frozenset(),
+                                session.through_dongle)
 
     def need_client():
         if not session.connected:
@@ -467,6 +472,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
                 info = (await session.client.info()).firmware_version
                 if session.through_dongle:
                     dongle = info
+                    version = await session.client.controller_firmware()
                 else:
                     version = info
             except ERRORS:

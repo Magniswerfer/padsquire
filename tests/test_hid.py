@@ -109,3 +109,17 @@ def test_update_mode_command_is_one_padded_report():
     fake.thread.join(1)
     # As GameSir's DLL sends it: report ID 0, then f2 00 04 f6 and zeros.
     assert fake.writes == [b"\x00\xf2\x00\x04\xf6" + bytes(60)]
+
+
+def test_controller_firmware_from_a_state_report():
+    report = _report("f40017" + "00" * 16 + "ff82018d")
+    fake = FakeHidraw({
+        bytes.fromhex("f3010502"): [_report("f3010502fb"), report, report],
+        bytes.fromhex("f3010500"): [_report("f3010500f9")],
+    })
+    try:
+        nova = NovaClient(hid.HidTransport(fake.host.fileno(), timeout=0.5))
+        assert asyncio.run(nova.controller_firmware()) == "8201"
+        assert [w[1:5].hex() for w in fake.writes] == ["f3010502", "f3010500"]   # switched off again
+    finally:
+        fake.close()

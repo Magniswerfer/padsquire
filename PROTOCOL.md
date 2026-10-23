@@ -388,8 +388,11 @@ controller**: every setting reads back exactly as by cable, writes work (Home li
 from the settings app), and live input works through the dongle's xpad event node. Basic info
 (`01 01`) returns firmware **2800** (the dongle's: already the version Connect 1.16.7 ships) with
 the controller's MAC and battery. Auto-sleep (`0x26`) and slots (`0x29`) get no reply, as by
-cable. No `0xF4` state reports arrive unsolicited, so the controller's own version is not known
-over the dongle until `SetGamepadStateReport` is decoded.
+cable. No `0xF4` state reports arrive unsolicited; **`f3 01 05 <mode> <sum>`**
+(`SAPJoyUniDevice_SetGamepadStateReport`, modes Off 0 / Original 1 / Mapped 2, reply echoes the
+request) turns them on, about 66 a second, and bytes 20–21 of a report give the controller's own
+version (`82 01` → 8201; byte 2 = `0x17`, byte 19 = `0xFF`, byte 22 = `0x8D`). `gamesir-linux`
+switches them on for one report and off again. Not yet tried by cable.
 
 The analysis below was done before that, offline.
 

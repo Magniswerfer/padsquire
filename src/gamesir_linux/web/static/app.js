@@ -225,7 +225,8 @@ function sectionHint(id) {
   const d = app.dev;
   let text = null;
   if (id === "controller" && val(d.info)) {
-    text = app.status.via === "dongle" ? "through the receiver" : `firmware ${val(d.info).firmware_version}`;
+    const own = app.status.via === "dongle" ? val(d.controller_firmware) : val(d.info).firmware_version;
+    text = own ? `firmware ${own}` : "through the receiver";
   }
   if (id === "profiles" && val(d.slots)) text = `${val(d.slots)[1] + 1} of ${val(d.slots)[0]}`;
   if (id === "power" && val(d.auto_sleep) !== undefined) text = `sleep ${val(d.auto_sleep)} min`;
@@ -284,8 +285,9 @@ function panelController() {
   const where = app.status.mode !== "usb" ? `Connected to ${app.status.address}`
     : dongle ? `Connected through the 2.4 GHz receiver (${app.status.address})` : `Connected by cable (${app.status.address})`;
   // Through the receiver the firmware version in the basic info is the receiver's own.
+  const own = val(d.controller_firmware);
   const firmware = dongle
-    ? [fact("Firmware", null, "shown when connected by cable"), fact("Receiver firmware", info && info.firmware_version)]
+    ? [fact("Firmware", own, own ? regionName(own) : "not reported"), fact("Receiver firmware", info && info.firmware_version)]
     : [fact("Firmware", info && info.firmware_version, info ? regionName(info.firmware_version) : null)];
   return h("div", {},
     h("h1", {}, app.status.name || "Nova 2 Lite"),
@@ -615,7 +617,7 @@ async function panelFirmware() {
   wrap.append(h("dl", { class: "facts" },
     h("div", { class: "fact" }, h("dt", {}, "On the controller"), h("dd", {},
       device || (receiver ? "Unknown" : "Not connected"),
-      device ? h("small", {}, regionName(device)) : receiver ? h("small", {}, "connect by cable to see it") : null)),
+      device ? h("small", {}, regionName(device)) : null)),
     receiver ? h("div", { class: "fact" }, h("dt", {}, "On the 2.4 GHz receiver"), h("dd", {}, receiver, receiverNote ? h("small", {}, receiverNote) : null)) : null,
     h("div", { class: "fact" }, h("dt", {}, "Downloaded release"), h("dd", {}, fw.extracted ? `GameSir Connect ${fw.extracted}` : "None yet"))));
 
