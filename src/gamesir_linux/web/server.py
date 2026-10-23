@@ -523,6 +523,8 @@ def serve(fw_dir: Path, *, host: str = "127.0.0.1", port: int = 0, simulate: boo
         raise SystemExit("refusing to listen on a non-loopback address")
     token = secrets.token_urlsafe(24)
     sock = socket.socket(socket.AF_INET6 if host == "::1" else socket.AF_INET)
+    # Restart on the same port at once, even while an old page's connection is still closing.
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind((host, port))
     actual = sock.getsockname()[1]
     url = f"http://{'127.0.0.1' if host != '::1' else '[::1]'}:{actual}/?token={token}"
