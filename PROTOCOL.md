@@ -153,7 +153,7 @@ first other report is the reply; there is no echo or checksum check.
 | `f1 00` / `f1 01` / `f1 02` | Get / Set / reset a key's mapping (`Get/SetKeyMappingHSV` for the T4N2; see below) |
 | `f3 01` | SetGamepadStateReport (see the dongle section) |
 | `1e …` | SetABXYRotationTest |
-| `f2 00 04 f6` (raw `hid_write`) | UpdateFirmware: **never send** |
+| `f2 00 04 f6` (raw `hid_write`) | UpdateFirmware: switches to the download mode (section 3) |
 
 `SetISPMode` does nothing for PID `0x100F` (only the `0x105A` / `0x10BE` paths act).
 
