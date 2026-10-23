@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -31,6 +32,13 @@ def _ask(prompt: str) -> str:
         return "q"
 
 
+def _usb_id(text: str) -> tuple[str, str]:
+    vid, sep, pid = text.lower().partition(":")
+    if not sep or not all(len(x) == 4 and all(c in "0123456789abcdef" for c in x) for x in (vid, pid)):
+        raise argparse.ArgumentTypeError(f"expected VID:PID in hex, like 054c:09cc, not {text!r}")
+    return vid, pid
+
+
 def cmd_probe(args) -> int:
     out = args.output or Path(f"gamesir-probe-{datetime.now():%Y%m%d-%H%M%S}.json")
     report = probe.new_report()
@@ -47,14 +55,14 @@ def cmd_probe(args) -> int:
             if answer == "s":
                 continue
             snap = probe.snapshot(label, usb=label != "bluetooth", bluetooth=label == "bluetooth",
-                                  address=args.address)
+                                  address=args.address, extra_ids=args.device)
             report["snapshots"].append(snap)
             probe.save(report, out)
             print("\n".join(probe.summarize(snap)) + "\n")
     else:
         bluetooth = args.bluetooth or args.bluetooth_only or args.address is not None
         snap = probe.snapshot(args.label, usb=not args.bluetooth_only, bluetooth=bluetooth,
-                              address=args.address)
+                              address=args.address, extra_ids=args.device)
         report["snapshots"].append(snap)
         print("\n".join(probe.summarize(snap)))
 
@@ -73,4 +81,7 @@ def register(sub) -> None:
     p.add_argument("--address", help="Bluetooth address to connect to (default: auto)")
     p.add_argument("--label", default="manual", help="name for this snapshot")
     p.add_argument("-o", "--output", type=Path)
+    p.add_argument("--device", type=_usb_id, action="append", default=[], metavar="VID:PID",
+                   help="also include this USB device, e.g. 054c:09cc when the dongle "
+                        "presents as a DualShock 4 (repeatable)")
     p.set_defaults(func=cmd_probe)
