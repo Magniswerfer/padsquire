@@ -4,8 +4,8 @@ import json
 import os
 from pathlib import Path
 
-from gamesir_linux import ble, probe
-from gamesir_linux.simulator import SimulatedNova
+from padsquire import ble, probe
+from padsquire.simulator import SimulatedNova
 
 # A HID report descriptor fragment (Usage Page: Generic Desktop, Usage: Game Pad).
 HID_DESC = bytes.fromhex("05010905a101850181020600ffc0")
@@ -189,13 +189,13 @@ def test_gatt_probe_without_gcm_service():
 
 
 def test_guided_cli_writes_report(tmp_path, monkeypatch):
-    from gamesir_linux import cli_probe
-    from gamesir_linux.cli import main
+    from padsquire import cli_probe
+    from padsquire.cli import main
 
     answers = iter(["", "q"])
     monkeypatch.setattr(cli_probe, "_ask", lambda _p: next(answers))
     out = tmp_path / "report.json"
     assert main(["probe", "--guided", "-o", str(out)]) == 0
     report = json.loads(out.read_text())
-    assert report["probe_format"] == 1 and report["system"]["gamesir_linux"]
+    assert report["probe_format"] == 1 and report["system"]["padsquire"]
     assert [s["label"] for s in report["snapshots"]] == ["wired-xinput"]

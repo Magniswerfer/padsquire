@@ -171,7 +171,7 @@ def checks(fw_dir: Path) -> list[dict]:
                        _with(install_command("bluez"), "BlueZ is Linux's Bluetooth system.",
                              _doc("BlueZ", "https://github.com/bluez/bluez")) if ble else
                        (".venv/bin/pip install -e '.[gui]'",
-                        ["Run it in the gamesir-linux folder. pip installs this app again with its gui extras, "
+                        ["Run it in the padsquire folder. pip installs this app again with its gui extras, "
                          "which include bleak, the Bluetooth library it uses. It only changes the app's own "
                          ".venv folder, not the system."],
                         [_doc("pip install", "https://pip.pypa.io/en/stable/cli/pip_install/"),

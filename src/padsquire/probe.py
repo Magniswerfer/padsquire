@@ -268,7 +268,7 @@ async def probe_ble(address: str | None = None, timeout: float = 8.0) -> dict:
     try:
         import bleak
     except ImportError:
-        return {"error": "bleak not installed (pip install 'gamesir-linux[ble]')"}
+        return {"error": "bleak not installed (pip install 'padsquire[ble]')"}
     try:
         seen = await _scan_gamesir(timeout)
     except FileNotFoundError:
@@ -310,7 +310,7 @@ def system_info() -> dict:
     except Exception:
         bleak_version = None
     return {
-        "gamesir_linux": __version__,
+        "padsquire": __version__,
         "os": pretty.group(1) if pretty else platform.system(),
         "kernel": platform.release(),
         "python": platform.python_version(),

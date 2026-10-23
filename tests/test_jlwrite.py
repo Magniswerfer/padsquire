@@ -6,7 +6,7 @@ import pytest
 
 from test_jlboot import CHIP_KEY, LOADER, LOADER_BLOB, FakeUboot, ScsiFail
 from test_jlflash import _ufw, make_dump, make_image
-from gamesir_linux import cli, cli_uboot, installer, jlboot, jlcrypt, jlwrite, ufw
+from padsquire import cli, cli_uboot, installer, jlboot, jlcrypt, jlwrite, ufw
 
 JEDEC_1M = 0x1440C8
 OLD = make_dump(make_image(key=CHIP_KEY, app_len=0x5E000))        # what the controller has now

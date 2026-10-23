@@ -5,10 +5,10 @@ import asyncio
 
 import pytest
 
-from gamesir_linux import ble
-from gamesir_linux.client import NovaClient
-from gamesir_linux.gcm import DeadZone
-from gamesir_linux.simulator import SimulatedNova
+from padsquire import ble
+from padsquire.client import NovaClient
+from padsquire.gcm import DeadZone
+from padsquire.simulator import SimulatedNova
 
 
 class FakeBleakClient:
@@ -105,7 +105,7 @@ def test_config_name_filter():
 
 
 def test_cli_simulated(capsys):
-    from gamesir_linux.cli import main
+    from padsquire.cli import main
 
     assert main(["ble", "--simulate", "info"]) == 0
     out = capsys.readouterr().out

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""`gamesir-linux uboot ...`: the controller's USB download mode.
+"""`padsquire uboot ...`: the controller's USB download mode.
 
 The steps, each its own command so they can be run (and checked) one at a time:
   enter --confirm   switch the controller on the cable into download mode
@@ -35,7 +35,7 @@ This switches the controller into its USB download mode, the one GameSir Connect
 firmware. It sends one command over the cable (f2 00 04 f6, as GameSir's own DLL does); nothing is
 erased or written. The controller should come back as a USB disk named BR23 UBOOT1.00.
 
-To leave the mode: `gamesir-linux uboot restart`. If that fails, hold Home for about 5 seconds.
+To leave the mode: `padsquire uboot restart`. If that fails, hold Home for about 5 seconds.
 
 Run again with --confirm to go ahead."""
 
@@ -108,7 +108,7 @@ def a_enter(args) -> int:
     print("sending the update-mode command; waiting for the controller to come back as a USB disk...")
     d = updatemode.enter(path, args.wait)
     print(f"download mode {d.path}  {d.vendor} {d.product}")
-    print("Next: `gamesir-linux uboot info`.")
+    print("Next: `padsquire uboot info`.")
     return 0
 
 
@@ -119,14 +119,14 @@ def a_info(args) -> int:
     finally:
         dev.close()
     _print_identity(ident)
-    print("The loader runs in RAM; flash is unchanged. Next: `gamesir-linux uboot backup`, "
-          "or `gamesir-linux uboot restart` to leave.")
+    print("The loader runs in RAM; flash is unchanged. Next: `padsquire uboot backup`, "
+          "or `padsquire uboot restart` to leave.")
     return 0
 
 
 def a_backup(args) -> int:
     if updatemode.inside_repo(args.output):
-        raise updatemode.Failed(f"{args.output} is inside the gamesir-linux repo; the backup holds GameSir's "
+        raise updatemode.Failed(f"{args.output} is inside the PadSquire repo; the backup holds GameSir's "
                                 "firmware and your controller's pairing keys, so keep it elsewhere")
     dev, boot = _open(args)
     try:
@@ -135,7 +135,7 @@ def a_backup(args) -> int:
         image = updatemode.backup(boot, ident, args.output, args.size, _log, _progress)
     finally:
         dev.close()
-    print("Keep a copy somewhere safe. Next: `gamesir-linux uboot restart`.")
+    print("Keep a copy somewhere safe. Next: `padsquire uboot restart`.")
     return 0 if image else 1
 
 
@@ -166,7 +166,7 @@ def a_test_write(args) -> int:
             raise updatemode.Failed(f"{addr:#x} is not a free sector above the layout (which ends at {used_end:#x})")
         if live[addr:addr + jlwrite.SECTOR] != b"\xff" * jlwrite.SECTOR:
             raise updatemode.Failed(f"sector {addr:#x} is not blank; not using it")
-        pattern = b"".join(hashlib.sha256(b"gamesir-linux %d" % i).digest() for i in range(128))
+        pattern = b"".join(hashlib.sha256(b"padsquire %d" % i).digest() for i in range(128))
         writer = jlwrite.Writer(boot, addr, addr + jlwrite.SECTOR,
                                 keep=[(0, addr), (addr + jlwrite.SECTOR, size)])
         writer.program(addr, pattern)
@@ -198,7 +198,7 @@ def a_restore(args) -> int:
         updatemode.restore(boot, args.backup, LOADER_CACHE, _log, _progress)
     finally:
         dev.close()
-    print("Next: `gamesir-linux uboot restart`.")
+    print("Next: `padsquire uboot restart`.")
     return 0
 
 
@@ -216,7 +216,7 @@ def a_flash(args) -> int:
         return 2
     finally:
         dev.close()
-    print("Next: `gamesir-linux uboot restart`.")
+    print("Next: `padsquire uboot restart`.")
     return 0
 
 
@@ -273,10 +273,10 @@ def register(sub) -> None:
 
     from .cli import DEFAULT_FW_DIR
     f = acts.add_parser("flash", help="install a firmware update, as GameSir Connect would")
-    f.add_argument("ufw", type=Path, help="the .ufw file, from `gamesir-linux update`")
+    f.add_argument("ufw", type=Path, help="the .ufw file, from `padsquire update`")
     f.add_argument("--backup", type=Path, required=True, help="this controller's flash backup (.bin)")
     f.add_argument("--installed-version", type=int, required=True,
-                   help="the firmware it runs now, from `gamesir-linux usb info` (e.g. 7701)")
+                   help="the firmware it runs now, from `padsquire usb info` (e.g. 7701)")
     f.add_argument("--firmware-dir", type=Path, default=DEFAULT_FW_DIR)
     f.add_argument("--reinstall", action="store_true")
     f.add_argument("--confirm", action="store_true", help="really write")

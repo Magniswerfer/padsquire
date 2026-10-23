@@ -32,7 +32,7 @@ VENDOR_ID = 0x3537
 CONFIG_PIDS = {0x100F: "cable", 0x1098: "2.4 GHz dongle"}
 DESCRIPTOR_PREFIX = bytes.fromhex("067aff")   # Usage Page (0xFF7A)
 
-log = logging.getLogger("gamesir_linux.hid")   # GAMESIR_DEBUG=1: every frame, sent and received
+log = logging.getLogger("padsquire.hid")   # PADSQUIRE_DEBUG=1: every frame, sent and received
 
 REPORT_SIZE = 64
 READ_TIMEOUT = 0.2

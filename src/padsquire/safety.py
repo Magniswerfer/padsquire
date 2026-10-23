@@ -135,7 +135,7 @@ class FlashChoice:
 
 
 def load_backup(path: str | Path) -> tuple[bytes, int]:
-    """A flash backup made by `gamesir-linux uboot backup`, checked against its manifest.
+    """A flash backup made by `padsquire uboot backup`, checked against its manifest.
     Returns the dump and the controller's chip key."""
     path = Path(path)
     manifest = json.loads(path.with_suffix(".json").read_text())

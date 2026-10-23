@@ -222,7 +222,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
             resp.set_cookie(COOKIE, token, httponly=True, samesite="Strict")
             raise resp
         if not secrets.compare_digest(request.cookies.get(COOKIE, ""), token):
-            return web.Response(status=403, text="Open the link printed by `gamesir-linux gui`.")
+            return web.Response(status=403, text="Open the link printed by `padsquire gui`.")
         if request.path.startswith("/api/") and request.headers.get(API_HEADER) != "1":
             return fail("missing header", 403)
         resp = await handler(request)
@@ -597,7 +597,7 @@ def serve(fw_dir: Path, *, host: str = "127.0.0.1", port: int = 0, simulate: boo
     app = build_app(token, fw_dir, simulate=simulate)
 
     def ready():
-        print(f"GameSir Linux is running at:\n  {url}\nPress Ctrl+C to stop.", flush=True)
+        print(f"PadSquire is running at:\n  {url}\nPress Ctrl+C to stop.", flush=True)
         if open_browser:
             webbrowser.open(url)
 

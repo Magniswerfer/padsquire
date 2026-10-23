@@ -1,4 +1,4 @@
-# gamesir-linux
+# PadSquire
 
 Configure and update the GameSir **Nova 2 Lite** on Linux, without Windows or GameSir Connect.
 Unofficial: built by reverse-engineering GameSir Connect (Windows) and the GameSir Android app.
@@ -7,7 +7,7 @@ Unofficial: built by reverse-engineering GameSir Connect (Windows) and the GameS
 
 ## What it does
 
-- **A settings app in your browser** (`gamesir-linux gui`). It finds the controller by itself when
+- **A settings app in your browser** (`padsquire gui`). It finds the controller by itself when
   you plug it in, and shows every setting with the controller drawing as the map. Dead zones are
   drawn as you drag, with the live stick or trigger position on top. On the Buttons page, the
   buttons you press light up as the computer receives them.
@@ -36,11 +36,11 @@ Tested on one Nova 2 Lite (firmware 7701 and 8201) and its receiver (firmware 28
 You need Linux with Python 3.11 or newer, and git.
 
 ```sh
-git clone https://github.com/Magniswerfer/gamesir-linux
-cd gamesir-linux
+git clone https://github.com/Magniswerfer/padsquire
+cd padsquire
 python3 -m venv .venv
 .venv/bin/pip install -e '.[gui]'
-.venv/bin/gamesir-linux gui
+.venv/bin/padsquire gui
 ```
 
 What these do:
@@ -48,15 +48,15 @@ What these do:
 - `git clone` downloads this project and `cd` goes into its folder.
 - `python3 -m venv .venv` makes a private Python environment in the `.venv` folder, so nothing
   is installed system-wide ([venv](https://docs.python.org/3/library/venv.html)).
-- `pip install -e '.[gui]'` installs gamesir-linux into that environment, with the extras the app
+- `pip install -e '.[gui]'` installs PadSquire into that environment, with the extras the app
   needs: aiohttp for the web server and bleak for Bluetooth
   ([pip install](https://pip.pypa.io/en/stable/cli/pip_install/)).
-- `gamesir-linux gui` starts the app and opens it in your browser.
+- `padsquire gui` starts the app and opens it in your browser.
 
 Then open **Setup and help** in the app. It tells you what's still missing, usually a one-time
 permission rule so the controller can be used without `sudo`, and explains each command before
-you run it. Optional: `ln -s "$PWD/.venv/bin/gamesir-linux" ~/.local/bin/` puts `gamesir-linux`
-on your PATH. For an app-menu entry, copy `contrib/desktop/gamesir-linux.desktop` to
+you run it. Optional: `ln -s "$PWD/.venv/bin/padsquire" ~/.local/bin/` puts `padsquire`
+on your PATH. For an app-menu entry, copy `contrib/desktop/padsquire.desktop` to
 `~/.local/share/applications/`.
 
 The app runs on `127.0.0.1` only and opens a one-time link. Other websites in your browser can't
@@ -123,15 +123,15 @@ Found on firmware 8201. The app works around each one:
 Everything in the app also works from a terminal:
 
 ```sh
-gamesir-linux usb info                              # firmware, battery, MAC
-gamesir-linux usb deadzone left-stick-inner 3       # set a dead zone (percent)
-gamesir-linux usb vibration --left-grip 50 --right-grip 50
-gamesir-linux update                                # fetch the newest firmware
-gamesir-linux uboot --help                          # update mode: backup, restore, flash, restart
+padsquire usb info                              # firmware, battery, MAC
+padsquire usb deadzone left-stick-inner 3       # set a dead zone (percent)
+padsquire usb vibration --left-grip 50 --right-grip 50
+padsquire update                                # fetch the newest firmware
+padsquire uboot --help                          # update mode: backup, restore, flash, restart
 ```
 
 `usb` works by cable and through the receiver; `ble` does the same over Bluetooth, and
-`--simulate` tries any command without a controller. `gamesir-linux --help` lists everything. For
+`--simulate` tries any command without a controller. `padsquire --help` lists everything. For
 automatic weekly firmware checks there is a systemd timer in `contrib/systemd/`.
 
 ## How it works
@@ -178,4 +178,4 @@ same licence. The settings app's "Source code" link does that for you as long as
 The protocol notes in [PROTOCOL.md](PROTOCOL.md) are under
 [Creative Commons Attribution-ShareAlike 4.0](LICENSES/CC-BY-SA-4.0.txt), so other projects can
 reuse them. The bundled Barlow fonts keep their own
-[SIL Open Font License](src/gamesir_linux/web/static/fonts/OFL.txt).
+[SIL Open Font License](src/padsquire/web/static/fonts/OFL.txt).

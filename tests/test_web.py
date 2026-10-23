@@ -7,7 +7,7 @@ import pytest
 aiohttp = pytest.importorskip("aiohttp")
 from aiohttp.test_utils import TestClient, TestServer  # noqa: E402
 
-from gamesir_linux.web.server import build_app  # noqa: E402
+from padsquire.web.server import build_app  # noqa: E402
 
 TOKEN = "test-token"
 API = {"X-GameSir": "1"}
@@ -122,7 +122,7 @@ def test_scan_uses_injected_scanner(tmp_path):
 
 
 def test_usb_controllers_are_listed_and_only_found_paths_open(tmp_path):
-    from gamesir_linux import ble, hid
+    from padsquire import ble, hid
 
     async def no_bluetooth():
         raise ble.BleError("Bluetooth is unavailable")
@@ -207,7 +207,7 @@ def test_setup_checks_explain_their_commands(tmp_path):
 
 
 def test_devices_lists_what_is_plugged_in(tmp_path):
-    from gamesir_linux import hid
+    from padsquire import hid
     plugged = [hid.HidDevice("/dev/hidraw98", 0x1098, "2.4G XBOX 360 For Windows")]
 
     async def go(c):

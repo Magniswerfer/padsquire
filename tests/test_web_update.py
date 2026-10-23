@@ -10,9 +10,9 @@ from aiohttp.test_utils import TestClient, TestServer  # noqa: E402
 
 from test_jlboot import CHIP_KEY, LOADER, LOADER_BLOB, FakeUboot  # noqa: E402
 from test_jlflash import _ufw, make_dump, make_image  # noqa: E402
-from gamesir_linux import hid, jlboot, jlwrite, ufw, updatemode  # noqa: E402
-from gamesir_linux.web import update  # noqa: E402
-from gamesir_linux.web.server import build_app  # noqa: E402
+from padsquire import hid, jlboot, jlwrite, ufw, updatemode  # noqa: E402
+from padsquire.web import update  # noqa: E402
+from padsquire.web.server import build_app  # noqa: E402
 
 TOKEN = "t"
 API = {"X-GameSir": "1", "Content-Type": "application/json"}

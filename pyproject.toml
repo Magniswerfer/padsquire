@@ -3,9 +3,9 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "gamesir-linux"
+name = "padsquire"
 version = "0.1.0"
-description = "Linux-native configuration and firmware tools for GameSir controllers"
+description = "PadSquire: Linux tools for GameSir controllers"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "AGPL-3.0-or-later"
@@ -18,14 +18,14 @@ gui = ["aiohttp>=3.9", "bleak>=0.22"]
 test = ["pytest>=8"]
 
 [project.scripts]
-gamesir-linux = "gamesir_linux.cli:main"
+padsquire = "padsquire.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-"gamesir_linux.web" = ["static/*", "static/fonts/*"]
+"padsquire.web" = ["static/*", "static/fonts/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["installer: needs a real GameSir Connect installer (set GAMESIR_INSTALLER)"]
+markers = ["installer: needs a real GameSir Connect installer (set PADSQUIRE_INSTALLER)"]

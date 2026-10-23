@@ -187,7 +187,7 @@ def backup(boot: jlboot.JLBoot, ident: jlboot.Identity, out_dir: Path = BACKUP_D
            size: int | None = None, log: Log = _quiet, progress: Progress = _quiet) -> Path:
     """Read the whole flash twice, compare, check against the device CRC, save. Returns the .bin."""
     if inside_repo(out_dir):
-        raise Failed(f"{out_dir} is inside the gamesir-linux repo; the backup holds GameSir's firmware "
+        raise Failed(f"{out_dir} is inside the PadSquire repo; the backup holds GameSir's firmware "
                      "and your controller's pairing keys, so keep it elsewhere")
     size = size or ident.flash_size
     if not size:
@@ -216,7 +216,7 @@ def backup(boot: jlboot.JLBoot, ident: jlboot.Identity, out_dir: Path = BACKUP_D
         raise Failed(f"{image} does not read back as written")
     with os.fdopen(os.open(manifest, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as f:
         json.dump({
-            "tool": f"gamesir-linux {__version__}",
+            "tool": f"padsquire {__version__}",
             "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "file": image.name, "size": size, "sha256": digest,
             "chip": {"vendor": ident.vendor, "product": ident.product, "revision": ident.revision,

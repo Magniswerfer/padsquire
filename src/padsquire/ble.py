@@ -36,7 +36,7 @@ def _bleak():
     try:
         import bleak
     except ImportError:
-        raise BleError("Bluetooth support needs bleak: pip install 'gamesir-linux[ble]'") from None
+        raise BleError("Bluetooth support needs bleak: pip install 'padsquire[ble]'") from None
     return bleak
 
 

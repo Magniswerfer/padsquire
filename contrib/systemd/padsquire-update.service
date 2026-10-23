@@ -6,4 +6,4 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=%h/.local/bin/gamesir-linux update
+ExecStart=%h/.local/bin/padsquire update

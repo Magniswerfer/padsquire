@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""gamesir-linux command line."""
+"""PadSquire command line."""
 
 from __future__ import annotations
 
@@ -55,7 +55,7 @@ def cmd_update(args) -> int:
             print(f"  {fw['target']:10} v{fw['version']}{region:15} {fw['file']}")
     elif updater.version_key(r.latest) > updater.version_key(r.current):
         print(f"GameSir Connect {r.latest} is available (you have {have}); "
-              "run `gamesir-linux update` to fetch it")
+              "run `padsquire update` to fetch it")
     else:
         print(f"up to date (GameSir Connect {have})")
     return 0
@@ -65,7 +65,7 @@ def cmd_gui(args) -> int:
     try:
         from .web.server import serve
     except ImportError:
-        print("the GUI needs aiohttp: pip install --user 'gamesir-linux[gui]'", file=sys.stderr)
+        print("the GUI needs aiohttp: pip install --user 'padsquire[gui]'", file=sys.stderr)
         return 1
     serve(args.firmware_dir, port=args.port, simulate=args.simulate, open_browser=not args.no_browser)
     return 0
@@ -119,7 +119,7 @@ def cmd_plan(args) -> int:
     print(f"candidate  {fw.file} (v{fw.version})")
     errors = list(plan.errors)
     if args.backup is None:
-        errors.append("no flash backup of this controller (--backup, from `gamesir-linux uboot backup`)")
+        errors.append("no flash backup of this controller (--backup, from `padsquire uboot backup`)")
     else:
         image = safety.choose_flash_image(Path(args.firmware_dir) / fw.file, args.backup)
         errors += image.errors
@@ -135,11 +135,11 @@ def cmd_plan(args) -> int:
 
 
 def main(argv=None) -> int:
-    if os.environ.get("GAMESIR_DEBUG"):
+    if os.environ.get("PADSQUIRE_DEBUG"):
         import logging
         logging.basicConfig(level=logging.DEBUG, format="%(asctime)s.%(msecs)03d %(name)s %(message)s",
                             datefmt="%H:%M:%S")
-    p = argparse.ArgumentParser(prog="gamesir-linux", description="GameSir Nova 2 Lite tools for Linux")
+    p = argparse.ArgumentParser(prog="padsquire", description="PadSquire: Linux tools for GameSir controllers")
     p.add_argument("--version", action="version", version=__version__)
     sub = p.add_subparsers(dest="cmd", required=True)
 

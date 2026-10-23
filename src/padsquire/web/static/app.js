@@ -48,10 +48,10 @@ async function api(path, body) {
   try {
     res = await fetch(path, opt);
   } catch {
-    throw new Error("Lost contact with gamesir-linux. Is it still running?");
+    throw new Error("Lost contact with PadSquire. Is it still running?");
   }
   let json;
-  try { json = await res.json(); } catch { throw new Error(`Unexpected reply from gamesir-linux (HTTP ${res.status}).`); }
+  try { json = await res.json(); } catch { throw new Error(`Unexpected reply from PadSquire (HTTP ${res.status}).`); }
   if (!json.ok) throw new Error(json.error || "The request failed.");
   return json.data;
 }
@@ -1113,7 +1113,7 @@ function panelGuide() {
     h("h2", {}, "Modes and lights"),
     h("p", { class: "note" }, "On the cable or the 2.4 GHz receiver the controller picks a mode by itself. To change it, hold View and Menu for 2 seconds; it cycles through the three."),
     table(["Mode", "Light", "Use it for"], [
-      ["Xbox", "Green", "PC. This is the mode gamesir-linux configures, by cable or through the receiver."],
+      ["Xbox", "Green", "PC. This is the mode PadSquire configures, by cable or through the receiver."],
       ["Switch", "Red", "Nintendo Switch."],
       ["DS4", "Blue", "Android, and anything that expects a PlayStation controller."],
     ]),
@@ -1324,7 +1324,7 @@ async function panelSetup() {
     qa("Where are my backups?",
       "In ~/.local/share/gamesir-linux/backups, one file per backup with a .json next to it. They hold the firmware and your controller's Bluetooth pairing and calibration: copy them somewhere safe, and don't share them."),
     qa("Starting this app",
-      command("gamesir-linux gui"),
+      command("padsquire gui"),
       "It runs on this computer only (127.0.0.1) and opens your browser with a one-time link. Stop it with Ctrl+C in its terminal."));
   return wrap;
 }

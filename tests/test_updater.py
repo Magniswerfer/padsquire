@@ -10,8 +10,8 @@ import urllib.parse
 import pytest
 
 from conftest import fake_installer
-from gamesir_linux import updater
-from gamesir_linux.updater import Release, UpdateError
+from padsquire import updater
+from padsquire.updater import Release, UpdateError
 
 # A real electron-builder latest.yml, as the format is documented.
 FEED = """version: 1.15.0

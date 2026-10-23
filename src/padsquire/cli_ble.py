@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""`gamesir-linux ble ...` and `gamesir-linux usb ...`: configure a Nova 2 Lite over
+"""`padsquire ble ...` and `padsquire usb ...`: configure a Nova 2 Lite over
 Bluetooth LE or the USB cable. Both speak GCM, so they share every action."""
 
 from __future__ import annotations

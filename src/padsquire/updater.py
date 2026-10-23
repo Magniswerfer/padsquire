@@ -38,7 +38,7 @@ from pathlib import Path
 from . import __version__, installer
 
 FEED_URL = "https://pc-connect-update.gamesir-cdn.com/latest.yml"
-USER_AGENT = f"gamesir-linux/{__version__} (+https://github.com/Magniswerfer/gamesir-linux)"
+USER_AGENT = f"padsquire/{__version__} (+https://github.com/Magniswerfer/padsquire)"
 TIMEOUT = 30
 
 
