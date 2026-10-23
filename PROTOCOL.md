@@ -111,7 +111,15 @@ JieLi's USB loader protocol and lists AC695N as working. It's worth trying first
 
 ## Firmware files
 
-Bundled in the installer under `resources/dfu/packages/`, no download server involved:
+**Where new firmware comes from:** GameSir Connect contains a remote firmware feed
+(`updateRemotelyFirmwareConfig` / `UPDATE_FIRMWARE_PACKAGE`, OSS endpoint
+`https://gamesir-app.oss-accelerate.aliyuncs.com/pc/`), but `appConfig.enableFirmwareUpdate` is
+`false` and nothing ever calls it. Firmware only ships inside app releases, announced by
+electron-updater at `https://pc-connect-update.gamesir-cdn.com/latest.yml` with installers at
+`<base>/<version>/<file>` (the app also tries `<base>/releases/<version>/`). `updater.py` follows
+that feed.
+
+Bundled in the installer under `resources/dfu/packages/`:
 
 | File | Target | Version | Notes |
 |---|---|---|---|

@@ -1,0 +1,17 @@
+# Let the logged-in user talk to GameSir controllers without sudo.
+# Install:  sudo cp 70-gamesir.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger
+#
+# 3537 = GameSir, 4c4a = JieLi (the controller's chip vendor; used by some update modes).
+# "uaccess" grants access to whoever is logged in at the seat, nobody else.
+
+# Raw HID: configuration through the USB cable or the 2.4 GHz dongle
+KERNEL=="hidraw*", ATTRS{idVendor}=="3537", TAG+="uaccess"
+KERNEL=="hidraw*", ATTRS{idVendor}=="4c4a", TAG+="uaccess"
+
+# SCSI generic: firmware update mode, where the controller appears as a USB disk
+SUBSYSTEM=="scsi_generic", ATTRS{idVendor}=="3537", TAG+="uaccess"
+SUBSYSTEM=="scsi_generic", ATTRS{idVendor}=="4c4a", TAG+="uaccess"
+
+# The USB device itself
+SUBSYSTEM=="usb", ATTRS{idVendor}=="3537", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="4c4a", TAG+="uaccess"

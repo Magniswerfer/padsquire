@@ -1,9 +1,52 @@
 import hashlib
 import json
+import struct
+import subprocess
+import tempfile
+from pathlib import Path
 
 import pytest
 
-from gamesir_linux import ufw
+from gamesir_linux import installer, ufw
+
+
+def write_asar(path: Path, files: dict[str, bytes]) -> None:
+    """Write a minimal Electron asar archive."""
+    tree, blob, off = {"files": {}}, b"", 0
+    for name, data in files.items():
+        node = tree
+        *dirs, leaf = name.split("/")
+        for d in dirs:
+            node = node["files"].setdefault(d, {"files": {}})
+        node["files"][leaf] = {"size": len(data), "offset": str(off)}
+        blob += data
+        off += len(data)
+    js = json.dumps(tree).encode()
+    pad = (4 - len(js) % 4) % 4
+    pickle = struct.pack("<II", len(js) + 4 + pad, len(js)) + js + b"\0" * pad
+    path.write_bytes(struct.pack("<II", 4, len(pickle)) + pickle + blob)
+
+
+def fake_installer(path: Path, version: str, fw_version: int = 8201) -> Path:
+    """An archive laid out like the GameSir Connect NSIS installer (7-Zip opens both)."""
+    intl, cn = f"T4Nlite2_V{fw_version}_intl.ufw", f"T4Nlite2_V{fw_version - 1}_cn.ufw"
+    js = ('dd={Type:"Internal",Version:"2800",Path:"packages/DOG.ufw",Identifier:"T4N2Dongle"},'
+          f'pd=[{{Model:"T4N2",PackedFirmware:[{{Type:"Internal",Version:"{fw_version - 1}",'
+          f'Path:"packages/{cn}",MinimumVersion:"5600",Identifier:"T4N2Internal"}},'
+          f'{{Type:"International",Version:"{fw_version}",Path:"packages/{intl}",'
+          'MinimumVersion:"5601",Identifier:"T4N2International"}]}];')
+    with tempfile.TemporaryDirectory() as tmp:
+        res = Path(tmp) / "resources"
+        pkgs = res / "dfu" / "packages"
+        pkgs.mkdir(parents=True)
+        write_asar(res / "app.asar", {"package.json": json.dumps({"version": version}).encode(),
+                                      "dist/electron/main.js": js.encode()})
+        (pkgs / "DOG.ufw").write_bytes(make_ufw(chip="AC632N", pid="AC632N_TRANS", vid="N2DG"))
+        (pkgs / intl).write_bytes(make_ufw())
+        (pkgs / cn).write_bytes(make_ufw(firmware=b"\x5a" * 3000))
+        subprocess.run([installer.find_7zip(), "a", "-t7z", str(path), "resources"],
+                       cwd=tmp, check=True, capture_output=True)
+    return path
 
 ISD_TEMPLATE = """[EXTRA_CFG_PARAM]
 CHIP_NAME = {chip};

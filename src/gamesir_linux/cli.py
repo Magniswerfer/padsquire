@@ -27,6 +27,39 @@ def cmd_extract(args) -> int:
     return 0
 
 
+def cmd_update(args) -> int:
+    from . import updater
+
+    shown = []
+
+    def progress(done, total):
+        if sys.stderr.isatty():
+            pct = f"{done * 100 // total}%" if total else f"{done >> 20} MB"
+            print(f"\rdownloading GameSir Connect... {pct}", end="", file=sys.stderr, flush=True)
+            shown.append(True)
+
+    try:
+        r = updater.update(args.firmware_dir, feed_url=args.feed, check_only=args.check,
+                           force=args.force, keep_installer=args.keep_installer, progress=progress)
+    except (updater.UpdateError, installer.ExtractError, OSError) as e:
+        print(("\n" if shown else "") + f"error: {e}", file=sys.stderr)
+        return 1
+    if shown:
+        print(file=sys.stderr)
+    have = r.current or "none"
+    if r.updated:
+        print(f"updated firmware from GameSir Connect {have} to {r.latest}")
+        for fw in r.manifest["firmware"]:
+            region = f", {fw['region']}" if fw["region"] else ""
+            print(f"  {fw['target']:10} v{fw['version']}{region:15} {fw['file']}")
+    elif updater.version_key(r.latest) > updater.version_key(r.current):
+        print(f"GameSir Connect {r.latest} is available (you have {have}); "
+              "run `gamesir-linux update` to fetch it")
+    else:
+        print(f"up to date (GameSir Connect {have})")
+    return 0
+
+
 def cmd_ufw(args) -> int:
     try:
         f = ufw.load(args.file)
@@ -92,6 +125,15 @@ def main(argv=None) -> int:
     e.add_argument("--model", default="T4N2", help="GameSir model code (T4N2 = Nova 2 Lite)")
     e.set_defaults(func=cmd_extract)
 
+    from .updater import FEED_URL
+    up = sub.add_parser("update", help="fetch the newest firmware via GameSir Connect's update feed")
+    up.add_argument("--check", action="store_true", help="only report whether a newer release exists")
+    up.add_argument("--force", action="store_true", help="re-download even if already current")
+    up.add_argument("--firmware-dir", type=Path, default=DEFAULT_FW_DIR)
+    up.add_argument("--keep-installer", type=Path, metavar="PATH", help="also save the installer here")
+    up.add_argument("--feed", default=FEED_URL, help=argparse.SUPPRESS)
+    up.set_defaults(func=cmd_update)
+
     u = sub.add_parser("ufw", help="inspect and verify a .ufw firmware file")
     u.add_argument("file")
     u.add_argument("--json", action="store_true")
@@ -110,8 +152,9 @@ def main(argv=None) -> int:
     pl.add_argument("--reinstall", action="store_true")
     pl.set_defaults(func=cmd_plan)
 
-    from . import cli_ble
+    from . import cli_ble, cli_probe
     cli_ble.register(sub)
+    cli_probe.register(sub)
 
     args = p.parse_args(argv)
     return args.func(args)

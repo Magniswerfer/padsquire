@@ -1,12 +1,23 @@
 import json
 import os
 import shutil
-import struct
-from pathlib import Path
 
 import pytest
 
+from conftest import fake_installer, write_asar
 from gamesir_linux import installer, ufw
+
+HAVE_7Z = any(shutil.which(n) for n in ("7zz", "7z", "7za"))
+
+
+@pytest.mark.skipif(not HAVE_7Z, reason="7-Zip not installed")
+def test_extract_from_installer_layout(tmp_path):
+    exe = fake_installer(tmp_path / "GameSir Connect Setup 9.9.9.exe", "9.9.9")
+    manifest = installer.extract(exe, tmp_path / "fw")
+    assert manifest["gamesir_connect_version"] == "9.9.9"
+    assert {(f["target"], f["region"]) for f in manifest["firmware"]} == {
+        ("dongle", None), ("controller", "china"), ("controller", "international")}
+    assert installer.load_manifest(tmp_path / "fw")[0].jl_vid in ("N2DG", "N2LT")
 
 JS = ('var a=1,dd={Type:"Internal",Version:"2800",Path:"packages/DOG.ufw",MD5:"x",Identifier:"T4N2Dongle"},'
       'pd=[{Model:"T4N2",PackedFirmware:[{Type:"Internal",Version:"8200",Path:"packages/A.ufw",'
@@ -26,25 +37,9 @@ def test_rescue_images_are_ignored():
     assert all("ZW" not in fw["Path"] for fw in installer.firmware_table(JS))
 
 
-def _write_asar(path: Path, files: dict[str, bytes]):
-    tree, blob, off = {"files": {}}, b"", 0
-    for name, data in files.items():
-        node = tree
-        *dirs, leaf = name.split("/")
-        for d in dirs:
-            node = node["files"].setdefault(d, {"files": {}})
-        node["files"][leaf] = {"size": len(data), "offset": str(off)}
-        blob += data
-        off += len(data)
-    js = json.dumps(tree).encode()
-    pad = (4 - len(js) % 4) % 4
-    pickle = struct.pack("<II", len(js) + 4 + pad, len(js)) + js + b"\0" * pad
-    path.write_bytes(struct.pack("<II", 4, len(pickle)) + pickle + blob)
-
-
 def test_asar_reader(tmp_path):
     asar = tmp_path / "app.asar"
-    _write_asar(asar, {"package.json": b'{"version":"9.9"}', "dist/electron/main.js": JS.encode()})
+    write_asar(asar, {"package.json": b'{"version":"9.9"}', "dist/electron/main.js": JS.encode()})
     assert json.loads(installer.asar_file(asar, "package.json"))["version"] == "9.9"
     assert installer.asar_file(asar, "dist/electron/main.js").decode() == JS
     with pytest.raises(installer.ExtractError):
