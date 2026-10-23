@@ -595,3 +595,8 @@ input[type="color"] {
 .faq summary { cursor: pointer; font-weight: 600; }
 .faq p { color: var(--muted); margin: .625rem 0 0; }
 .faq .command { margin-top: .625rem; }
+
+/* remap list: the label keeps its room, the menu takes a fixed width */
+.rows.two .row { grid-template-columns: minmax(8rem, 1fr) minmax(0, 13rem); }
+.rows.two .row-control { justify-self: stretch; flex-wrap: nowrap; }
+.rows.two .row-control select { flex: 1; min-width: 0; }

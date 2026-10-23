@@ -1,96 +1,71 @@
-# First contact with a real Nova 2 Lite
+# Testing on hardware
 
-Everything in this guide is read-only or reversible. Installing firmware is on the settings app's
-Firmware page (or `gamesir-linux uboot`, section 5); it always starts with a backup of the flash.
+How to check gamesir-linux against a real controller, and what to report. For everyday use, start
+the settings app (`gamesir-linux gui`) and follow its Setup and help page instead.
 
-## 0. Install
-
-```sh
-git clone https://github.com/Magniswerfer/gamesir-linux && cd gamesir-linux
-sudo dnf install 7zip
-pip install --user -e '.[ble]'
-sudo cp contrib/udev/70-gamesir.rules /etc/udev/rules.d/
-sudo udevadm control --reload && sudo udevadm trigger
-```
-
-## 1. Firmware feed (no controller needed)
-
-```sh
-gamesir-linux update
-```
-
-First real test of GameSir's update feed: it should download GameSir Connect, verify its SHA-512
-and extract three firmware files. If it fails, the error message names every URL it tried.
-
-## 2. Guided probe (about 10 minutes)
+## The probe
 
 ```sh
 gamesir-linux probe --guided
 ```
 
-It walks through each connection mode (cable in XInput/DInput/Switch, dongle, both update modes,
-Bluetooth) and saves a `gamesir-probe-*.json` report. **Share that file.** It answers:
+It walks you through each connection mode (cable in each colour, the 2.4 GHz receiver, update
+mode, Bluetooth) and saves a `gamesir-probe-*.json` report of how the controller appears in each:
+USB IDs, which driver Linux binds, the HID layout of the configuration interface, and over
+Bluetooth the service map and whether replies are read back or notified. **Attach that file to a
+bug report.** The probe never changes a setting; over Bluetooth it sends only three read queries.
 
-| Question | Where in the report |
-|---|---|
-| Which USB product ID belongs to which mode | `usb[].pid` per snapshot |
-| Whether Linux binds a gamepad driver (xpad / hid-generic) | `interfaces[].driver`, `input` |
-| The HID layout of the configuration interface (needed for dongle config) | `hid[].report_descriptor` |
-| What update mode looks like: disk vendor/model, JieLi IDs | `storage[]` in the update-mode snapshots |
-| The real Bluetooth service map | `bluetooth.services` |
-| Whether replies are read back or notified | `bluetooth.experiments[].verdict` |
+## Still to test: Bluetooth
 
-The probe never changes a setting. Over Bluetooth it only sends three queries (info, battery and
-one dead-zone read), and only to the characteristic the official app uses.
+Everything else has been tested on a Nova 2 Lite (firmware 7701 and 8201) and its receiver (2800).
+Over Bluetooth (Android mode: hold Home + A until the light flashes yellow, then pair; if
+`gamesir-linux ble scan` finds nothing, pair once with `bluetoothctl` and retry):
 
-## 3. Bluetooth configuration
+1. **Do replies come back?** `gamesir-linux ble info`. If it times out, run the probe: when
+   `bluetooth.experiments[].verdict` says `notify:865f`, set `NOTIFY_REPLIES = True` in
+   `src/gamesir_linux/ble.py`.
+2. **The basic info and battery layout** over Bluetooth (by cable, the battery's bit 7 is not a
+   charging flag; see `gcm.Battery`).
+3. **The six settings the controller refuses by cable or receiver**: low battery warning, play
+   while charging, swap sticks, invert sticks X/Y, swap LB/LT, swap RB/RT. Do they change over
+   Bluetooth? (`gamesir-linux ble feature play-while-charging on`, then read it back.)
+4. **The anti-dead zone.** By cable and receiver it is stored but has no effect on the stick
+   output. Does it work over Bluetooth, or in another mode?
+5. **Auto-sleep and profiles**, which get no answer by cable.
+6. **Button remapping.** Over Bluetooth the app uses the Android app's back-button command; does
+   the cable's full remapping (`f1`) work there too?
+7. **Do settings carry over?** Set something you can feel over Bluetooth, switch to the receiver,
+   and check it there.
 
-In Bluetooth mode (try Android mode first: Home + A, LED yellow):
+Anything you change, set it back afterwards; `gamesir-linux ble restore --yes` resets every
+setting to factory defaults.
 
-```sh
-gamesir-linux ble scan
-gamesir-linux ble info
-gamesir-linux ble deadzone left-stick-inner        # note the value
-gamesir-linux ble deadzone left-stick-inner 3      # change it (read back automatically)
-```
+## Firmware updates
 
-If `scan` finds nothing, pair once with `bluetoothctl` and retry. If `info` times out but the
-probe's verdict says `notify:865f`, set `NOTIFY_REPLIES = True` in `src/gamesir_linux/ble.py`.
-
-Or do the same in the settings app: `gamesir-linux gui`, then **Find controllers**. Worth checking
-while you're there: does the Profiles page show profiles, and do the dead-zone and vibration
-values the controller reports look sensible (percent-like, and 0–4)?
-
-## 4. Do settings survive switching to the dongle?
-
-1. Over Bluetooth, set something you can feel, e.g. `gamesir-linux ble feature swap-sticks on`.
-2. Switch to the 2.4 GHz dongle and check the sticks are swapped (e.g. in Steam's controller test).
-3. Back in Bluetooth: `gamesir-linux ble feature swap-sticks off`.
-
-If the swap carries over, "configure over Bluetooth, play on the dongle" works today.
-
-## 5. Flash backup (download mode)
-
-Only after checking with each other first: every step below talks to the controller's USB
-download mode. Nothing is erased or written: the tool refuses those commands outright. Run one
-step at a time and read its output before the next.
+Use the app's Firmware page, or the same steps on the command line:
 
 ```sh
-sudo modprobe sg                                   # /dev/sgN nodes (persist: echo sg | sudo tee /etc/modules-load.d/sg.conf)
-gamesir-linux uboot enter --confirm                # cable in, LED green; it comes back as a USB disk
-gamesir-linux uboot info                           # chip, chip key, flash ID and size
-gamesir-linux uboot backup                         # reads the flash twice, compares, saves both files
-gamesir-linux uboot restart                        # back to normal firmware
+gamesir-linux uboot enter --confirm         # add --receiver for the 2.4 GHz receiver
+gamesir-linux uboot info                    # chip, chip key, flash size
+gamesir-linux uboot backup                  # whole flash, read twice and compared
+gamesir-linux uboot flash <file.ufw> --backup <backup.bin> --installed-version <version> --confirm
+gamesir-linux uboot restart                 # add --receiver for the receiver
 ```
 
-The backup goes to `~/.local/share/gamesir-linux/backups/` (a `.bin` and a `.json` with its
-SHA-256), readable only by you: it holds the controller's Bluetooth pairing keys. Copy it
-somewhere safe. `backup` refuses to save inside the repo.
+Update mode needs the `sg` kernel module; the app's Setup and help page explains it. Backups go to
+`~/.local/share/gamesir-linux/backups`, readable only by you: they hold the device's Bluetooth
+pairing and calibration. Copy them somewhere safe.
 
-`info` and `backup` download jl-uboot-tool's BR23 loader once (pinned commit, SHA-256 checked)
-and run it in the controller's RAM; a restart clears it.
+For a **controller or receiver the tool hasn't seen before**, go one step at a time and read the
+output before the next: update mode and `info` only, then a backup, then a restore of that same
+backup (`uboot restore`) to test writing with known-good data, and only then an update. The tool
+refuses a layout it doesn't understand.
 
 ## If something goes wrong
 
-Hold Home + M for about 10 seconds to force the controller off. `gamesir-linux ble restore --yes`
-resets every setting to factory defaults.
+- **The controller doesn't respond:** hold Home + M for about 10 seconds to turn it off, turn it
+  on, and hold Menu + View until the light is green. The receiver: unplug it and plug it back in.
+- **A firmware write failed:** don't restart or unplug. Run the same step again, or write the
+  backup back. The device stays in update mode until a write has gone through.
+- **Settings in a bad state:** `gamesir-linux usb restore --yes` (or `ble`) resets them to factory
+  defaults.
