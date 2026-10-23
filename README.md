@@ -100,8 +100,11 @@ gamesir-linux update                 # fetch the newest firmware (or: update --c
 gamesir-linux extract ~/Downloads/GameSir\ Connect\ Setup\ 1.16.7.exe   # from an installer
 gamesir-linux ufw ~/.local/share/gamesir-linux/firmware/T4Nlite2_V182_2026-04-24.ufw
 
-# Dry run: what would happen to a controller on firmware 7701?
-gamesir-linux plan --target controller --pid AC695X_TRANS --vid N2LT --version 7701 --dongle-version 2800
+# Dry run: what would happen to a controller on firmware 7701? Needs its flash backup
+# (`gamesir-linux uboot backup`): it checks which image fits and that settings, Bluetooth
+# address and calibration stay where they are.
+gamesir-linux plan --target controller --pid AC695X_TRANS --vid N2LT --version 7701 --dongle-version 2800 \
+    --backup ~/.local/share/gamesir-linux/backups/nova2lite-br23-flash-<date>.bin
 ```
 
 Automatic weekly firmware checks:

@@ -9,7 +9,8 @@ tested against a **simulated** controller. The first real hardware session start
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -e '.[gui,test]'   # no system pip on this box; 7zip for update/extract
-pytest                                   # 134 tests; GAMESIR_INSTALLER=<setup.exe> adds a real-installer test
+pytest                                   # 148 tests; GAMESIR_INSTALLER=<setup.exe> adds a real-installer test,
+                                         # GAMESIR_BACKUP=<dump.bin> GAMESIR_UFW=<.ufw> a real layout check
 gamesir-linux probe --guided             # read-only report of the controller in every mode -> JSON
 gamesir-linux ble scan | info | deadzone | feature | vibration | sleep | restore
 gamesir-linux usb ...                    # same actions over the cable (green LED mode), via hid.py
@@ -28,6 +29,9 @@ gamesir-linux uboot find | enter --confirm | info | backup | restart   # downloa
 - `ufw.py`, `jlcrypt.py`, `installer.py`, `updater.py`, `safety.py`: firmware side.
 - `jlboot.py` + `cli_uboot.py`: JieLi USB download mode over SG_IO, read-only (an allowlist refuses
   erase, flash write and the chip-key write). Needs the `sg` kernel module (`sudo modprobe sg`).
+- `jlflash.py`: reads a flash layout (file table, app directory) and checks that an image keeps
+  every reserved area; `safety.choose_flash_image` picks the image against a backup. `plan`
+  refuses without `--backup`.
 - `probe.py`: read-only hardware probe. `PROTOCOL.md`: all reverse-engineering notes.
 
 ## First hardware session: what to confirm, in order

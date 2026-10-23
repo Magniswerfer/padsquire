@@ -10,10 +10,11 @@ Assumptions still to confirm on real hardware are marked ASSUMPTION.
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import ufw
+from . import jlflash, ufw
 from .installer import FirmwareInfo
 
 # ASSUMPTION: the last digit of a controller version is its region, inferred from
@@ -120,3 +121,57 @@ def choose_firmware(device: DeviceState, bundled: list[FirmwareInfo]) -> Firmwar
     if device.target == "controller" and device.version is not None:
         candidates = [fw for fw in candidates if fw.region == region_of(device.version)]
     return max(candidates, key=lambda fw: fw.version, default=None)
+
+
+# -- the flash layout, checked against this controller's own backup ------------------------------
+
+@dataclass
+class FlashChoice:
+    partition: str | None             # e.g. "flash2.bin"
+    start: int = 0
+    end: int = 0
+    errors: list[str] = field(default_factory=list)
+
+
+def load_backup(path: str | Path) -> tuple[bytes, int]:
+    """A flash backup made by `gamesir-linux uboot backup`, checked against its manifest.
+    Returns the dump and the controller's chip key."""
+    path = Path(path)
+    manifest = json.loads(path.with_suffix(".json").read_text())
+    data = path.read_bytes()
+    if hashlib.sha256(data).hexdigest() != manifest["sha256"] or not manifest.get("identical"):
+        raise ValueError(f"{path} does not match its manifest; not using it")
+    return data, int(manifest["chip"]["chip_key"], 16)
+
+
+def choose_flash_image(fw_path: str | Path, backup: str | Path) -> FlashChoice:
+    """Which firmware image in the .ufw fits this controller's flash, and where it goes.
+    Exactly one image must keep every reserved area of the backup where it is."""
+    try:
+        dump, key = load_backup(backup)
+    except (OSError, KeyError, ValueError) as e:
+        return FlashChoice(None, errors=[f"cannot use the backup: {e}"])
+    device = None
+    for base in (0x1000, 0, 0x10000):
+        try:
+            device = jlflash.parse(dump, base, key)
+            break
+        except jlflash.FlashError:
+            continue
+    if device is None:
+        return FlashChoice(None, errors=["cannot read the flash layout in the backup"])
+    f = ufw.load(fw_path)
+    fits, refused = [], []
+    for e in f.entries:
+        if not (e.name.startswith("flash") and e.name.endswith(".bin")):
+            continue
+        plan = jlflash.check_update(device, f.payload(e.name), key)
+        (fits if plan.ok else refused).append((e.name, plan))
+    if len(fits) == 1:
+        name, plan = fits[0]
+        return FlashChoice(name, plan.start, plan.end)
+    if not fits:
+        return FlashChoice(None, errors=["no image in the firmware file fits this controller's flash: "
+                                         + "; ".join(f"{n}: {', '.join(p.problems)}" for n, p in refused)])
+    return FlashChoice(None, errors=["several images fit this controller's flash ("
+                                     + ", ".join(n for n, _ in fits) + "); refusing to guess"])

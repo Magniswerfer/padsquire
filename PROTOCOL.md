@@ -304,13 +304,46 @@ key `0x3496`, so it ships scrambled for this chip key and needs no re-encryption
 reserved area (`VM`, `BTIF`, `EXIF`, `USERIF`, `key_mac`) is at the same address in 7701 and
 8201, outside the image.
 
-**Open:** the last 32 bytes of the code area. GameSir's image has 6 bytes at `0x63FF8`; this
+**The last 32 bytes of the code area.** GameSir's image has 6 bytes at `0x63FF8`; this
 controller has `a4 00 30 a0 07 00 00 00` at `0x63FE0`, `22 84` at `0x63FF0` and 8 bytes at
-`0x63FF8`. Possibly the boot tag that `f2 00 04 f6` sets (the dump was taken right after it),
-possibly written at production. The official updater overwrites this region with the image.
+`0x63FF8`. They don't follow the record JieLi's updater writes there (below), so they were
+probably written by the factory burner. Not decoded; the official update overwrites them.
 
-The JieLi DLL's obfuscated strings are hex, then ENC with key `0x7117 ^ (pos >> 2)`: they decode
-to the loader resource type `LOADER`, `uboot1.00`, the chip names `br22 br23 br25 br27 br30 bd19
+**How GameSir Connect 1.16.7 actually flashes the T4N2** (from `main.js`, the worker scripts
+in `resources/dfu/` and `jl_firmware_upgrade_x86.dll`; static analysis):
+
+- GameSir's DLL is **not** what burns the flash. Its `UpdateFirmware` imports JieLi ordinals
+  15, 9, 5, 3, 6, which in the shipped JieLi DLL are `setDualUbootEnabled`,
+  `queryDeviceConfigEOffsetByPath`, `getUfwDataCrc`, `getUfwConfigEOffset`, `getUfwPidVid`: it
+  was linked against an older JieLi DLL without the three `ConfigEOffset` exports. Its log
+  strings (`JL_loadUfwData`, `JL_upgradeDevice`) fit that older numbering. Only its `f2 00 04 f6`
+  write matters.
+- Two update workers exist. `upgradWoker.js` drives a second library, `JL_upgradeUtility_x86.dll`,
+  over HID (reports prefixed `0f 00 00 3c f0 00 00 00`), through the running firmware.
+  `udiskUpgradWoker.js` drives `jl_firmware_upgrade_x86.dll` by export name against the
+  download-mode disk: `JL_loadUfwData`, `JL_queryDevicePidVid` (must equal the `.ufw`'s
+  PID/VID), then **`JL_upgradeDevice(udisk, false, true, null)`**. The T4N2 uses the disk path:
+  its code reports progress as `UDiskUpgradeProgressChange` / `UDiskUpgradeFinished`, and its
+  device entry carries `UDiskVersionId: "N2LT"`, `UdiskProductName: "AC695X_TRANS"`.
+- `JL_loadUfwData` (`FUN_1000ded0`) verifies the `.ufw`, checks `tail.bin` (magic
+  `0x36659213`/`0x4273`), and files each firmware partition by two fields: header byte `0x0D`
+  (`0x01` or `0x10`; ours `0x10`) and the CRC field of its `app_dir_head` entry (`0xFFFF` =
+  laid out from 0, `0x00FF` = from `0x1000`, `0x0FFF`/`0xFF00` = from `0x10000`). The `.ufw`'s
+  `EOFFSET` (`isd_config.ini`, 1 → `0x1000`) picks one: **`flash2.bin`** for the Nova 2 Lite.
+- The upgrade thread (`FUN_10007260`) checks the device's flash is at least the image header's
+  size field (`0x7F000`), overwrites the image's **last 16 bytes** with a runtime record (header
+  byte 2 > `0x0F`; constant `0x1501` and values parsed from the `.ufw`), then **prepends
+  `EOFFSET` bytes** (`FUN_10008c50`), giving a `0x64000`-byte image from address 0.
+- The burn (`FUN_1000b560`): header first into the spare sector (sector 0 here), CRC-checked;
+  erase `0x2000` up to the **image length** (the first `false`; with `true` it would erase up to
+  the flash size minus `EOFFSET`, VM and calibration included); write top-down in 4 KB chunks;
+  rewrite `0x1000` then `0`; CRC16 (`FC 13`) every 4 KB from 0 to the image end; retry up to 5
+  times; `FC 0C` restart (the `true`). **Everything from `0x64000` up is never erased or written.**
+
+The JieLi DLL's obfuscated strings are hex, then ENC with key **`0x6D52`** (an earlier note here
+said `0x7117 ^ (pos >> 2)`; that was wrong).
+
+The JieLi DLL's obfuscated strings decode (see below) to the loader resource type `LOADER`, `uboot1.00`, the chip names `br22 br23 br25 br27 br30 bd19
 bd29 uc03` (one wrapped loader resource each), `JLDGAUTH` and `jielikeji2010ipo`.
 
 ## Firmware files
@@ -391,9 +424,12 @@ flashing. `script.ver` holds the JieLi build-tool version (`AC695X-v0.01-cfg_too
 4. Region digit must match; enforce the `MinimumVersion` chain; no downgrades;
    same version only with `--reinstall`.
 5. Warn when the dongle is older than the dongle firmware shipped in the same release.
-6. Still to build: a flash dump before the first write (`gamesir-linux uboot backup` exists,
-   first one taken 2026-10-23, verified by two reads and the device CRC),
-   and a dry run that does everything except the final write.
+6. A verified flash backup of the same controller is required (`plan --backup`). From it,
+   exactly one image in the `.ufw` must fit: its code starts where the controller's does, it
+   decrypts with the controller's chip key, it ends inside the code area, and `VM`, `BTIF`,
+   `EXIF`, `USERIF` and `key_mac` are at the same addresses and outside the write range
+   (`jlflash.check_update`). For the Nova 2 Lite that is `flash2.bin` at `0x1000`–`0x63FFF`.
+7. Still to build: the flasher itself, which does everything the dry run checks and nothing more.
 
 ## Open questions (need hardware)
 
