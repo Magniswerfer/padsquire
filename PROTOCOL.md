@@ -189,7 +189,7 @@ Read-only results from one controller (firmware 7701), i.e. its out-of-the-box v
 | Auto-sleep (`0x26`) | no reply | not supported over USB, or not on this firmware |
 | Config slots (`0x29`) | no reply | the GUI hides profiles over USB |
 | Trigger quick mode (`0x21`) | both off | |
-| Home light (`0x05`) | white, effect 1 | |
+| Home light (`0x05`) | white, effect 1 | **writes work**: set to red from the GUI, read back as (255, 40, 40) |
 | Back buttons L4 / R4 (`0x1F`) | scan 0, flag 0: not assigned | |
 
 Still to decode: the `f5` gamepad-param and `f6` macro layouts.
