@@ -84,6 +84,7 @@ const SECTIONS = [
   { id: "profiles", label: "Profiles" },
   { id: "power", label: "Power" },
   { id: "firmware", label: "Firmware", offline: true },
+  { id: "guide", label: "Button guide", offline: true },
 ];
 
 const app = {
@@ -183,7 +184,7 @@ function renderChrome() {
   const st = $("#status");
   st.replaceChildren();
   if (app.status.connected) {
-    const via = app.status.mode === "simulated" ? "Simulated controller" : "Connected over Bluetooth";
+    const via = { simulated: "Simulated controller", usb: "Connected by cable" }[app.status.mode] || "Connected over Bluetooth";
     st.append(h("span", { class: "conn on" }, via));
     const bat = app.dev && val(app.dev.battery);
     if (bat) {
@@ -243,9 +244,10 @@ function wireMap() {
 function panelConnect() {
   const wrap = h("div", {},
     h("h1", {}, "Connect your controller"),
-    h("p", { class: "lede" }, "Settings are read from the controller and written back to it over Bluetooth. Nothing is stored on this computer."),
+    h("p", { class: "lede" }, "Settings are read from the controller and written back to it, by cable or over Bluetooth. Nothing is stored on this computer."),
     h("ol", { class: "steps" },
-      h("li", {}, "Turn the controller on in Bluetooth mode. The phone app uses Android mode: hold Home and A for 3 seconds until the light turns yellow."),
+      h("li", {}, "By cable: plug the controller in and hold Menu and View for 2 seconds until the light turns green (PC mode)."),
+      h("li", {}, "Or over Bluetooth: turn the controller on in Android mode by holding Home and A for 2 seconds until the light turns yellow."),
       h("li", {}, "Find it below and connect.")),
   );
   const findBtn = h("button", { class: "btn primary", onclick: scan, disabled: app.scanning },
@@ -256,11 +258,11 @@ function panelConnect() {
   if (app.found) {
     if (app.found.length === 0) {
       wrap.append(h("p", { class: "note" },
-        "No Nova 2 Lite found. Check it is in Bluetooth mode and close to this computer, then search again. If it still doesn't appear, pair it once in your system's Bluetooth settings."));
+        "No Nova 2 Lite found. By cable, check the light is green. Over Bluetooth, check it is in Android mode and close to this computer. If it still doesn't appear, pair it once in your system's Bluetooth settings."));
     } else {
       wrap.append(h("ul", { class: "found" }, app.found.map((d) =>
-        h("li", {}, h("span", {}, d.name, h("span", { class: "addr" }, d.address)),
-          h("button", { class: "btn primary small", onclick: () => connect({ address: d.address, name: d.name }) }, "Connect")))));
+        h("li", {}, h("span", {}, d.name, h("span", { class: "addr" }, d.link === "usb" ? `USB cable, ${d.address}` : d.address)),
+          h("button", { class: "btn primary small", onclick: () => connect({ address: d.address, name: d.name, link: d.link }) }, "Connect")))));
     }
   }
   wrap.append(h("p", { class: "callout" },
@@ -277,7 +279,7 @@ function panelController() {
     h("h1", {}, app.status.name || "Nova 2 Lite"),
     h("p", { class: "lede" }, app.status.mode === "simulated"
       ? "This is the simulator: changes behave like the real controller but go nowhere."
-      : `Connected to ${app.status.address}. Every value shown here was read back from the controller.`),
+      : `${app.status.mode === "usb" ? `Connected by cable (${app.status.address})` : `Connected to ${app.status.address}`}. Every value shown here was read back from the controller.`),
     h("dl", { class: "facts" },
       fact("Battery", bat ? `${bat.level}%` : null, bat && bat.charging ? "charging" : null),
       fact("Firmware", info && info.firmware_version, info ? regionName(info.firmware_version) : null),
@@ -306,7 +308,7 @@ function panelButtons() {
     const entry = d.mappings[source];
     if (errOf(entry)) { rows.append(row(labels[source], null, unavailable(entry))); continue; }
     const m = val(entry);
-    const current = m.kind === "disabled" ? "" : (m.kind === "key" ? m.targets[0] : `__${m.kind}`);
+    const current = m.kind === "disabled" ? "" : (m.kind === "key" ? (m.targets[0] ?? "") : `__${m.kind}`);
     const select = h("select", { "aria-label": labels[source] },
       h("option", { value: "" }, "Do nothing"),
       h("optgroup", { label: "Buttons" }, app.meta.targets.map((k) => h("option", { value: k }, labels[k]))),
@@ -355,7 +357,15 @@ function deadZonePicture() {
     anti.setAttribute("r", 70 * Math.min(a, 100) / 100);
     svg.setAttribute("aria-label", `Inner dead zone ${i}%, outer dead zone ${o}%, anti-dead zone ${a}%`);
   };
-  return { svg, update };
+  // live stick position, -1..1 per axis (y: up is negative), clamped to the rim
+  const move = (x, y) => {
+    const m = Math.hypot(x, y);
+    const k = m > 1 ? 1 / m : 1;
+    dot.setAttribute("cx", 80 + 70 * x * k);
+    dot.setAttribute("cy", 80 + 70 * y * k);
+    return Math.min(m, 1);
+  };
+  return { svg, update, move };
 }
 
 function panelSticks() {
@@ -364,13 +374,16 @@ function panelSticks() {
     h("h1", {}, "Sticks"),
     h("p", { class: "lede" }, "Dead zones decide how far a stick must move before it counts, and where it reaches full tilt. Shaded areas are ignored."));
   const pair = h("div", { class: "pair" });
-  for (const [side, prefix] of [["Left stick", "LEFT"], ["Right stick", "RIGHT"]]) {
+  const live = [];
+  for (const [side, prefix, axes] of [["Left stick", "LEFT", ["lx", "ly"]], ["Right stick", "RIGHT", ["rx", "ry"]]]) {
     const zones = { inner: `${prefix}_STICK_INNER`, outer: `${prefix}_STICK_OUTER`, anti: `${prefix}_STICK_ANTI` };
     const entries = Object.fromEntries(Object.entries(zones).map(([k, z]) => [k, d.dead_zones[z]]));
     const values = Object.fromEntries(Object.entries(entries).map(([k, e]) => [k, val(e) ?? 0]));
     const pic = deadZonePicture();
     pic.update(values);
-    const col = h("div", {}, h("h2", {}, side), pic.svg,
+    const readout = h("p", { class: "live-readout", "aria-live": "off" });
+    live.push((st) => { readout.textContent = `Tilt ${Math.round(100 * pic.move(st[axes[0]], st[axes[1]]))}%`; });
+    const col = h("div", {}, h("h2", {}, side), pic.svg, readout,
       h("div", { class: "legend" }, h("span", {}, h("i"), "Ignored"), h("span", {}, h("i", { class: "a" }), "Output starts here")));
     const rows = h("div", { class: "rows" });
     const spec = [
@@ -394,7 +407,9 @@ function panelSticks() {
   wrap.append(pair, h("h2", {}, "Both sticks"), h("div", { class: "rows" },
     featureToggle("SWAP_STICKS", "Swap left and right stick"),
     featureToggle("SWAP_LEFT_STICK_DPAD", "Swap left stick and D-pad")));
-  wrap.append(h("p", { class: "note" }, "Values are shown as percentages of full travel. That's an assumption until it has been checked on a real controller."));
+  wrap.append(h("p", { class: "note" }, liveNote("The dot shows where each stick is now, as the computer receives it. ") +
+    "Values are shown as percentages of full travel. That's an assumption until it has been checked on a real controller."));
+  app.live = (st) => live.forEach((f) => f(st));
   return wrap;
 }
 
@@ -405,16 +420,23 @@ function panelTriggers() {
     h("p", { class: "lede" }, "Set how much of each trigger's travel is ignored at the start and the end of the pull."));
   const quick = val(d.trigger_quick);
   const pair = h("div", { class: "pair" });
-  for (const [side, prefix, qi] of [["Left trigger", "LEFT", 0], ["Right trigger", "RIGHT", 1]]) {
+  const live = [];
+  for (const [side, prefix, qi, axis] of [["Left trigger", "LEFT", 0, "lt"], ["Right trigger", "RIGHT", 1, "rt"]]) {
     const zones = { start: `${prefix}_TRIGGER_FRONT`, end: `${prefix}_TRIGGER_BACK` };
     const values = { start: val(d.dead_zones[zones.start]) ?? 0, end: val(d.dead_zones[zones.end]) ?? 0 };
     const startEl = h("span", { class: "dead start" });
     const endEl = h("span", { class: "dead end" });
     const paint = () => { startEl.style.width = `${values.start}%`; endEl.style.width = `${values.end}%`; };
     paint();
+    const levelEl = h("span", { class: "level" });
+    const readout = h("p", { class: "live-readout", "aria-live": "off" });
+    live.push((st) => {
+      levelEl.style.width = `${100 * st[axis]}%`;
+      readout.textContent = `Pressed ${Math.round(100 * st[axis])}%`;
+    });
     const col = h("div", {}, h("h2", {}, side),
-      h("div", { class: "travel", role: "img", "aria-label": `${side}: first ${values.start}% and last ${values.end}% of travel ignored` }, startEl, endEl),
-      h("div", { class: "travel-scale" }, h("span", {}, "Released"), h("span", {}, "Fully pressed")));
+      h("div", { class: "travel", role: "img", "aria-label": `${side}: first ${values.start}% and last ${values.end}% of travel ignored` }, startEl, endEl, levelEl),
+      h("div", { class: "travel-scale" }, h("span", {}, "Released"), h("span", {}, "Fully pressed")), readout);
     const rows = h("div", { class: "rows" });
     for (const [key, label, help] of [["start", "Start dead zone", "Ignored at the beginning of the pull"], ["end", "End dead zone", "Full press is reached this early"]]) {
       const zone = zones[key];
@@ -434,10 +456,52 @@ function panelTriggers() {
     pair.append(col);
   }
   wrap.append(pair);
+  const note = liveNote("The bar shows how far each trigger is pulled now, as the computer receives it.");
+  if (note) wrap.append(h("p", { class: "note" }, note));
+  app.live = (st) => live.forEach((f) => f(st));
   return wrap;
 }
 
-const RUMBLE = [[0, "Off"], [1, "Low"], [2, "Medium"], [3, "High"], [4, "Max"]];
+// ---------------------------------------------------------------------------
+// live input: stick and trigger positions streamed while Sticks or Triggers is open
+
+function liveNote(text) {
+  return app.status.mode === "usb" ? text : "";
+}
+
+let liveAbort = null;
+
+function stopLive() {
+  if (liveAbort) { liveAbort.abort(); liveAbort = null; }
+}
+
+async function startLive(onState) {
+  stopLive();
+  if (app.status.mode !== "usb") return;
+  const ctl = new AbortController();
+  liveAbort = ctl;
+  try {
+    // fetch, not EventSource: the server wants the X-GameSir header on every API call
+    const res = await fetch("/api/input", { headers: { "X-GameSir": "1" }, signal: ctl.signal });
+    if (!res.ok || !res.body) return;
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return;
+      buf += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl);
+        buf = buf.slice(nl + 1);
+        if (line) onState(JSON.parse(line));
+      }
+    }
+  } catch {
+    // aborted on navigation, or the controller went away
+  }
+}
 
 function panelVibration() {
   const d = app.dev;
@@ -446,12 +510,12 @@ function panelVibration() {
   const v = val(d.vibration);
   const rows = h("div", { class: "rows" });
   for (const [field, label] of [["left_grip", "Left grip"], ["right_grip", "Right grip"]]) {
-    const mark = savedMark();
-    const options = RUMBLE.some(([n]) => n === v[field]) ? RUMBLE : [...RUMBLE, [v[field], `Custom (${v[field]})`]];
-    rows.append(row(label, null, [mark, segmented(field, options.map(([n, t]) => [String(n), t]), String(v[field]), (n) =>
-      save("/api/vibration", { [field]: +n }, (got) => { d.vibration = { value: got }; }, mark))]));
+    rows.append(slider({
+      label, value: v[field], unit: "%",
+      onCommit: (n, mark) => save("/api/vibration", { [field]: n }, (got) => { d.vibration = { value: got }; }, mark),
+    }));
   }
-  wrap.append(rows, h("p", { class: "note" }, "The five steps follow GameSir's PC app. How the controller scales them hasn't been confirmed yet."));
+  wrap.append(rows, h("p", { class: "note" }, "A real controller reports 75% out of the box. 100% as the maximum hasn't been confirmed yet."));
   return wrap;
 }
 
@@ -573,14 +637,129 @@ async function panelFirmware() {
   return wrap;
 }
 
+// ---------------------------------------------------------------------------
+// button guide: the controller map labelled like the manual, and how-tos in our own words
+
+// [label, side, label y, anchor x, anchor y], in the map's viewBox coordinates
+const GUIDE_LABELS = [
+  ["LT left trigger", "l", -4, 100, 4],
+  ["LB left bumper", "l", 18, 86, 22],
+  ["Home button and light", "l", 36, 191, 50],
+  ["View button", "l", 56, 158, 62],
+  ["Left stick (press for L3)", "l", 95, 99, 95],
+  ["L4 back button", "l", 133, 95, 141],
+  ["D-pad", "l", 186, 151, 146],
+  ["RT right trigger", "r", -4, 300, 4],
+  ["RB right bumper", "r", 18, 314, 22],
+  ["Menu button", "r", 38, 242, 62],
+  ["Screenshot button", "r", 58, 209, 80],
+  ["A, B, X and Y buttons", "r", 96, 297, 96],
+  ["R4 back button", "r", 133, 305, 141],
+  ["Right stick (press for R3)", "r", 162, 248, 146],
+  ["M button", "r", 192, 210, 171],
+];
+
+function guideDrawing() {
+  const svg = $("#pad").cloneNode(true);
+  svg.removeAttribute("id");
+  for (const el of svg.querySelectorAll("title, .part-label")) el.remove();
+  for (const el of [svg, ...svg.querySelectorAll("*")]) {
+    for (const a of ["tabindex", "role", "aria-label", "aria-disabled", "data-section"]) el.removeAttribute(a);
+    el.classList.remove("part", "active", "offline");
+  }
+  svg.setAttribute("class", "pad guide-pad");
+  svg.setAttribute("viewBox", "-205 -16 810 300");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "The Nova 2 Lite from the front, with every button labelled");
+  for (const [label, side, ly, ax, ay] of GUIDE_LABELS) {
+    const left = side === "l";
+    const edge = left ? -10 : 410;
+    // horizontal from the label, then a 45° run into the part, like the manual's leader lines
+    const bend = left ? ax - Math.abs(ay - ly) : ax + Math.abs(ay - ly);
+    svg.append(
+      s("path", { class: "leader", d: `M${edge} ${ly} H${bend} L${ax} ${ay}` }),
+      s("circle", { class: "anchor", cx: ax, cy: ay, r: 1.8 }));
+    const text = s("text", { class: "callout-label", x: left ? edge - 6 : edge + 6, y: ly, "text-anchor": left ? "end" : "start" });
+    text.textContent = label;
+    svg.append(text);
+  }
+  return svg;
+}
+
+function table(head, rows) {
+  return h("div", { class: "table-wrap" }, h("table", { class: "table" },
+    h("thead", {}, h("tr", {}, head.map((c) => h("th", { scope: "col" }, c)))),
+    h("tbody", {}, rows.map((r) => h("tr", {}, r.map((c, i) => i === 0 ? h("th", { scope: "row" }, c) : h("td", {}, c)))))));
+}
+
+function panelGuide() {
+  return h("div", {},
+    h("h1", {}, "Button guide"),
+    h("p", { class: "lede" }, "Every button on the Nova 2 Lite, the modes and what the Home light means, and the shortcuts built into the controller."),
+    guideDrawing(),
+    h("h2", {}, "What the buttons do"),
+    table(["Button", "What it does"], [
+      ["Home", "Turns the controller on. Hold it for 5 seconds to turn it off. Its light shows the mode and the connection."],
+      ["View and Menu", "The usual View and Menu buttons. Held together for 2 seconds, they switch mode on the cable or the receiver."],
+      ["Screenshot", "Held with Home for 3 seconds, it puts the controller back into pairing."],
+      ["M", "Shortcuts for turbo, back buttons, hair triggers and vibration (see below). Hold it on its own to show the current mode."],
+      ["L4 and R4", "Two extra buttons on the back. Each can copy any other button."],
+      ["Sticks", "Press a stick down for L3 or R3."],
+      ["Trigger stop switches", "Two switches on the back that shorten the triggers' travel for quicker presses."],
+      ["Reset hole", "A small hole on the back. Pressing the button inside with a paperclip forces the controller off."],
+    ]),
+    h("h2", {}, "Modes and lights"),
+    h("p", { class: "note" }, "On the cable or the 2.4 GHz receiver the controller picks a mode by itself. To change it, hold View and Menu for 2 seconds; it cycles through the three."),
+    table(["Mode", "Light", "Use it for"], [
+      ["Xbox", "Green", "PC. This is the mode gamesir-linux configures over the cable."],
+      ["Switch", "Red", "Nintendo Switch."],
+      ["DS4", "Blue", "Android, and anything that expects a PlayStation controller."],
+    ]),
+    h("p", { class: "note" }, "Over Bluetooth, hold Home and one other button for 2 seconds. The light flashes quickly while it waits to pair."),
+    table(["Bluetooth mode", "Hold", "Light", "Appears as"], [
+      ["DS4 (PC, Android, iOS)", "Home\u00a0+\u00a0B", "Blue", "Wireless Controller"],
+      ["Switch", "Home\u00a0+\u00a0Y", "Red", "Pair from Controllers, Change Grip/Order on the Switch"],
+      ["Android", "Home\u00a0+\u00a0A", "Yellow", "GameSir-Nova 2 Lite"],
+      ["G-Touch (Android)", "Home\u00a0+\u00a0RB", "Cyan", "GameSir-Nova 2 Lite_G"],
+    ]),
+    h("p", { class: "note" }, "To pair the 2.4 GHz receiver, hold Home and X for 2 seconds until the light flashes green, then press the pairing button on the receiver."),
+    h("h2", {}, "Everyday use"),
+    table(["", ""], [
+      ["Turn on or off", "Press Home to turn on. Hold Home for 5 seconds to turn off."],
+      ["Sleep", "Turns itself off after 10 minutes without use while connected."],
+      ["Battery", "Below 15%, the Home light flashes red. Charging while off, the light slowly pulses."],
+      ["Home light", "Solid: connected. Flashing quickly: pairing. Flashing slowly: reconnecting to the last device."],
+      ["Pair again", "Hold Screenshot and Home for 3 seconds."],
+      ["Check the mode", "Hold M."],
+    ]),
+    h("h2", {}, "M button shortcuts"),
+    table(["Shortcut", "How"], [
+      ["Program a back button", "Hold M and L4 (or R4) until the light flashes slowly in white. Press the button it should copy, then L4 (or R4) again to save. Leaving without choosing a button clears it."],
+      ["Turbo", "Hold M and press A, B, X, Y, LB, RB, LT or RT. Repeat to turn it off. Double-press M to clear every turbo button."],
+      ["Stick dead zone", "Hold M and press a stick down for 2 seconds to turn that stick's dead zone on or off."],
+      ["Hair trigger", "Hold M and LT (or RT) for 2 seconds. The trigger stop switch must be on long travel."],
+      ["Vibration", "Hold M and press View for weaker, Menu for stronger."],
+      ["Swap layout", "Hold M and A for 2 seconds to swap A with B and X with Y."],
+    ]),
+    h("h2", {}, "Calibration"),
+    h("p", { class: "note" }, "Set both trigger stop switches to long travel. Hold View, Menu and Home together until the light flashes slowly in white. Turn both sticks around their full range 2 or 3 times, press both triggers all the way down 3 times, then press A to finish. After flipping a trigger stop switch, press that trigger fully 3 times so it learns the new travel."),
+    h("h2", {}, "The full manual"),
+    h("p", { class: "note" }, "This page is our own summary. GameSir's manual, with the safety and regulatory information, comes in the box and is on ",
+      h("a", { href: "https://gamesir.com/support/manuals", target: "_blank", rel: "noopener noreferrer" }, "GameSir's manuals page"), "."),
+  );
+}
+
 const PANELS = {
   controller: panelController, buttons: panelButtons, sticks: panelSticks, triggers: panelTriggers,
   vibration: panelVibration, lighting: panelLighting, profiles: panelProfiles, power: panelPower, firmware: panelFirmware,
+  guide: panelGuide,
 };
 
 let renderSeq = 0;
 async function render() {
   app.section = sectionFromHash();
+  stopLive();
+  app.live = null;
   renderChrome();
   const panel = $("#panel");
   const seq = ++renderSeq;
@@ -591,6 +770,7 @@ async function render() {
   else content = await PANELS[app.section]();
   if (seq !== renderSeq) return;
   panel.replaceChildren(content);
+  if (app.live) startLive(app.live);
 }
 
 // ---------------------------------------------------------------------------

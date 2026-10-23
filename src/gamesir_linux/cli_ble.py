@@ -1,4 +1,5 @@
-"""`gamesir-linux ble ...`: configure a Nova 2 Lite over Bluetooth LE."""
+"""`gamesir-linux ble ...` and `gamesir-linux usb ...`: configure a Nova 2 Lite over
+Bluetooth LE or the USB cable. Both speak GCM, so they share every action."""
 
 from __future__ import annotations
 
@@ -7,7 +8,7 @@ import asyncio
 import contextlib
 import sys
 
-from . import ble
+from . import ble, hid
 from .client import NotApplied, NovaClient
 from .gcm import DeadZone, Feature, ProtocolError, Vibration
 from .simulator import SimulatedNova
@@ -34,6 +35,10 @@ async def _open(args):
     if args.simulate:
         yield NovaClient(SimulatedNova())
         return
+    if args.link == "usb":
+        async with hid.connect(_usb_path(args)) as transport:
+            yield NovaClient(transport)
+        return
     address = args.address
     if not address:
         found = await ble.scan()
@@ -48,9 +53,29 @@ async def _open(args):
         yield NovaClient(transport)
 
 
+def _usb_path(args) -> str:
+    if args.device:
+        return args.device
+    found = hid.find()
+    if not found:
+        raise hid.HidError("no Nova 2 Lite found on USB. Connect the cable and switch to PC/Xbox "
+                           "mode (hold Menu + View until the LED is green), or pass --device")
+    if len(found) > 1:
+        raise hid.HidError("several found, pick one with --device: "
+                           + ", ".join(f"{d.path} ({d.link})" for d in found))
+    return found[0].path
+
+
 # -- actions -------------------------------------------------------------------
 
 async def a_scan(args) -> int:
+    if args.link == "usb" and not args.simulate:
+        found = hid.find()
+        for d in found:
+            print(f"{d.path}  {d.name or 'GameSir'}  ({d.link})")
+        if not found:
+            print("nothing found (is the cable in, and the LED green?)", file=sys.stderr)
+        return 0 if found else 1
     if args.simulate:
         print("00:00:00:00:00:00  GameSir-Nova 2 Lite_SIM  (simulated)")
         return 0
@@ -139,10 +164,20 @@ async def a_restore(args) -> int:
 def register(sub) -> None:
     p = sub.add_parser("ble", help="configure the controller over Bluetooth LE")
     p.add_argument("--address", help="Bluetooth address (default: scan for one)")
+    _add_actions(p, "ble")
+
+    p = sub.add_parser("usb", help="configure the controller over the USB cable (green LED mode)")
+    p.add_argument("--device", help="hidraw node, e.g. /dev/hidraw11 (default: find it)")
+    _add_actions(p, "usb")
+
+
+def _add_actions(p, link: str) -> None:
     p.add_argument("--simulate", action="store_true", help="talk to a simulated controller")
+    p.set_defaults(link=link, address=None, device=None)
     acts = p.add_subparsers(dest="action", required=True)
 
-    s = acts.add_parser("scan", help="list Nova 2 Lite controllers in range")
+    s = acts.add_parser("scan", help="list connected Nova 2 Lite controllers"
+                        if link == "usb" else "list Nova 2 Lite controllers in range")
     s.add_argument("--timeout", type=float, default=6.0)
     s.set_defaults(run=a_scan)
 
@@ -177,6 +212,6 @@ def register(sub) -> None:
 def run(args) -> int:
     try:
         return asyncio.run(args.run(args))
-    except (ble.BleError, ProtocolError, NotApplied) as e:
+    except (ble.BleError, hid.HidError, ProtocolError, NotApplied) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1

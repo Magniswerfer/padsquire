@@ -98,13 +98,15 @@ def _interface(path: Path) -> dict:
     return info
 
 
-def _is_candidate(vid: str | None, manufacturer: str | None, product: str | None) -> bool:
-    if vid in (GAMESIR_VID, JIELI_VID):
+def _is_candidate(vid: str | None, pid: str | None, manufacturer: str | None,
+                  product: str | None, extra_ids=()) -> bool:
+    if vid in (GAMESIR_VID, JIELI_VID) or (vid, pid) in extra_ids:
         return True
     return bool(NAME_HINTS.search(f"{manufacturer or ''} {product or ''}"))
 
 
-def probe_usb(sys_root: Path = Path("/sys")) -> list[dict]:
+def probe_usb(sys_root: Path = Path("/sys"), extra_ids=()) -> list[dict]:
+    """extra_ids: (vid, pid) pairs to include, e.g. the DualShock 4 identity the dongle takes on."""
     base = sys_root / "bus" / "usb" / "devices"
     out = []
     if not base.exists():
@@ -114,7 +116,7 @@ def probe_usb(sys_root: Path = Path("/sys")) -> list[dict]:
             continue
         vid, pid = _read(dev / "idVendor"), _read(dev / "idProduct")
         manufacturer, product = _read(dev / "manufacturer"), _read(dev / "product")
-        if not _is_candidate(vid, manufacturer, product):
+        if not _is_candidate(vid, pid, manufacturer, product, extra_ids):
             continue
         out.append({
             "path": dev.name,
@@ -133,12 +135,13 @@ def probe_usb(sys_root: Path = Path("/sys")) -> list[dict]:
     return out
 
 
-def probe_input(proc_root: Path = Path("/proc"), vids=(GAMESIR_VID, JIELI_VID)) -> list[dict]:
+def probe_input(proc_root: Path = Path("/proc"), vids=(GAMESIR_VID, JIELI_VID),
+                extra_ids=()) -> list[dict]:
     text = _read(proc_root / "bus" / "input" / "devices") or ""
     found = []
     for block in text.split("\n\n"):
         m = re.search(r"Vendor=([0-9a-f]{4}) Product=([0-9a-f]{4})", block)
-        if not m or m.group(1) not in vids:
+        if not m or (m.group(1) not in vids and m.groups() not in extra_ids):
             continue
         name = re.search(r'N: Name="([^"]*)"', block)
         handlers = re.search(r"H: Handlers=(.*)", block)
@@ -317,11 +320,11 @@ def system_info() -> dict:
 
 def snapshot(label: str, *, usb: bool = True, bluetooth: bool = False,
              address: str | None = None, sys_root: Path = Path("/sys"),
-             proc_root: Path = Path("/proc")) -> dict:
+             proc_root: Path = Path("/proc"), extra_ids=()) -> dict:
     snap = {"label": label, "time": datetime.now(timezone.utc).isoformat(timespec="seconds")}
     if usb:
-        snap["usb"] = probe_usb(sys_root)
-        snap["input"] = probe_input(proc_root)
+        snap["usb"] = probe_usb(sys_root, extra_ids)
+        snap["input"] = probe_input(proc_root, extra_ids=extra_ids)
     if bluetooth:
         snap["bluetooth"] = asyncio.run(probe_ble(address))
     return snap

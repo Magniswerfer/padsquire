@@ -41,7 +41,7 @@ def test_restore():
     nova = NovaClient(sim)
     run(nova.set_dead_zone(DeadZone.LEFT_STICK_OUTER, 40))
     run(nova.restore_defaults())
-    assert run(nova.dead_zone(DeadZone.LEFT_STICK_OUTER)) == 5
+    assert run(nova.dead_zone(DeadZone.LEFT_STICK_OUTER)) == 0   # factory default
 
 
 class StubbornNova(SimulatedNova):

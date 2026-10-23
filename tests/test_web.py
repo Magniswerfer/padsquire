@@ -115,8 +115,28 @@ def test_scan_uses_injected_scanner(tmp_path):
     async def go(c):
         await login(c)
         r = await c.post("/api/scan", data="{}", headers={**API, "Content-Type": "application/json"})
-        assert (await r.json())["data"] == [{"address": "AA:BB:CC:DD:EE:FF", "name": "GameSir-Nova 2 Lite_1234"}]
-    run(go, tmp_path, scanner=fake_scan)
+        assert (await r.json())["data"] == [
+            {"address": "AA:BB:CC:DD:EE:FF", "name": "GameSir-Nova 2 Lite_1234", "link": "ble"}]
+    run(go, tmp_path, scanner=fake_scan, usb_finder=lambda: [])
+
+
+def test_usb_controllers_are_listed_and_only_found_paths_open(tmp_path):
+    from gamesir_linux import ble, hid
+
+    async def no_bluetooth():
+        raise ble.BleError("Bluetooth is unavailable")
+
+    found = [hid.HidDevice("/dev/hidraw99", 0x100F, "2.4G XBOX 360 For Windows")]
+
+    async def go(c):
+        await login(c)
+        h = {**API, "Content-Type": "application/json"}
+        r = await c.post("/api/scan", data="{}", headers=h)
+        assert (await r.json())["data"] == [
+            {"address": "/dev/hidraw99", "name": "2.4G XBOX 360 For Windows", "link": "usb"}]
+        r = await c.post("/api/connect", data=json.dumps({"address": "/dev/sda", "link": "usb"}), headers=h)
+        assert r.status == 400 and "no longer connected" in (await r.json())["error"]
+    run(go, tmp_path, scanner=no_bluetooth, usb_finder=lambda: found)
 
 
 def test_firmware_status_against_device(fw_dir):
@@ -137,3 +157,12 @@ def test_simulate_flag_connects_on_start(tmp_path):
         await login(c)
         return (await (await c.get("/api/status", headers=API)).json())["data"]
     assert run(go, tmp_path, simulate=True)["connected"] is True
+
+
+def test_live_input_needs_the_cable(tmp_path):
+    async def go(c):
+        await login(c)
+        await c.post("/api/connect", data=json.dumps({"simulate": True}), headers={**API, "Content-Type": "application/json"})
+        r = await c.get("/api/input", headers=API)
+        assert r.status == 409 and "by cable" in (await r.json())["error"]
+    run(go, tmp_path)

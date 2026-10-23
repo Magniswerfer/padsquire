@@ -95,6 +95,16 @@ def test_input_probe(tmp_path):
         {"vid": "3537", "pid": "100f", "name": "GameSir-Nova 2 Lite", "handlers": ["event5", "js0"]}]
 
 
+def test_extra_ids_include_emulated_identity(tmp_path):
+    # The 2.4 GHz dongle takes on the controller mode's identity, e.g. a DualShock 4.
+    sys_root = fake_sysfs(tmp_path / "sys")
+    _w(tmp_path / "bus" / "input" / "devices", PROC_INPUT)
+    devices = probe.probe_usb(sys_root, extra_ids=[("046d", "c31c")])
+    assert [d["path"] for d in devices] == ["1-2", "2-1", "3-1"]
+    found = probe.probe_input(tmp_path, extra_ids=[("046d", "c31c")])
+    assert [d["pid"] for d in found] == ["c31c", "100f"]
+
+
 def test_summary_mentions_everything(tmp_path):
     snap = probe.snapshot("wired", sys_root=fake_sysfs(tmp_path / "sys"), proc_root=tmp_path)
     text = "\n".join(probe.summarize(snap))

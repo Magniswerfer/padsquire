@@ -15,8 +15,27 @@ other's firmware bricks it.
 | Controller | JieLi AC695x (BR23) | `UdiskProductName: "AC695X_TRANS"` in Connect's device table |
 | 2.4 GHz dongle | JieLi AC632N | `AC632N_TRANS` string in dongle firmware |
 
-USB vendor ID `0x3537`. Product IDs registered for T4N2: `0x100F`, `0x1141`, `0x105A`
-(which PID is controller, dongle, or mode is still unknown; confirm with `lsusb`).
+USB vendor ID `0x3537`. Connect 1.16.7 registers the T4N2 DLL for PIDs `0x100F`, `0x1141`,
+`0x105A`, and its device table lists `0x100F` (wired) and `0x1098` (wireless, via the dongle) as
+config PIDs.
+
+### USB identities (confirmed on hardware, 2026-10-23)
+
+The USB identity follows the controller's mode, which **Menu + View** (hold 2 s) cycles:
+green PC/Xbox, red Switch, blue Other Devices. The dongle takes on the same identity as the
+controller behind it.
+
+| Setup | USB ID | Interfaces |
+|---|---|---|
+| Wired, green (PC/Xbox) | `3537:100F` "2.4G" / "XBOX 360 For Windows" | if00 `ff/5d/01` Xbox 360 (`xpad`, names it "GameSir Nova 2 Lite"); if01 HID keyboard + consumer; if02 HID vendor page `0xFF7A`, 64-byte in/out, no report ID |
+| Wired or via dongle, blue (Other Devices) | `054c:09cc` "Sony Computer Entertainment" / "Wireless Controller" | one HID interface, stock DualShock 4 descriptor, `hid-playstation`; no vendor channel |
+| Dongle, no controller linked | `3537:2106` "Zikway" / "HID zk" | one HID interface, the same `0xFF7A` descriptor as if02 above |
+
+The `0xFF7A` interface is the SAPJoy config channel (Connect's table says `UsagePage: 65535`,
+which does not match the descriptor literally). Its report descriptor:
+`067aff0901a1010902a1000903150025ff75089540810209059102c0c0`.
+`0x2106` is in neither Connect's table nor the DLL's PID list. The dongle through green mode
+(expected `0x1098`) has not been seen yet.
 
 ## Three ways to talk to it
 
@@ -109,19 +128,71 @@ They look like registration bookkeeping, not an authentication gate. Verify on h
 Nova 2 Lite specifics (`Nova2LiteDevCfg`): macro loop needs firmware ≥ 6400, macro settings ≥ 6900.
 Back buttons are key codes 459 and 461.
 
-### 2. USB HID: "SAPJoy" protocol (Windows app; needs disassembly)
+### 2. USB HID: "SAPJoy" protocol (partly decoded from the DLL; first query confirmed)
 
-GameSir Connect does not use GCM over USB. It loads
-`sapjoyuniapis_t4n2_x86_v2606151.dll` via FFI. That DLL contains an embedded hidapi and talks
-to the controller with HID feature, output and input reports. The command set differs from GCM
-(raw ids seen: `0x31` gyro, `0x32`, `0x34` stick curve).
+GameSir Connect loads `sapjoyuniapis_t4n2_x86_v2608251.dll` (1.16.7; 1.14.5 had `…_v2606151`)
+via FFI. The DLL embeds hidapi and libusb. Findings from Ghidra (12.1.4, headless):
 
-Exported API, which is the feature list to replicate: key mapping, stick curves, stick mapping,
-trigger params, vibration, lighting, D-pad params, macros, report rate, calibration, gyro,
-config pages, `SetISPMode`, `UpdateFirmware`. Structs are in the JS (`main.js`, `SAPJOYUNI_*`).
+**Opening the device.** `FUN_10053840(vid, pid, usage_page)` with VID `0x3537` and usage page
+`0xFF7A`, trying PIDs `0x100F`, `0x1098`, `0x1141`, `0x10BD`, `0x10ED`, `0x10EF` in order. Some
+functions branch first: a `0xFF7A` device with PID `0x105A` takes a T3XS-style path
+(`FUN_10037170`), PID `0x10BE` another (`FUN_10039d60`). PID `0x100F` uses the generic path below.
 
-Next step: disassemble the DLL's `SAPJoyUniDevice_*` functions, or capture USB traffic
-(Windows VM + usbmon), to get report IDs and byte layouts.
+**Transfer** (`FUN_10053c20`): drain queued input reports (1 ms reads, logged as "drop N pkgs"),
+`hid_write` a 64-byte report (hidapi report ID 0 first, so 65 bytes to hidraw), then
+`hid_read_timeout(200 ms)` up to 11 times, **skipping reports whose first byte is `0xF4`**. The
+first other report is the reply; there is no echo or checksum check.
+
+**Commands** are `[cmd, action, …]` with action `00` get, `01` set:
+
+| Bytes | DLL function |
+|---|---|
+| `01 01` | GetVersion / GetDeviceInfo / GetMacAddress (one query, three parsers) |
+| `f5 00` / `f5 01` | Get / SetGamepadParam |
+| `f6 00` / `f6 01` `f6 02` / `f6 03` `f6 04` | GetMacroStep / SetMacroStep / RecordMacro |
+| `1e …` | SetABXYRotationTest |
+| `f2 00 04 f6` (raw `hid_write`) | UpdateFirmware: **never send** |
+
+`SetISPMode` does nothing for PID `0x100F` (only the `0x105A` / `0x10BE` paths act).
+
+**`01 01` reply, confirmed on hardware (wired, 2026-10-23), reply in 1 ms:**
+
+```
+01 df 25 f1 38 8d  01 00  00  00  77 01  00 00 00 00  04 02  ff  00 …
+MAC [0:6]          hw     radio   fw     date         GCM    battery
+```
+
+This is the 19-byte form of GCM's basic-info reply, so `gcm.basic_info_parse(reply[:19])`
+parses it unchanged: firmware `7701`, GCM version 2.4. Connect turns the firmware bytes into a
+hex string (`"7701"`), and a trailing `01` marks the international build. Byte 18 is battery:
+`255` = charging (Connect's `chargeState: 255 == battery`); the wired PID `0x100F` uses this,
+other models use bit 7 (`supportRichCharginInfo`).
+
+**GCM works on this channel** (confirmed 2026-10-23, `gamesir-linux usb`, `hid.py`). The
+section 1 frames are sent zero-padded to 64 bytes. Replies come in two shapes:
+
+| Shape | Example | Checksum |
+|---|---|---|
+| A fresh GCM frame | `24 01 05 52 7c 00 …` (host info) | inside the frame, at `length - 1` |
+| The request echoed with the value filled in | `07 01 06 00 05 0e 00 … 21` (dead zone) | byte 63, over the whole report; the in-frame checksum is the request's |
+| No length byte, one byte longer than the request | `1f 00 01 00 00 00 20 00 …` (key mapping L4) | last byte of the frame, then zero padding |
+
+Read-only results from one controller (firmware 7701), i.e. its out-of-the-box values:
+
+| Setting | Value | What it says about units |
+|---|---|---|
+| Dead zones, stick inner / outer / anti | 5 / 0 / 0 | |
+| Dead zones, trigger front / back | 5 / 95 | percent on a 0–100 scale; "back" looks like the full-press point, not an end dead zone (unconfirmed) |
+| Vibration, grips / triggers | 75 / 0 | percent, **not** 0–4 |
+| Features (`0x23`) | all off except auto-power-on-dock | |
+| Host info battery | `0x52` = 82, bit 7 clear | on the cable, yet "not charging" by the bit-7 rule; basic info byte 18 said `0xff` |
+| Auto-sleep (`0x26`) | no reply | not supported over USB, or not on this firmware |
+| Config slots (`0x29`) | no reply | the GUI hides profiles over USB |
+| Trigger quick mode (`0x21`) | both off | |
+| Home light (`0x05`) | white, effect 1 | **writes work**: set to red from the GUI, read back as (255, 40, 40) |
+| Back buttons L4 / R4 (`0x1F`) | scan 0, flag 0: not assigned | |
+
+Still to decode: the `f5` gamepad-param and `f6` macro layouts.
 
 ### 3. USB firmware update: JieLi "UDisk" mode
 
@@ -220,9 +291,11 @@ flashing. `script.ver` holds the JieLi build-tool version (`AC695X-v0.01-cfg_too
 
 ## Open questions (need hardware)
 
-- Which PID is which: controller (wired), dongle, update mode
+- Dongle PID in green mode (Connect expects `0x1098`), and the update-mode identities
+- What `3537:2106` (idle dongle, same vendor channel) answers to
 - Whether replies really are read from `0x865F` (vs. notified); `ble.NOTIFY_REPLIES` flips it
-- Units: dead zones, vibration levels, auto-sleep (assumed minutes), battery encoding
+- Units: the full range of dead zones and vibration (percent, but is 100 the maximum?), what trigger
+  "back" means, auto-sleep (assumed minutes; no reply over USB), battery encoding (bit 7 looks wrong)
 - Whether the BLE config channel works from BlueZ while the controller is in PC (XInput) mode
 - SAPJoy HID report layouts
 - Whether UDisk mode exposes enough of the loader protocol for a full flash dump
