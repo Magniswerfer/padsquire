@@ -134,6 +134,10 @@ def cmd_plan(args) -> int:
 
 
 def main(argv=None) -> int:
+    if os.environ.get("GAMESIR_DEBUG"):
+        import logging
+        logging.basicConfig(level=logging.DEBUG, format="%(asctime)s.%(msecs)03d %(name)s %(message)s",
+                            datefmt="%H:%M:%S")
     p = argparse.ArgumentParser(prog="gamesir-linux", description="GameSir Nova 2 Lite tools for Linux")
     p.add_argument("--version", action="version", version=__version__)
     sub = p.add_subparsers(dest="cmd", required=True)

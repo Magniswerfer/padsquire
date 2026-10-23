@@ -16,6 +16,7 @@ the bare frame, so gcm.verify() checks the right byte in both cases.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import select
 from dataclasses import dataclass
@@ -29,6 +30,8 @@ VENDOR_ID = 0x3537
 # interface, but we don't know its protocol, so it is deliberately left out.
 CONFIG_PIDS = {0x100F: "cable", 0x1098: "2.4 GHz dongle"}
 DESCRIPTOR_PREFIX = bytes.fromhex("067aff")   # Usage Page (0xFF7A)
+
+log = logging.getLogger("gamesir_linux.hid")   # GAMESIR_DEBUG=1: every frame, sent and received
 
 REPORT_SIZE = 64
 READ_TIMEOUT = 0.2
@@ -108,6 +111,7 @@ class HidTransport:
         while self._read(0.001) is not None:
             pass
         # Report ID 0 first: the kernel strips it, since the interface has no report IDs.
+        log.debug("send %s", frame.hex(" "))
         os.write(self.fd, b"\x00" + frame + bytes(REPORT_SIZE - len(frame)))
         last = b""
         for _ in range(self.attempts):
@@ -116,6 +120,7 @@ class HidTransport:
                 continue
             last = _trim(report)
             if accept(last):
+                log.debug("recv %s", last.hex(" "))
                 return last
         raise HidError(f"no valid reply to {frame.hex(' ')} (last report: {last.hex(' ') or 'nothing'})")
 

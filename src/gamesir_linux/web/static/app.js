@@ -362,7 +362,8 @@ function panelButtons() {
       featureToggle("DPAD_DIAGONAL_LOCK", "Lock D-pad diagonals", "Only up, down, left and right register"),
       featureToggle("SWAP_LT_LB", "Swap LB and LT"),
       featureToggle("SWAP_RT_RB", "Swap RB and RT")));
-  wrap.append(h("p", { class: "note" }, "On this firmware a button can act as another button, but not as a stick direction, and it can't be switched off."));
+  wrap.append(h("p", { class: "note" }, "On this firmware a button can act as another button, but not as a stick direction, and it can't be switched off."),
+    h("p", { class: "note" }, "If the controller stops responding after a change, turn it off and on again (hold Home and M for 10 seconds). The change is kept."));
   return wrap;
 }
 
