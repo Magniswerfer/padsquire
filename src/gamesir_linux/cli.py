@@ -110,6 +110,9 @@ def main(argv=None) -> int:
     pl.add_argument("--reinstall", action="store_true")
     pl.set_defaults(func=cmd_plan)
 
+    from . import cli_ble
+    cli_ble.register(sub)
+
     args = p.parse_args(argv)
     return args.func(args)
 

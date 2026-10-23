@@ -12,6 +12,7 @@ license = "MIT"
 dependencies = []
 
 [project.optional-dependencies]
+ble = ["bleak>=0.22"]
 test = ["pytest>=8"]
 
 [project.scripts]

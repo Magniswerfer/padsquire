@@ -61,6 +61,20 @@ Command table (`com.xiaoji.sdk.gcm.GcmProtocol`):
 | `0x29` | config slots | `0x53` | button macros |
 | `0x50`–`0x52` | "UUID" get/set | `0x8F` | DFU main firmware version |
 
+**BLE request flow** (`BluetoothLeService`, implemented in `ble.py`): subscribe to notifications on
+`0x865F` and `0x8655`, write each command to `0x865F` with response, wait ~60 ms, then *read*
+`0x865F` for the reply (the Nova 2 Lite config disables notification replies). On connect the app
+sends `01 01` (basic info) and `08 02 05 00 0F` (input mode query), reading after each.
+
+**Replies** echo the command byte and end with the same checksum. Known layouts:
+
+| Request | Reply |
+|---|---|
+| 6-byte query/set (`0x07`, `0x23`, `0x26`) | value at byte 4 |
+| `25 01 0D …` vibration | bytes 4–11: L grip, L trigger, L pressed, L sync, R grip, R trigger, R pressed, R sync |
+| `24 01 04 29` host info | byte 3: battery (bit 7 = charging, if like the PC app; unconfirmed) |
+| `01 01` basic info (no checksum) | 19 bytes, or 20 starting `0xC9`: MAC [1:7], hw [7:9], firmware = `hex(b11)+hex(b12)` → `"8201"`, production date [13:17], GCM version [17:19] |
+
 The `0x50`–`0x52` "UUID encryption" commands send the current Unix timestamp and date.
 They look like registration bookkeeping, not an authentication gate. Verify on hardware.
 
@@ -171,7 +185,8 @@ flashing. `script.ver` holds the JieLi build-tool version (`AC695X-v0.01-cfg_too
 ## Open questions (need hardware)
 
 - Which PID is which: controller (wired), dongle, update mode
-- GATT characteristic roles (`0x8655` vs `0x865F`) and whether notifications are required
+- Whether replies really are read from `0x865F` (vs. notified); `ble.NOTIFY_REPLIES` flips it
+- Units: dead zones, vibration levels, auto-sleep (assumed minutes), battery encoding
 - Whether the BLE config channel works from BlueZ while the controller is in PC (XInput) mode
 - SAPJoy HID report layouts
 - Whether UDisk mode exposes enough of the loader protocol for a full flash dump

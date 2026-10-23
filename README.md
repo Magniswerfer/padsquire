@@ -3,11 +3,16 @@
 Linux-native configuration and firmware tools for GameSir controllers, starting with the
 **Nova 2 Lite** (GameSir model code T4N2).
 
-> **Status:** firmware handling is built and tested; talking to a real controller is not.
-> Nothing in this repo touches hardware yet. See [PROTOCOL.md](PROTOCOL.md) for the
-> reverse-engineering notes.
+> **Status:** firmware handling is built and tested. Bluetooth configuration is built and tested
+> against a simulated controller, but has **never touched a real one**. See
+> [PROTOCOL.md](PROTOCOL.md) for the reverse-engineering notes.
 
 ## What works today
+
+- **Configure over Bluetooth** (`gamesir-linux ble`): firmware version and battery, dead zones,
+  feature toggles (stick swap, D-pad diagonal lock, axis inversion, …), vibration strength,
+  auto-sleep, factory reset. Every change is read back to confirm the controller took it.
+  `--simulate` runs any command against a simulated controller.
 
 - **Extract firmware** from the official GameSir Connect Windows installer, on Linux.
   No Windows, no Wine, no download from GameSir's servers.
@@ -20,10 +25,10 @@ Linux-native configuration and firmware tools for GameSir controllers, starting 
 
 ```sh
 sudo dnf install 7zip          # only needed for `extract`
-pip install --user -e .
+pip install --user -e '.[ble]'
 ```
 
-Python 3.11+, no other dependencies.
+Python 3.11+. `bleak` (for Bluetooth) is the only dependency.
 
 ## Use
 
@@ -40,6 +45,21 @@ gamesir-linux plan --target controller --pid AC695X_TRANS --vid N2LT --version 8
 
 Until device detection exists, `plan` takes the device's details by hand.
 
+Bluetooth configuration: switch the controller to Bluetooth mode and pair it, then:
+
+```sh
+gamesir-linux ble scan                              # find it
+gamesir-linux ble info                              # firmware, battery, MAC
+gamesir-linux ble deadzone                          # list all dead zones
+gamesir-linux ble deadzone left-stick-inner 3       # set one
+gamesir-linux ble feature swap-sticks on
+gamesir-linux ble vibration --left-grip 5 --right-grip 5
+gamesir-linux ble --simulate info                   # try it without a controller
+```
+
+Settings are stored on the controller, so (if that holds on real hardware) you can configure
+over Bluetooth and then switch back to the 2.4 GHz dongle.
+
 ## Tests
 
 ```sh
@@ -53,7 +73,8 @@ structure; the integration test runs against an installer you provide.
 ## Roadmap
 
 1. ~~Firmware extraction, `.ufw` parser, safety gate~~
-2. Bluetooth config CLI (GCM protocol over BLE, via `bleak`), tested against a simulator
+2. ~~Bluetooth config CLI (GCM protocol over BLE, via `bleak`), tested against a simulator~~
+   Next: button remapping and macros
 3. USB update mode: device detection and SCSI transport via `SG_IO`
 4. First real hardware: confirm USB IDs, GATT roles, flash dump, then the first update
 5. Configuration through the 2.4 GHz dongle (needs the Windows DLL's HID protocol)
