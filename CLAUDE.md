@@ -40,6 +40,7 @@ padsquire uboot test-write | restore | flash ... --confirm        # writes (need
   `cli_uboot.py` and `web/update.py`, which runs them as background jobs for the Firmware page.
 - `web/setup.py`: Setup and help checks and `/api/devices` (sysfs polling for plug in/out).
   `web/update.py`: update-mode jobs (controller and receiver), including the restart button.
+- `paths.py`: data and cache folders; moves the old `gamesir-linux` folders once at startup.
 - `liveinput.py`: sticks, triggers and buttons from the xpad evdev node.
 - `probe.py`: read-only hardware probe. `PROTOCOL.md`: all reverse-engineering notes.
 

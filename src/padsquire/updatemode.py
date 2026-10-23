@@ -20,12 +20,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
-from . import __version__, hid, installer, jlboot, jlflash, jlwrite, safety
+from . import __version__, hid, installer, jlboot, jlflash, jlwrite, paths, safety
 
-_XDG_DATA = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
-_XDG_CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
-BACKUP_DIR = _XDG_DATA / "gamesir-linux" / "backups"
-LOADER_CACHE = _XDG_CACHE / "gamesir-linux" / "loaders"
+BACKUP_DIR = paths.BACKUP_DIR
+LOADER_CACHE = paths.LOADER_CACHE
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ATTEMPTS = 3
 # What is in download mode, by chip: the safety rules' target names (safety.DeviceState).

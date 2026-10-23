@@ -11,6 +11,14 @@ import pytest
 from padsquire import installer, ufw
 
 
+@pytest.fixture(autouse=True)
+def _private_xdg(tmp_path_factory, monkeypatch):
+    """Keep every test away from the real ~/.local/share and ~/.cache (cli.main migrates them)."""
+    root = tmp_path_factory.mktemp("xdg")
+    monkeypatch.setenv("XDG_DATA_HOME", str(root / "share"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(root / "cache"))
+
+
 def write_asar(path: Path, files: dict[str, bytes]) -> None:
     """Write a minimal Electron asar archive."""
     tree, blob, off = {"files": {}}, b"", 0

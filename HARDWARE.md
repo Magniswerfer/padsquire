@@ -53,7 +53,7 @@ padsquire uboot restart                 # add --receiver for the receiver
 ```
 
 Update mode needs the `sg` kernel module; the app's Setup and help page explains it. Backups go to
-`~/.local/share/gamesir-linux/backups`, readable only by you: they hold the device's Bluetooth
+`~/.local/share/padsquire/backups`, readable only by you: they hold the device's Bluetooth
 pairing and calibration. Copy them somewhere safe.
 
 For a **controller or receiver the tool hasn't seen before**, go one step at a time and read the

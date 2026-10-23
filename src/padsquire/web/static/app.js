@@ -976,7 +976,7 @@ function updateView() {
   }
   backupStep.append(h("div", { class: "btn-row" }, h("button", { class: `btn${mine.length ? "" : " primary"}`, disabled: running || !inUpdate,
     onclick: () => runStep("/api/update/backup") }, mine.length ? "Make another backup" : "Make a backup")),
-    h("p", { class: "note" }, "Backups are saved in ~/.local/share/gamesir-linux/backups. Copy them somewhere safe."));
+    h("p", { class: "note" }, "Backups are saved in ~/.local/share/padsquire/backups. Copy them somewhere safe."));
   steps.append(backupStep);
 
   // 3. install or restore
@@ -1322,7 +1322,7 @@ async function panelSetup() {
     qa("A firmware write fails",
       "The controller or receiver stays in update mode on purpose. Don't unplug it and don't restart it: run the same step again. If it keeps failing, write your backup back the same way. Every write is checked block by block, and nothing outside the firmware area is ever touched."),
     qa("Where are my backups?",
-      "In ~/.local/share/gamesir-linux/backups, one file per backup with a .json next to it. They hold the firmware and your controller's Bluetooth pairing and calibration: copy them somewhere safe, and don't share them."),
+      "In ~/.local/share/padsquire/backups, one file per backup with a .json next to it. They hold the firmware and your controller's Bluetooth pairing and calibration: copy them somewhere safe, and don't share them."),
     qa("Starting this app",
       command("padsquire gui"),
       "It runs on this computer only (127.0.0.1) and opens your browser with a one-time link. Stop it with Ctrl+C in its terminal."));

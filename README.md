@@ -93,7 +93,7 @@ What keeps it safe:
 - Writes follow the same order as GameSir's own updater, and use only "erase a block" and "write
   a block". The command that burns the chip's key can't be sent.
 
-Backups are kept in `~/.local/share/gamesir-linux/backups`, readable only by you. They contain
+Backups are kept in `~/.local/share/padsquire/backups`, readable only by you. They contain
 your controller's Bluetooth pairing and calibration: copy them somewhere safe, and don't share
 them.
 

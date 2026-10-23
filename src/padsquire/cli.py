@@ -9,9 +9,9 @@ import os
 import sys
 from pathlib import Path
 
-from . import __version__, installer, jlflash, safety, ufw
+from . import __version__, installer, jlflash, paths, safety, ufw
 
-DEFAULT_FW_DIR = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "gamesir-linux" / "firmware"
+DEFAULT_FW_DIR = paths.FIRMWARE_DIR
 
 
 def cmd_extract(args) -> int:
@@ -139,6 +139,8 @@ def main(argv=None) -> int:
         import logging
         logging.basicConfig(level=logging.DEBUG, format="%(asctime)s.%(msecs)03d %(name)s %(message)s",
                             datefmt="%H:%M:%S")
+    for line in paths.migrate():          # the folders of the old name, gamesir-linux, once
+        print(f"PadSquire: {line}", file=sys.stderr)
     p = argparse.ArgumentParser(prog="padsquire", description="PadSquire: Linux tools for GameSir controllers")
     p.add_argument("--version", action="version", version=__version__)
     sub = p.add_subparsers(dest="cmd", required=True)
