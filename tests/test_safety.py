@@ -1,5 +1,6 @@
-from gamesir_linux import installer, safety
-from gamesir_linux.safety import DeviceState
+# SPDX-License-Identifier: AGPL-3.0-or-later
+from padsquire import installer, safety
+from padsquire.safety import DeviceState
 
 
 def ctrl(version=8101, vid="N2LT", pid="AC695X_TRANS"):

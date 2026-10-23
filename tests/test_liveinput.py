@@ -1,9 +1,10 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 import os
 from pathlib import Path
 
 import pytest
 
-from gamesir_linux import liveinput
+from padsquire import liveinput
 
 
 def _w(path: Path, text: str):

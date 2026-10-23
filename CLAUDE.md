@@ -1,24 +1,24 @@
-# gamesir-linux: notes for Claude Code
+# PadSquire: notes for Claude Code
 
 Linux tools for the GameSir **Nova 2 Lite** (GameSir model code T4N2): a browser settings app (the
 main interface) and a CLI, for configuration by cable, through the 2.4 GHz receiver or over
-Bluetooth, and firmware updates of the controller and the receiver. Built by reverse-engineering
-GameSir Connect 1.14.5/1.16.7 (Windows) and the GameSir Android app 5.8.20. Tested on one
+Bluetooth, and firmware updates of the controller and the receiver. Built for interoperability
+by studying GameSir Connect 1.14.5/1.16.7 (Windows) and the GameSir Android app 5.8.20. Tested on one
 controller (firmware 7701 and 8201) and its receiver (2800); Bluetooth is not yet tested on hardware.
 
 ## Commands
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -e '.[gui,test]'   # no system pip on this box; 7zip for update/extract
-pytest                                   # 183 tests; GAMESIR_INSTALLER=<setup.exe> adds a real-installer test,
-                                         # GAMESIR_BACKUP=<dump.bin> GAMESIR_UFW=<.ufw> a real layout check
-gamesir-linux probe --guided             # read-only report of the controller in every mode -> JSON
-gamesir-linux ble scan | info | deadzone | feature | vibration | sleep | restore
-gamesir-linux usb ...                    # same actions over the cable (green LED mode), via hid.py
-gamesir-linux gui [--simulate]           # browser app on 127.0.0.1
-gamesir-linux update | extract | ufw | plan
-gamesir-linux uboot find | enter --confirm | info | backup | restart   # download mode
-gamesir-linux uboot test-write | restore | flash ... --confirm        # writes (need a backup)
+pytest                                   # 183 tests; PADSQUIRE_INSTALLER=<setup.exe> adds a real-installer test,
+                                         # PADSQUIRE_BACKUP=<dump.bin> PADSQUIRE_UFW=<.ufw> a real layout check
+padsquire probe --guided             # read-only report of the controller in every mode -> JSON
+padsquire ble scan | info | deadzone | feature | vibration | sleep | restore
+padsquire usb ...                    # same actions over the cable (green LED mode), via hid.py
+padsquire gui [--simulate]           # browser app on 127.0.0.1
+padsquire update | extract | ufw | plan
+padsquire uboot find | enter --confirm | info | backup | restart   # download mode
+padsquire uboot test-write | restore | flash ... --confirm        # writes (need a backup)
 ```
 
 ## Layout
@@ -40,8 +40,9 @@ gamesir-linux uboot test-write | restore | flash ... --confirm        # writes (
   `cli_uboot.py` and `web/update.py`, which runs them as background jobs for the Firmware page.
 - `web/setup.py`: Setup and help checks and `/api/devices` (sysfs polling for plug in/out).
   `web/update.py`: update-mode jobs (controller and receiver), including the restart button.
+- `paths.py`: data and cache folders; moves the folders of the old project name once at startup.
 - `liveinput.py`: sticks, triggers and buttons from the xpad evdev node.
-- `probe.py`: read-only hardware probe. `PROTOCOL.md`: all reverse-engineering notes.
+- `probe.py`: read-only hardware probe. `PROTOCOL.md`: all protocol notes (CC BY-SA 4.0).
 
 ## Status and open questions
 
@@ -56,7 +57,7 @@ Open:
 1. **Bluetooth on hardware**: the checklist is in HARDWARE.md (reply path, battery bit 7, the six
    refused toggles, auto-sleep and profiles, remapping).
 2. **Gamepad output stops after a write**, intermittently, mostly through the receiver; a restart
-   clears it (PROTOCOL.md "Open: gamepad output..."). Reproduce with `GAMESIR_DEBUG=1` (logs every
+   clears it (PROTOCOL.md "Open: gamepad output..."). Reproduce with `PADSQUIRE_DEBUG=1` (logs every
    frame) and an evdev events-per-second monitor; by cable it didn't happen in 19 remaps.
 3. **Recovery if the firmware no longer starts**: TBD (PROTOCOL.md section 3, "Recovery").
 4. Controller firmware updates through the receiver (JieLi's HID over-the-air updater): research.
@@ -76,6 +77,9 @@ Open:
   in code once confirmed.
 - No GameSir files in the repo (`*.ufw`, `*.exe` are gitignored).
 - Keep the user-facing copy plain and in sentence case.
+- The project is PadSquire ("Linux tools for GameSir controllers"). Use "GameSir" only for what it
+  works with, never as part of our own name. Public wording leads with interoperability, not with
+  how the protocol was found; technical detail belongs in PROTOCOL.md.
 - The settings app is the product: a new capability gets its GUI path, its Setup and help entry
   and its troubleshooting text, not just a CLI command.
 - Every command shown to users explains each part in plain words (what sudo is for, what gets

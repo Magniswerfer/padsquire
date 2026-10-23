@@ -1,10 +1,11 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 import asyncio
 
 import pytest
 
-from gamesir_linux.client import NotApplied, NovaClient
-from gamesir_linux.gcm import DeadZone, Feature, ProtocolError, Vibration
-from gamesir_linux.simulator import SimulatedNova
+from padsquire.client import NotApplied, NovaClient
+from padsquire.gcm import DeadZone, Feature, ProtocolError, Vibration
+from padsquire.simulator import SimulatedNova
 
 
 def run(coro):
@@ -67,7 +68,7 @@ def test_corrupt_reply_raises():
 
 
 def test_second_batch_roundtrip():
-    from gamesir_linux.gcm import Key
+    from padsquire.gcm import Key
     sim = SimulatedNova()
     nova = NovaClient(sim)
 
@@ -92,9 +93,9 @@ def test_invalid_slot_is_reported():
 
 
 def test_remap_every_key_on_the_simulator():
-    from gamesir_linux.client import NotApplied, NovaClient
-    from gamesir_linux.gcm import Key
-    from gamesir_linux.simulator import SimulatedNova
+    from padsquire.client import NotApplied, NovaClient
+    from padsquire.gcm import Key
+    from padsquire.simulator import SimulatedNova
     nova = NovaClient(SimulatedNova())
 
     async def go():
@@ -108,7 +109,7 @@ def test_remap_every_key_on_the_simulator():
 
 
 def test_vibration_test_sends_the_grip_report_and_stops():
-    from gamesir_linux import gcm
+    from padsquire import gcm
     sim = SimulatedNova()
     asyncio.run(NovaClient(sim).test_vibration(80, 0, seconds=0))
     assert sim.log[-2:] == [bytes.fromhex("045008000800080008"), gcm.rumble(0, 0)]
@@ -117,7 +118,7 @@ def test_vibration_test_sends_the_grip_report_and_stops():
 
 
 def test_outer_dead_zone_is_capped_at_25():
-    from gamesir_linux.gcm import DeadZone
+    from padsquire.gcm import DeadZone
     nova = NovaClient(SimulatedNova())
     asyncio.run(nova.set_dead_zone(DeadZone.LEFT_STICK_OUTER, 25))
     with pytest.raises(ValueError, match="firmware"):

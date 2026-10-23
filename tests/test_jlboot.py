@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 import hashlib
 import json
 import random
@@ -5,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from gamesir_linux import cli, cli_uboot, jlboot, jlcrypt
+from padsquire import cli, cli_uboot, jlboot, jlcrypt
 
 FLASH_SIZE = 256 * 1024
 JEDEC = 0x1240C8            # as online_device() decodes it: capacity 0x12 = 256 KB
@@ -272,7 +273,7 @@ def test_cli_backup_tolerates_another_crc_variant(cli_env, tmp_path, capsys):
 
 def test_cli_backup_refuses_a_path_inside_the_repo(cli_env, capsys):
     assert cli.main(["uboot", "backup", "-o", str(cli_uboot.REPO_ROOT / "backups")]) == 1
-    assert "inside the gamesir-linux repo" in capsys.readouterr().err
+    assert "inside the PadSquire repo" in capsys.readouterr().err
     assert cli_env.cdbs == []
 
 

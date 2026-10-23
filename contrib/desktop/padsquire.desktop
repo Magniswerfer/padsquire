@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[Desktop Entry]
+Type=Application
+Name=Nova 2 Lite settings
+GenericName=Game controller settings
+Comment=Configure a GameSir Nova 2 Lite controller
+Exec=padsquire gui
+Icon=input-gaming
+Terminal=false
+Categories=Settings;HardwareSettings;Game;
+Keywords=gamesir;controller;gamepad;nova;

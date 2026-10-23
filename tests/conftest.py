@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 import hashlib
 import json
 import struct
@@ -7,7 +8,15 @@ from pathlib import Path
 
 import pytest
 
-from gamesir_linux import installer, ufw
+from padsquire import installer, ufw
+
+
+@pytest.fixture(autouse=True)
+def _private_xdg(tmp_path_factory, monkeypatch):
+    """Keep every test away from the real ~/.local/share and ~/.cache (cli.main migrates them)."""
+    root = tmp_path_factory.mktemp("xdg")
+    monkeypatch.setenv("XDG_DATA_HOME", str(root / "share"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(root / "cache"))
 
 
 def write_asar(path: Path, files: dict[str, bytes]) -> None:
@@ -81,7 +90,7 @@ def make_ufw(chip="AC695X", pid="AC695X_TRANS", vid="N2LT", firmware=b"\xa5" * 3
 
 @pytest.fixture
 def fw_dir(tmp_path):
-    """A firmware directory shaped like `gamesir-linux extract` output."""
+    """A firmware directory shaped like `padsquire extract` output."""
     files = {
         "ctrl_intl.ufw": dict(identifier="T4N2International", target="controller", region="international",
                               version=8201, minimum_version=5601, data=make_ufw()),

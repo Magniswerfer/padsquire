@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 import hashlib
 import json
 import os
@@ -9,7 +10,7 @@ import random
 import pytest
 
 from conftest import ISD_TEMPLATE
-from gamesir_linux import cli, jlcrypt, jlflash, safety, ufw
+from padsquire import cli, jlcrypt, jlflash, safety, ufw
 
 KEY = 0x3496
 # The raw flash header of a Nova 2 Lite: PID and VID read in plain text, the CRC covers the
@@ -154,10 +155,10 @@ def test_plan_requires_a_backup(fw_dir, capsys):
 
 # -- the real thing, when available --------------------------------------------------------------
 
-@pytest.mark.skipif(not (os.environ.get("GAMESIR_BACKUP") and os.environ.get("GAMESIR_UFW")),
-                    reason="set GAMESIR_BACKUP (a uboot backup .bin) and GAMESIR_UFW (a Nova 2 Lite .ufw)")
+@pytest.mark.skipif(not (os.environ.get("PADSQUIRE_BACKUP") and os.environ.get("PADSQUIRE_UFW")),
+                    reason="set PADSQUIRE_BACKUP (a uboot backup .bin) and PADSQUIRE_UFW (a Nova 2 Lite .ufw)")
 def test_real_backup_and_firmware():
-    choice = safety.choose_flash_image(os.environ["GAMESIR_UFW"], os.environ["GAMESIR_BACKUP"])
+    choice = safety.choose_flash_image(os.environ["PADSQUIRE_UFW"], os.environ["PADSQUIRE_BACKUP"])
     assert choice.errors == [] and choice.partition == "flash2.bin"
     assert (choice.start, choice.end) == (0x1000, 0x64000)
 

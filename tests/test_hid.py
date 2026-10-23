@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 import asyncio
 import socket
 import threading
@@ -5,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from gamesir_linux import gcm, hid
-from gamesir_linux.client import NovaClient
-from gamesir_linux.gcm import DeadZone
+from padsquire import gcm, hid
+from padsquire.client import NovaClient
+from padsquire.gcm import DeadZone
 
 VENDOR_DESC = bytes.fromhex("067aff0901a1010902a1000903150025ff75089540810209059102c0c0")
 KEYBOARD_DESC = bytes.fromhex("05010906a101850105071900")

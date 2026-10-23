@@ -1,7 +1,8 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 import pytest
 
-from gamesir_linux import gcm
-from gamesir_linux.gcm import DeadZone, Feature, ProtocolError, Vibration
+from padsquire import gcm
+from padsquire.gcm import DeadZone, Feature, ProtocolError, Vibration
 
 
 # Frames that appear verbatim in the Android app (BluetoothLeService static
@@ -85,7 +86,7 @@ def test_battery_bits():
 
 
 # -- second batch: mapping, quick trigger, profiles, lighting ----------------------
-from gamesir_linux.gcm import Key
+from padsquire.gcm import Key
 
 
 def test_mapping_frames():

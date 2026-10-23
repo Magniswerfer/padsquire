@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 import json
 import os
 import shutil
@@ -5,7 +6,7 @@ import shutil
 import pytest
 
 from conftest import fake_installer, write_asar
-from gamesir_linux import installer, ufw
+from padsquire import installer, ufw
 
 HAVE_7Z = any(shutil.which(n) for n in ("7zz", "7z", "7za"))
 
@@ -54,11 +55,11 @@ def test_asar_reader(tmp_path):
         installer.asar_file(asar, "missing.js")
 
 
-REAL = os.environ.get("GAMESIR_INSTALLER")
+REAL = os.environ.get("PADSQUIRE_INSTALLER")
 
 
 @pytest.mark.installer
-@pytest.mark.skipif(not REAL, reason="set GAMESIR_INSTALLER to a GameSir Connect Setup .exe")
+@pytest.mark.skipif(not REAL, reason="set PADSQUIRE_INSTALLER to a GameSir Connect Setup .exe")
 @pytest.mark.skipif(not any(shutil.which(n) for n in ("7zz", "7z", "7za")), reason="7-Zip not installed")
 def test_real_installer(tmp_path):
     manifest = installer.extract(REAL, tmp_path)

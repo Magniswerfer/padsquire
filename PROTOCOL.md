@@ -1,9 +1,15 @@
+<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
 # GameSir Nova 2 Lite — protocol notes
 
-Reverse-engineering notes for a Linux-native config and firmware tool.
+Protocol notes behind PadSquire, a Linux configuration and firmware tool. They were made for
+interoperability, so that the controller can be used with Linux, as EU law allows
+(Software Directive 2009/24/EC, Article 6).
+
 Sources: GameSir Connect 1.14.5 and 1.16.7 (Windows, Electron) and GameSir app 5.8.20 (Android).
 Status: most of this is now **confirmed on hardware** (a Nova 2 Lite on firmware 7701 and 8201, and
 its receiver on 2800); sections say what was confirmed and when. Bluetooth is still static analysis only.
+
+These notes are licensed under [CC BY-SA 4.0](LICENSES/CC-BY-SA-4.0.txt); the code is AGPL-3.0-or-later.
 
 GameSir's internal name for this controller is **T4N2** (Nova 2 Lite). Don't confuse it with
 **T4N lite** (the original Nova Lite): different hardware and firmware. Flashing one with the
@@ -171,7 +177,7 @@ hex string (`"7701"`), and a trailing `01` marks the international build. Byte 1
 `255` = charging (Connect's `chargeState: 255 == battery`); the wired PID `0x100F` uses this,
 other models use bit 7 (`supportRichCharginInfo`).
 
-**GCM works on this channel** (confirmed 2026-10-23, `gamesir-linux usb`, `hid.py`). The
+**GCM works on this channel** (confirmed 2026-10-23, `padsquire usb`, `hid.py`). The
 section 1 frames are sent zero-padded to 64 bytes. Replies come in two shapes:
 
 | Shape | Example | Checksum |
@@ -274,7 +280,7 @@ as jl-uboot-tool's), then builds a full flash image and burns it with `FUN_1000b
 3. Rewrite sectors `0x0000` and `0x1000` last.
 4. CRC16-verify every 4 KB chunk (`FC 13`); retry the whole burn up to 5 times; `FC 0C` to restart.
 
-**Our read-only side** (`jlboot.py`, `gamesir-linux uboot`; tested against a simulated chip only).
+**Our read-only side** (`jlboot.py`, `padsquire uboot`; tested against a simulated chip only).
 The ROM answers only `FB 06`, `FD 07` and `FB 08`; everything else, restart included, needs the
 loader running. The loader file is sent as-is: the BR23 ROM decrypts MengLi uploads in place
 (jl-uboot-tool's `memory-rw-mengli-crypt` quirk). Before uploading, a 64-byte `FD 07` at the
@@ -295,7 +301,7 @@ first dump will settle.
 | Chip key (`FC 09`) | `0x3496`, the same as the block-scrambling key base of the `.ufw` config partitions |
 | Online device (`FC 0A`) | type 3 (SPI NOR on SPI0), JEDEC ID bytes `14 60 85`: Puya (`0x85`), capacity `0x14` = **1 MB** |
 | USB buffer size (`FC 14`) | 32768 bytes |
-| Full dump (`gamesir-linux uboot backup`) | 1 MB read twice in 5 s, both reads identical |
+| Full dump (`padsquire uboot backup`) | 1 MB read twice in 5 s, both reads identical |
 | Flash CRC (`FC 13`) | **CRC-16/XMODEM** (`jlcrypt.crc16`): matched the dump in all 256 sectors |
 
 First look at the dump (kept outside the repo): sector `0x0000` is blank (all `FF`); the image
@@ -421,7 +427,7 @@ the controller's MAC and battery. Auto-sleep (`0x26`) and slots (`0x29`) get no 
 cable. No `0xF4` state reports arrive unsolicited; **`f3 01 05 <mode> <sum>`**
 (`SAPJoyUniDevice_SetGamepadStateReport`, modes Off 0 / Original 1 / Mapped 2, reply echoes the
 request) turns them on, about 66 a second, and bytes 20–21 of a report give the controller's own
-version (`82 01` → 8201; byte 2 = `0x17`, byte 19 = `0xFF`, byte 22 = `0x8D`). `gamesir-linux`
+version (`82 01` → 8201; byte 2 = `0x17`, byte 19 = `0xFF`, byte 22 = `0x8D`). `padsquire`
 switches them on for one report and off again. Not yet tried by cable.
 
 The analysis below was done before that, offline.
@@ -479,7 +485,7 @@ worked; afterwards reads and the controller's version through the receiver were 
 SHA-256 checked); `jlflash` takes the firmware area of an image without `PRCT` as running from
 its placement (the `app_dir_head` CRC tag) up to `VM`, and refuses a layout that is not on 4 KB
 boundaries; `jlwrite.burn` handles a header at 0 the way JieLi does (copy into `0x1000` first,
-sector 0 then `0x1000` last); `gamesir-linux uboot enter --receiver` sends `f2 00 04 f6` on
+sector 0 then `0x1000` last); `padsquire uboot enter --receiver` sends `f2 00 04 f6` on
 `0x1098`, and `restart --receiver` waits for the receiver to come back.
 
 ## Firmware files
@@ -511,7 +517,7 @@ Bundled in the installer under `resources/dfu/packages/`:
   by chip and key group when a device can't identify itself. Version `1.0.0` is a placeholder.
   Never select them automatically.
 
-## .ufw container format (cracked, implemented in `src/gamesir_linux/ufw.py`)
+## .ufw container format (cracked, implemented in `src/padsquire/ufw.py`)
 
 Verified against all 44 `.ufw` files in GameSir Connect 1.14.5 for the header and table CRCs,
 and fully (every partition) for the 8 files of the Nova 2 Lite / Super Nova family.
