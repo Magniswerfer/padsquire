@@ -1,7 +1,7 @@
 # First contact with a real Nova 2 Lite
 
-Everything in this guide is read-only or reversible. There is no flash command yet, on purpose:
-it comes after this checklist has confirmed the USB update mode.
+Everything in this guide is read-only or reversible. Installing firmware is on the settings app's
+Firmware page (or `gamesir-linux uboot`, section 5); it always starts with a backup of the flash.
 
 ## 0. Install
 
