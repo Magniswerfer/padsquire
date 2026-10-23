@@ -85,6 +85,7 @@ const SECTIONS = [
   { id: "power", label: "Power" },
   { id: "firmware", label: "Firmware", offline: true },
   { id: "guide", label: "Button guide", offline: true },
+  { id: "setup", label: "Setup and help", offline: true },
 ];
 
 const app = {
@@ -94,6 +95,11 @@ const app = {
   section: "controller",
   scanning: false,
   found: null,
+  devices: null,          // what is plugged in, polled (USB only)
+  setup: null,            // this computer's checks
+  connecting: false,
+  userDisconnected: false,
+  polls: 0,
 };
 
 const val = (entry) => (entry && "value" in entry ? entry.value : undefined);
@@ -249,6 +255,8 @@ function wireMap() {
 function panelConnect() {
   const wrap = h("div", {},
     h("h1", {}, "Connect your controller"),
+    setupNotice(),
+    h("p", { class: "note" }, "Plug it in by cable or through the 2.4 GHz receiver and it's found and connected automatically."),
     h("p", { class: "lede" }, "Settings are read from the controller and written back to it, by cable, through the 2.4 GHz receiver or over Bluetooth. Nothing is stored on this computer."),
     h("ol", { class: "steps" },
       h("li", {}, "By cable: plug the controller in and hold Menu and View for 2 seconds until the light turns green (PC mode)."),
@@ -819,10 +827,8 @@ function updateView() {
   const inUpdate = d.mode === "download";
   const out = [];
 
-  if (d.sg_missing) {
-    out.push(h("p", { class: "callout" }, "This computer can't reach the controller in update mode yet. Run ",
-      h("code", {}, "sudo modprobe sg"), ", then reload this page."));
-  }
+  const notice = setupNotice(true);
+  if (notice) out.push(notice);
   const device = d.device || "controller";
   const thing = device === "receiver" ? "receiver" : "controller";
   const where = inUpdate ? `${thing === "receiver" ? "Receiver" : "Controller"} in update mode`
@@ -1045,7 +1051,7 @@ function panelGuide() {
 const PANELS = {
   controller: panelController, buttons: panelButtons, sticks: panelSticks, triggers: panelTriggers,
   vibration: panelVibration, lighting: panelLighting, profiles: panelProfiles, power: panelPower, firmware: panelFirmware,
-  guide: panelGuide,
+  guide: panelGuide, setup: panelSetup,
 };
 
 let renderSeq = 0;
@@ -1087,9 +1093,13 @@ async function scan() {
 }
 
 async function connect(target) {
+  if (app.connecting) return;
+  app.connecting = true;
   try {
     app.status = await api("/api/connect", target);
+    app.userDisconnected = false;
   } catch (e) { toast(e.message, "error"); return; }
+  finally { app.connecting = false; }
   app.dev = null; render();
   await reload(false);
 }
@@ -1097,7 +1107,122 @@ async function connect(target) {
 async function disconnect() {
   try { app.status = await api("/api/disconnect", {}); } catch (e) { toast(e.message, "error"); }
   app.dev = null; app.found = null;
+  app.userDisconnected = true;     // no automatic reconnect until it is unplugged
   go("controller");
+}
+
+// Plugging in and out: poll what is on USB (sysfs, cheap) and act on changes. Bluetooth is not
+// polled: a scan takes seconds, so it stays behind the Find button.
+async function watchDevices() {
+  try {
+    const d = await api("/api/devices");
+    const before = JSON.stringify(app.devices && app.devices.usb);
+    app.devices = d;
+    const updating = (upd.data && upd.data.job && upd.data.job.state === "running") || d.download.length > 0;
+    if (!d.usb.length) app.userDisconnected = false;
+    if (d.lost) {
+      app.status = d.status; app.dev = null;
+      toast("The controller was disconnected", "error");
+      render();
+    } else if (!app.status.connected && !updating) {
+      if (d.usb.length === 1 && !app.userDisconnected && !app.connecting) {
+        toast(d.usb[0].via === "dongle" ? "Found the controller through the 2.4 GHz receiver" : "Found the controller on the cable");
+        await connect(d.usb[0]);
+      } else if (JSON.stringify(d.usb) !== before) {
+        app.found = d.usb.concat((app.found || []).filter((x) => x.link === "ble"));
+        if (!SECTIONS.find((x) => x.id === app.section).offline) render();
+      }
+    }
+    // Re-check this computer now and then, so the notices go away once a command has been run.
+    if (++app.polls % 10 === 0) {
+      const setup = await api("/api/setup");
+      if (JSON.stringify(setup) !== JSON.stringify(app.setup)) {
+        app.setup = setup;
+        if (["setup", "firmware"].includes(app.section) || !app.status.connected) render();
+      }
+    }
+  } catch { /* the server is gone; api() said so elsewhere */ }
+  setTimeout(watchDevices, 2000);
+}
+
+// ---------------------------------------------------------------------------
+// setup and help: what this computer still needs, and what to do when something goes wrong
+
+function copyButton(text) {
+  const btn = h("button", { class: "btn small", onclick: async () => {
+    try { await navigator.clipboard.writeText(text); btn.textContent = "Copied"; }
+    catch { btn.textContent = "Select and copy it"; }
+    setTimeout(() => { btn.textContent = "Copy"; }, 1600);
+  } }, "Copy");
+  return btn;
+}
+
+function command(text) {
+  return h("div", { class: "command" }, h("code", {}, text), copyButton(text));
+}
+
+// What this computer still lacks, said on the front page and before firmware steps.
+function missing(need) {
+  return (app.setup || []).filter((c) => !c.ok && c.need === need && c.id !== "device");
+}
+
+function setupNotice(only) {
+  const now = only ? [] : missing("settings");
+  const later = missing("updates");
+  if (!now.length && !later.length) return null;
+  const names = (list) => list.map((c) => c.title).join(", ");
+  return h("div", {},
+    now.length ? h("p", { class: "callout danger" },
+      `Before the controller can be used, this computer needs a one-time setup: ${names(now)}. It takes one command; `,
+      h("a", { href: "#setup" }, "see Setup and help"), " for it and what it does.") : null,
+    later.length ? h("p", { class: "callout" },
+      `Before firmware updates and backups work: ${names(later)}. `,
+      h("a", { href: "#setup" }, "See Setup and help"), " for what to run and why.") : null);
+}
+
+const NEEDS = { settings: "Needed for everything", updates: "Needed for firmware updates and backups", optional: "Optional" };
+
+async function panelSetup() {
+  const wrap = h("div", {}, h("h1", {}, "Setup and help"),
+    h("p", { class: "lede" }, "What this computer needs to work with the controller, checked just now. Each command comes with what it does and links to its documentation: read that first, run it in a terminal, then check again."));
+  try { app.setup = await api("/api/setup"); }
+  catch (e) { wrap.append(h("p", { class: "note" }, e.message)); return wrap; }
+  const list = h("ol", { class: "steps" });
+  for (const c of app.setup) {
+    list.append(h("li", { class: c.ok ? "done" : "" },
+      h("h3", {}, c.title, h("span", { class: "need" }, NEEDS[c.need])),
+      h("p", { class: "note" }, c.detail),
+      c.command ? command(c.command) : null,
+      c.command && c.explain.length ? h("details", { class: "explain" }, h("summary", {}, "What this does"),
+        h("ul", {}, c.explain.map((x) => h("li", {}, x))),
+        c.file ? [h("p", {}, `The file, ${c.file.path}:`), h("pre", { class: "file" }, c.file.content)] : null,
+        c.docs.length ? h("p", {}, "Documentation: ", c.docs.map((d, i) => [i ? ", " : "",
+          h("a", { href: d.url, target: "_blank", rel: "noopener noreferrer" }, d.title)])) : null) : null,
+      c.id === "firmware" && !c.ok ? h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => go("firmware") }, "Go to Firmware")) : null));
+  }
+  wrap.append(list, h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: render }, "Check again")));
+
+  const qa = (q, ...a) => h("details", { class: "faq" }, h("summary", {}, q), ...a.map((x) => typeof x === "string" ? h("p", {}, x) : x));
+  wrap.append(h("h2", {}, "If something doesn't work"),
+    qa("The controller isn't found",
+      "Check the Home light is green: hold Menu and View for 2 seconds; each press moves to the next mode (green, red, blue). In blue mode it pretends to be a PlayStation controller and can't be configured.",
+      "By cable, try another cable or port: some cables only charge. Through the receiver, turn the controller on and wait for it to link before switching to green.",
+      "If it shows up but can't be opened, the device permissions above aren't in place yet, or the controller was plugged in before they were: unplug it and plug it in again."),
+    qa("The live view or the controller stops responding",
+      "Turn the controller off and on again: hold Home and M for about 10 seconds, then turn it on and switch to green. Settings you changed are kept. This has been seen through the receiver right after a change, and is being looked into."),
+    qa("Bluetooth doesn't find it",
+      "Put the controller in Android mode: hold Home and A for 2 seconds until the light flashes yellow. Pair it once in your system's Bluetooth settings, then use Find controllers here."),
+    qa("Switching to update mode doesn't work",
+      "The sg module must be loaded (see above). Use a USB port on the computer itself or a powered USB 2 hub; some hubs disturb the controller's update mode.",
+      "Nothing has been written at that point. To get the controller back: unplug it, hold Home and M for about 10 seconds, and turn it on again. The receiver: unplug it and plug it back in."),
+    qa("A firmware write fails",
+      "The controller or receiver stays in update mode on purpose. Don't unplug it and don't restart it: run the same step again. If it keeps failing, write your backup back the same way. Every write is checked block by block, and nothing outside the firmware area is ever touched."),
+    qa("Where are my backups?",
+      "In ~/.local/share/gamesir-linux/backups, one file per backup with a .json next to it. They hold the firmware and your controller's Bluetooth pairing and calibration: copy them somewhere safe, and don't share them."),
+    qa("Starting this app",
+      command("gamesir-linux gui"),
+      "It runs on this computer only (127.0.0.1) and opens your browser with a one-time link. Stop it with Ctrl+C in its terminal."));
+  return wrap;
 }
 
 async function restore() {
@@ -1118,8 +1243,10 @@ async function start() {
     $("#panel").replaceChildren(h("p", {}, e.message));
     return;
   }
+  try { app.setup = await api("/api/setup"); } catch { /* shown on the Setup page */ }
   render();
   if (app.status.connected) await reload(false);
+  watchDevices();
 }
 
 start();

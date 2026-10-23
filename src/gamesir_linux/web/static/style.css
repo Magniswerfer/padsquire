@@ -352,3 +352,18 @@ input[type="color"] { width: 3rem; height: 2.5rem; border: 1px solid var(--line)
 }
 .signal { font: 400 .875rem var(--body); color: var(--ok); margin-left: .5rem; }
 .signal.off { color: var(--danger); }
+
+/* setup and help */
+.need { font: 400 .8125rem var(--body); color: var(--muted); margin-left: .5rem; }
+.command { display: flex; align-items: center; gap: .5rem; margin-top: .5rem; max-width: 46rem; }
+.command code {
+  flex: 1; overflow-x: auto; white-space: pre; padding: .5rem .75rem; border-radius: var(--radius-s);
+  background: var(--panel); border: 1px solid var(--line); font-size: .875rem;
+}
+.faq { border-bottom: 1px solid var(--line); padding: .75rem 0; max-width: 46rem; }
+.faq summary { cursor: pointer; font-weight: 500; }
+.faq p { color: var(--muted); }
+.explain { margin-top: .5rem; max-width: 46rem; font-size: .9375rem; }
+.explain summary { cursor: pointer; color: var(--accent); }
+.explain li { margin: .25rem 0; color: var(--muted); }
+.explain pre.file { overflow-x: auto; padding: .625rem .75rem; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-s); font-size: .8125rem; }

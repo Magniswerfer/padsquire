@@ -355,6 +355,24 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
             live.close()
         return resp
 
+    @routes.get("/api/devices")
+    async def devices(_):
+        """What is plugged in (sysfs only), for the page to notice plugging and unplugging. A USB
+        session whose device has gone is closed here."""
+        from . import setup
+        found = setup.devices(find_usb)
+        lost = False
+        if session.mode == "usb" and session.address not in {d["address"] for d in found["usb"]}:
+            async with session.lock:
+                await session.disconnect()
+            lost = True
+        return ok({**found, "status": session.status(), "lost": lost})
+
+    @routes.get("/api/setup")
+    async def setup_checks(_):
+        from . import setup
+        return ok(setup.checks(fw_dir))
+
     @routes.post("/api/disconnect")
     @guarded
     async def disconnect(_):
