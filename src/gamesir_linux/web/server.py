@@ -182,7 +182,8 @@ def _firmware_status(fw_dir: Path, device_version: str | None) -> dict:
 
 
 def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
-              simulate: bool = False, scanner=None, usb_finder=None) -> web.Application:
+              simulate: bool = False, scanner=None, usb_finder=None,
+              backup_dir: Path | None = None, loader_cache: Path | None = None) -> web.Application:
     session = Session()
     scan = scanner or ble.scan
     find_usb = usb_finder or hid.find
@@ -475,6 +476,12 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
         except (updater.UpdateError, installer.ExtractError, OSError) as e:
             return fail(str(e), 502)
         return ok({"updated": r.updated, "latest": r.latest})
+
+    from . import update
+    from .. import updatemode
+    app[update.KEY] = update.add_routes(routes, session, fw_dir, find_usb, ok, fail, body,
+                                        backup_dir or updatemode.BACKUP_DIR,
+                                        loader_cache or updatemode.LOADER_CACHE)
 
     app.add_routes(routes)
     app.router.add_static("/static/", STATIC, show_index=False)

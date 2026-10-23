@@ -172,4 +172,4 @@ def test_cli_flash_installs_an_update(chip, tmp_path, capsys):
     assert bytes(chip.flash[:0x1000]) == b"\xff" * 0x1000
     assert bytes(chip.flash[0x1000:0x64000]) == expected
     assert bytes(chip.flash[0x64000:]) == OLD[0x64000:]
-    assert "flash2.bin -> 0x1000-0x63fff" in capsys.readouterr().out
+    assert "flash2.bin at 0x1000-0x63fff" in capsys.readouterr().out

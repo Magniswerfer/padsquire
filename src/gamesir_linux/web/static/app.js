@@ -632,9 +632,183 @@ async function panelFirmware() {
     } catch (e) { status.textContent = e.message; dl.disabled = false; }
   } }, fw.extracted ? "Download latest firmware" : "Download firmware");
   wrap.append(h("div", { class: "btn-row" }, check, dl), status);
-  wrap.append(h("p", { class: "callout" },
-    "Installing firmware happens over the USB cable in update mode, which this tool can't do yet. Downloaded files are checked against GameSir's checksums and kept until then."));
+
+  upd.fw = fw;
+  upd.box = h("div", { class: "update", "aria-live": "polite" }, h("p", { class: "busy" }, "Looking for the controller…"));
+  upd.shown = "";
+  wrap.append(h("h2", {}, "Install firmware"), upd.box);
+  pollUpdate();
   return wrap;
+}
+
+// ---------------------------------------------------------------------------
+// installing firmware: the update-mode steps run on the server as jobs; this polls them
+
+const upd = { timer: null, box: null, fw: null, data: null, shown: "", backup: null, file: null,
+              checks: {}, seenJob: null };
+
+function stopUpdatePoll() {
+  clearTimeout(upd.timer);
+  upd.timer = null;
+}
+
+async function pollUpdate() {
+  stopUpdatePoll();
+  if (!upd.box || !upd.box.isConnected) return;
+  try { upd.data = await api("/api/update"); } catch (e) { upd.data = { error: e.message }; }
+  if (!upd.box.isConnected) return;
+  await afterJob(upd.data.job);
+  await ensureCheck();
+  const key = JSON.stringify([upd.data, upd.backup, upd.file, upd.checks[checkKey()]]);
+  if (key !== upd.shown) {
+    upd.shown = key;
+    upd.box.replaceChildren(...updateView());
+  }
+  const running = upd.data.job && upd.data.job.state === "running";
+  upd.timer = setTimeout(pollUpdate, running ? 500 : 2000);
+}
+
+// When a job has just finished: keep the rest of the app in step with the controller.
+async function afterJob(job) {
+  if (!job || job.state === "running" || upd.seenJob === `${job.id}${job.state}`) return;
+  const first = upd.seenJob === null;
+  upd.seenJob = `${job.id}${job.state}`;
+  if (first) return;                 // finished before this page was opened
+  if (job.state === "failed") { toast(job.error, "error"); return; }
+  if (job.kind === "backup") { upd.backup = job.result.backup; toast("Backup saved"); }
+  if (job.kind === "restore") toast("Backup written back. Restart the controller to use it.");
+  if (job.kind === "install") toast(`Firmware ${job.result.version} installed. Restart the controller to use it.`);
+  if (job.kind === "enter") { app.status = await api("/api/status"); app.dev = null; renderChrome(); }
+  if (job.kind === "restart") {
+    try {
+      const usb = (await api("/api/scan", {})).filter((d) => d.link === "usb");
+      if (usb.length === 1) await connect(usb[0]);
+      toast("The controller is back in normal mode");
+    } catch (e) { toast(e.message, "error"); }
+    upd.fw = await api("/api/firmware").catch(() => upd.fw);
+  }
+}
+
+const checkKey = () => `${upd.file}|${upd.backup}|${upd.data && upd.data.installed_version}`;
+
+async function ensureCheck() {
+  if (!upd.file || !upd.backup || upd.checks[checkKey()]) return;
+  const key = checkKey();
+  try { upd.checks[key] = await api("/api/update/check", { file: upd.file, backup: upd.backup }); }
+  catch (e) { upd.checks[key] = { allowed: false, errors: [e.message], warnings: [] }; }
+}
+
+async function runStep(path, body, title, text, okLabel) {
+  if (title && !(await confirmDialog(title, text, okLabel))) return;
+  try {
+    upd.data.job = await api(path, body || {});
+    upd.shown = "";
+  } catch (e) { toast(e.message, "error"); }
+  pollUpdate();
+}
+
+const addr = (n) => `0x${n.toString(16)}`;
+
+function updateView() {
+  const d = upd.data;
+  if (d.error) return [h("p", { class: "note" }, d.error)];
+  const job = d.job;
+  const running = job && job.state === "running";
+  const inUpdate = d.mode === "download";
+  const out = [];
+
+  if (d.sg_missing) {
+    out.push(h("p", { class: "callout" }, "This computer can't reach the controller in update mode yet. Run ",
+      h("code", {}, "sudo modprobe sg"), ", then reload this page."));
+  }
+  const where = { download: "Update mode", normal: "Normal mode", none: "Not found" }[d.mode];
+  out.push(h("dl", { class: "facts" },
+    h("div", { class: "fact" }, h("dt", {}, "Controller"), h("dd", {}, where,
+      inUpdate && d.identity ? h("small", {}, `${d.identity.chip}, ${d.identity.flash_size / 1024} KB flash`) : null)),
+    h("div", { class: "fact" }, h("dt", {}, "Firmware on it"), h("dd", {}, d.installed_version || "Unknown"))));
+
+  // 1. update mode
+  const steps = h("ol", { class: "steps" });
+  let first;
+  if (inUpdate) first = h("p", { class: "note" }, "The controller is in update mode. Its normal functions are off until you restart it.");
+  else if (d.mode === "normal") {
+    first = h("div", {}, h("p", { class: "note" }, "Nothing is written in this step. The controller leaves normal mode and its Home light goes out."),
+      h("div", { class: "btn-row" }, h("button", { class: "btn primary", disabled: running, onclick: () => runStep("/api/update/enter", { confirm: true },
+        "Switch to update mode?", "The controller stops working as a gamepad until you restart it from this page. Nothing is written yet.", "Switch") }, "Switch to update mode")));
+  } else first = h("p", { class: "note" }, "Connect the controller with the USB cable and switch it to PC/Xbox mode: hold Menu + View until the Home light is green.");
+  steps.append(h("li", { class: inUpdate ? "done" : "" }, h("h3", {}, "Switch to update mode"), first));
+
+  // 2. backup
+  const mine = d.identity ? d.backups.filter((b) => b.chip_key === d.identity.chip_key && b.jedec_id === d.identity.jedec_id) : d.backups;
+  if (upd.backup && !mine.some((b) => b.name === upd.backup)) upd.backup = null;
+  if (!upd.backup && mine.length) upd.backup = mine[0].name;
+  const backupStep = h("li", { class: mine.length ? "done" : "" }, h("h3", {}, "Back up the controller"));
+  if (mine.length) {
+    const sel = h("select", { "aria-label": "Backup", disabled: running, onchange: (e) => { upd.backup = e.target.value; pollUpdate(); } },
+      mine.map((b) => h("option", { value: b.name, selected: b.name === upd.backup }, `${b.created.replace("T", " ").slice(0, 16)}  (${b.name})`)));
+    backupStep.append(h("p", { class: "note" }, d.identity ? "Backups of this controller:" : "Backups on this computer:"), sel);
+  } else {
+    backupStep.append(h("p", { class: "note" }, "There is no backup of this controller yet. Every write needs one: it holds the firmware, settings, Bluetooth address and calibration."));
+  }
+  backupStep.append(h("div", { class: "btn-row" }, h("button", { class: `btn${mine.length ? "" : " primary"}`, disabled: running || !inUpdate,
+    onclick: () => runStep("/api/update/backup") }, mine.length ? "Make another backup" : "Make a backup")),
+    h("p", { class: "note" }, "Backups are saved in ~/.local/share/gamesir-linux/backups. Copy them somewhere safe."));
+  steps.append(backupStep);
+
+  // 3. install or restore
+  const files = (upd.fw && upd.fw.available || []).filter((f) => f.target === "controller");
+  if (upd.file && !files.some((f) => f.file === upd.file)) upd.file = null;
+  if (!upd.file && files.length) upd.file = (files.find((f) => f.matches_device_region !== false && f.newer_than_device !== false) || files[0]).file;
+  const install = h("li", {}, h("h3", {}, "Install firmware"));
+  if (!files.length) install.append(h("p", { class: "note" }, "Download firmware above first."));
+  else {
+    install.append(h("select", { "aria-label": "Firmware", disabled: running, onchange: (e) => { upd.file = e.target.value; pollUpdate(); } },
+      files.map((f) => h("option", { value: f.file, selected: f.file === upd.file },
+        `Firmware ${f.version}, ${f.region === "china" ? "China" : "International"} build`))));
+    const check = upd.checks[checkKey()];
+    if (!upd.backup) install.append(h("p", { class: "note" }, "Needs a backup of this controller."));
+    else if (!check) install.append(h("p", { class: "note" }, "Checking…"));
+    else if (check.allowed) {
+      install.append(h("p", { class: "note ok" }, `Fits this controller: ${check.partition} goes to ${addr(check.start)}–${addr(check.end - 1)}. Settings, Bluetooth address and calibration are kept.`));
+    } else install.append(h("ul", { class: "problems" }, check.errors.map((e) => h("li", {}, e))));
+    if (check && check.warnings.length) install.append(h("ul", { class: "warnings" }, check.warnings.map((w) => h("li", {}, w))));
+    const f = files.find((x) => x.file === upd.file);
+    install.append(h("div", { class: "btn-row" },
+      h("button", { class: "btn primary", disabled: running || !inUpdate || !(check && check.allowed), onclick: () => runStep("/api/update/install",
+        { file: upd.file, backup: upd.backup, confirm: true }, `Install firmware ${f && f.version}?`,
+        "The firmware area of the controller is erased and rewritten. Keep the cable in until it finishes. If anything fails, the controller stays in update mode and you can run it again or write the backup back.",
+        "Install") }, `Install firmware ${f ? f.version : ""}`)));
+  }
+  install.append(h("p", { class: "note" }, "To go back to the firmware in a backup, write the backup back. Settings, Bluetooth address and calibration stay as they are."),
+    h("div", { class: "btn-row" }, h("button", { class: "btn", disabled: running || !inUpdate || !upd.backup, onclick: () => runStep("/api/update/restore",
+      { backup: upd.backup, confirm: true }, "Write the backup back?",
+      "The firmware area of the controller is erased and rewritten with the firmware in the backup. Keep the cable in until it finishes.", "Write it back") },
+      "Write the backup back")));
+  steps.append(install);
+
+  // 4. restart
+  steps.append(h("li", {}, h("h3", {}, "Restart the controller"),
+    d.stay ? h("p", { class: "callout danger" }, "The last write did not verify. Don't restart or unplug the controller: run the same step again.") : null,
+    h("div", { class: "btn-row" }, h("button", { class: "btn", disabled: running || !inUpdate || d.stay,
+      onclick: () => runStep("/api/update/restart") }, "Restart controller"))));
+  out.push(steps);
+
+  // the job in progress, or the last one
+  if (job) {
+    const names = { enter: "Switching to update mode", identify: "Identifying the chip", backup: "Backing up",
+                    restore: "Writing the backup back", install: "Installing firmware", restart: "Restarting" };
+    const box = h("div", { class: `job ${job.state}` }, h("h3", {}, names[job.kind] || job.kind,
+      job.state === "done" ? ": done" : job.state === "failed" ? ": failed" : "…"));
+    if (running) {
+      box.append(h("p", { class: "note" }, job.label || "Starting…"),
+        h("progress", { max: job.total || 1, value: job.done || 0 }),
+        ["restore", "install"].includes(job.kind) ? h("p", { class: "note" }, h("strong", {}, "Keep the cable in until this finishes.")) : null);
+    }
+    if (job.error) box.append(h("p", { class: "callout danger" }, job.error));
+    if (job.log.length) box.append(h("ol", { class: "log" }, job.log.map((l) => h("li", {}, l))));
+    out.push(box);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -759,6 +933,7 @@ let renderSeq = 0;
 async function render() {
   app.section = sectionFromHash();
   stopLive();
+  stopUpdatePoll();
   app.live = null;
   renderChrome();
   const panel = $("#panel");
