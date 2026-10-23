@@ -7,21 +7,23 @@ Connect (Windows) and the GameSir Android app.
 > **Status:** configuring the controller **over the USB cable works on real hardware** (Nova 2
 > Lite): reading every setting, changing them, and live stick and trigger feedback. **Firmware
 > updates work too**: one controller has been backed up and updated from 7701 to 8201 from the
-> settings app, keeping its settings. Bluetooth and the 2.4 GHz dongle are built but not yet
-> tested on hardware. Reverse-engineering notes are in
+> settings app, keeping its settings. **The 2.4 GHz receiver works too**: everything the cable
+> does except firmware updates and showing the controller's firmware version. Bluetooth is built
+> but not yet tested on hardware. Reverse-engineering notes are in
 > [PROTOCOL.md](PROTOCOL.md); the hardware checklist is [HARDWARE.md](HARDWARE.md).
 
 ![The settings app, Sticks page](docs/screenshot.png)
 
 ## What works
 
-| | Cable | Bluetooth | 2.4 GHz dongle |
+| | Cable | Bluetooth | 2.4 GHz receiver |
 |---|---|---|---|
-| Firmware version, MAC, battery | yes | untested | not yet |
-| Read dead zones, feature toggles, vibration, Home light, quick triggers, back buttons | yes | untested | not yet |
-| Change them | Home light confirmed, the rest untested | untested | not yet |
-| Live stick and trigger positions | yes | no | not yet |
-| Auto-sleep, profiles | no (the controller doesn't answer over USB) | untested | not yet |
+| Firmware version, MAC, battery | yes | untested | MAC and battery; the version reported is the receiver's |
+| Read dead zones, feature toggles, vibration, Home light, quick triggers, back buttons | yes | untested | yes |
+| Change them | yes (Home light, dead zones) | untested | yes (Home light, dead zones) |
+| Live stick and trigger positions | yes | no | yes |
+| Auto-sleep, profiles | no (the controller doesn't answer over USB) | untested | no (same as the cable) |
+| Install controller firmware | yes | no | no (use the cable) |
 
 - **Settings app in your browser** (`gamesir-linux gui`): the controller drawing is the map; click
   a stick, a trigger or the back buttons to configure them. Dead zones are drawn as you drag, with
@@ -68,6 +70,10 @@ For an app-menu entry: `cp contrib/desktop/gamesir-linux.desktop ~/.local/share/
 **By cable** (recommended, and the only connection tested so far): plug it in and hold **View +
 Menu** for 2 seconds until the Home light turns **green** (PC/Xbox mode). In the blue mode it
 pretends to be a PlayStation controller and can't be configured.
+
+**Through the 2.4 GHz receiver**: plug the receiver in, turn the controller on and hold **View +
+Menu** for 2 seconds until the Home light is **green**. Same settings as the cable; firmware
+updates need the cable.
 
 **Over Bluetooth**: hold **Home + A** for 2 seconds until the light flashes **yellow** (Android
 mode), then pair it.
@@ -145,10 +151,10 @@ serve fake update feeds from a local HTTP server.
 3. ~~Firmware update feed, read-only hardware probe~~
 4. ~~Browser-based settings app~~
 5. ~~First real hardware: configuration over the USB cable, live input, button guide~~
-6. Test the 2.4 GHz dongle (expected as `3537:1098`) and Bluetooth on hardware
+6. ~~2.4 GHz receiver on hardware (`3537:1098`)~~; Bluetooth on hardware
 7. Remap every button and record macros (`f5` / `f6` commands, still to decode)
 8. ~~USB update mode: flash backup, restore and firmware update (first update 7701 → 8201)~~
-9. Update the 2.4 GHz dongle (`AC632N`, firmware 2800)
+9. Update the 2.4 GHz receiver (`AC632N`) when GameSir ships firmware newer than 2800 (analysis in PROTOCOL.md)
 
 ## Disclaimer
 

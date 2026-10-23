@@ -378,7 +378,20 @@ said `0x7117 ^ (pos >> 2)`; that was wrong).
 The JieLi DLL's obfuscated strings decode (see below) to the loader resource type `LOADER`, `uboot1.00`, the chip names `br22 br23 br25 br27 br30 bd19
 bd29 uc03` (one wrapped loader resource each), `JLDGAUTH` and `jielikeji2010ipo`.
 
-## The 2.4 GHz dongle (offline analysis, 2026-10-23; nothing sent to it yet)
+## The 2.4 GHz dongle
+
+**Confirmed on hardware (2026-10-23):** with the controller in green mode the dongle enumerates as
+**`3537:1098`** "2.4G" / "XBOX 360 For Windows", with the same three interfaces as the wired
+`0x100F` (xpad, HID keyboard, `0xFF7A` vendor channel). The Menu + View mode cycle works over
+2.4 GHz too; the dongle starts in blue (DS4) after linking. **GCM passes through to the
+controller**: every setting reads back exactly as by cable, writes work (Home light, dead zone,
+from the settings app), and live input works through the dongle's xpad event node. Basic info
+(`01 01`) returns firmware **2800** (the dongle's: already the version Connect 1.16.7 ships) with
+the controller's MAC and battery. Auto-sleep (`0x26`) and slots (`0x29`) get no reply, as by
+cable. No `0xF4` state reports arrive unsolicited, so the controller's own version is not known
+over the dongle until `SetGamepadStateReport` is decoded.
+
+The analysis below was done before that, offline.
 
 **Seen on USB so far:** idle `3537:2106` "Zikway HID zk" (vendor `0xFF7A` interface). With the
 controller linked in blue mode it shows up for under a second as `045e:028e` (Microsoft's Xbox

@@ -57,8 +57,9 @@ Follow HARDWARE.md. Run `gamesir-linux probe --guided` first and read its JSON b
 6. **Persistence.** Do settings made over Bluetooth survive switching to the 2.4 GHz dongle?
 7. **USB IDs.** Partly confirmed: wired green mode is 0x100F with a `0xFF7A` vendor HID channel;
    blue mode emulates a DualShock 4 (054c:09cc; probe it with `--device 054c:09cc`); the idle
-   dongle is 0x2106. See PROTOCOL.md. Still open: the dongle in green mode (Connect says 0x1098)
-   and update mode (`AC695X_TRANS` / `N2LT`, `AC632N_TRANS` / `N2DG`).
+   dongle is 0x2106; the dongle carrying a green-mode controller is 0x1098 and passes GCM through
+   (confirmed: reads, writes, live input). See PROTOCOL.md. Still open: the dongle's update mode
+   (`AC632N_TRANS` / `N2DG`); its firmware is 2800, already current.
 
 ## Rules
 
