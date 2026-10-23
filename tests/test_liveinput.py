@@ -49,6 +49,8 @@ def test_state_scales_to_fractions():
     stick, trigger = (-32768, 32767), (0, 255)
     live.range = {"lx": stick, "ly": stick, "rx": stick, "ry": stick, "lt": trigger, "rt": trigger}
     live.raw = {"lx": -32768, "ly": 32767, "rx": 0, "ry": 0, "lt": 0, "rt": 255}
+    live.held, live.hats = {"A"}, {0x10: -1, 0x11: 0}             # A held, D-pad left
     st = live.state()
     assert (st["lx"], st["ly"], st["lt"], st["rt"]) == (-1.0, 1.0, 0.0, 1.0)
+    assert st["pressed"] == ["A", "LEFT", "RT"]                   # RT pulled all the way
     assert abs(st["rx"]) < 0.001 and str(st["ry"]) != "-0.0"

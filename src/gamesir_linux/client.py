@@ -114,6 +114,20 @@ class NovaClient:
         if not ok:
             raise NotApplied(f"{getattr(source, 'name', source)}: controller reports {now}")
 
+    async def remap(self, key: int) -> tuple[int, ...]:
+        """What `key` does (cable and receiver): its targets, or () for its own function."""
+        q = gcm.remap_query(key)
+        return gcm.remap_parse(q, await self._ask(q))
+
+    async def set_remap(self, key: int, targets: list[int] | tuple[int, ...]) -> tuple[int, ...]:
+        """Make `key` act as `targets` (1-3 keys pressed together), or its own function if empty.
+        The controller answers a target it refuses with no targets; that raises NotApplied."""
+        await self._set(gcm.remap_set(key, targets) if targets else gcm.remap_reset(key))
+        now = await self.remap(key)
+        if tuple(now) != tuple(targets):
+            raise NotApplied(f"{getattr(key, 'name', key)}: asked for {list(targets)}, controller reports {list(now)}")
+        return now
+
     async def reset_mapping(self, source: int) -> Mapping:
         await self._set(gcm.mapping_reset(source))
         return await self.mapping(source)

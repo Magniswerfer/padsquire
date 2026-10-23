@@ -145,7 +145,8 @@ async def _try(coro):
         return {"error": str(e)}
 
 
-async def read_state(nova: NovaClient, skip: set[str] = frozenset(), through_dongle: bool = False) -> dict:
+async def read_state(nova: NovaClient, skip: set[str] = frozenset(), through_dongle: bool = False,
+                     remaps: bool = False) -> dict:
     async def maybe(name, read):
         return {"error": "not available over this connection"} if name in skip else await _try(read())
 
@@ -162,6 +163,9 @@ async def read_state(nova: NovaClient, skip: set[str] = frozenset(), through_don
         "slots": await maybe("slots", nova.slots),
         "light": await _try(nova.light()),
     }
+    if remaps:
+        # Every key (f1), by cable or receiver; Bluetooth keeps the back-button mapping (0x1F).
+        state["remaps"] = {k.name: await _try(nova.remap(k)) for k in gcm.NOVA_REMAP_SOURCES}
     fw = info.get("value", {}).get("firmware_version") if "value" in info else None
     if through_dongle:
         # Basic info is the receiver's there; the controller's version comes from a state report.
@@ -232,7 +236,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
 
     async def state_of(nova: NovaClient) -> dict:
         return await read_state(nova, USB_UNSUPPORTED if session.mode == "usb" else frozenset(),
-                                session.through_dongle)
+                                session.through_dongle, remaps=session.mode in ("usb", "simulated"))
 
     def need_client():
         if not session.connected:
@@ -274,6 +278,8 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
             "targets": [k.name for k in gcm.NOVA_TARGETS],
             "stick_targets": [Key(k).name for k in gcm.NOVA_STICK_TARGETS],
             "remappable": [k.name for k in gcm.NOVA_REMAPPABLE],
+            "remap_sources": [k.name for k in gcm.NOVA_REMAP_SOURCES],
+            "remap_targets": [k.name for k in gcm.NOVA_REMAP_TARGETS],
         })
 
     @routes.get("/api/status")
@@ -424,6 +430,22 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
                 return fail(f"{target.name} is not a valid target")
         await nova.set_mapping(source, target)
         return ok(await nova.mapping(source))
+
+    @routes.post("/api/remap")
+    @guarded
+    async def set_remap(request):
+        d = await body(request)
+        key = Key[d["key"]]
+        if key not in gcm.NOVA_REMAP_SOURCES:
+            return fail(f"{key.name} cannot be remapped")
+        targets = d.get("targets") or []
+        if not isinstance(targets, list) or len(targets) > gcm.REMAP_MAX_TARGETS:
+            return fail(f"targets must be a list of up to {gcm.REMAP_MAX_TARGETS} keys")
+        targets = [Key[t] for t in targets]
+        if any(t not in gcm.NOVA_REMAP_TARGETS for t in targets):
+            return fail("one of those targets cannot be used")
+        nova = need_client()
+        return ok(list(await nova.set_remap(key, targets)))
 
     @routes.post("/api/trigger-quick")
     @guarded

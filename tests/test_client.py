@@ -89,3 +89,19 @@ def test_second_batch_roundtrip():
 def test_invalid_slot_is_reported():
     with pytest.raises(NotApplied):
         run(NovaClient(SimulatedNova()).switch_slot(7))
+
+
+def test_remap_every_key_on_the_simulator():
+    from gamesir_linux.client import NotApplied, NovaClient
+    from gamesir_linux.gcm import Key
+    from gamesir_linux.simulator import SimulatedNova
+    nova = NovaClient(SimulatedNova())
+
+    async def go():
+        assert await nova.remap(Key.A) == ()
+        assert await nova.set_remap(Key.A, [Key.B]) == (Key.B,)
+        assert await nova.set_remap(Key.CAPTURE, [Key.A, Key.B]) == (Key.A, Key.B)
+        with pytest.raises(NotApplied):                        # refused, like firmware 8201
+            await nova.set_remap(Key.L4, [Key.LS_UP])
+        assert await nova.set_remap(Key.A, []) == ()
+    asyncio.run(go())

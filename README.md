@@ -22,6 +22,7 @@ Connect (Windows) and the GameSir Android app.
 | Read dead zones, feature toggles, vibration, Home light, quick triggers, back buttons | yes | untested | yes |
 | Change them | yes (Home light, dead zones) | untested | yes (Home light, dead zones) |
 | Live stick and trigger positions | yes | no | yes |
+| Remap every button (19 keys, to any button) | yes | back buttons only, untested | yes |
 | Auto-sleep, profiles | no (the controller doesn't answer over USB) | untested | no (same as the cable) |
 | Install controller firmware | yes | no | no (use the cable) |
 
@@ -152,7 +153,7 @@ serve fake update feeds from a local HTTP server.
 4. ~~Browser-based settings app~~
 5. ~~First real hardware: configuration over the USB cable, live input, button guide~~
 6. ~~2.4 GHz receiver on hardware (`3537:1098`)~~; Bluetooth on hardware
-7. Remap every button and record macros (`f5` / `f6` commands, still to decode)
+7. ~~Remap every button (`f1`)~~; Connect offers no macros for this controller
 8. ~~USB update mode: flash backup, restore and firmware update (first update 7701 → 8201)~~
 9. Update the 2.4 GHz receiver (`AC632N`) when GameSir ships firmware newer than 2800 (analysis in PROTOCOL.md)
 

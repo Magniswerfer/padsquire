@@ -168,3 +168,21 @@ def test_live_input_needs_the_cable(tmp_path):
         r = await c.get("/api/input", headers=API)
         assert r.status == 409 and "by cable" in (await r.json())["error"]
     run(go, tmp_path)
+
+
+def test_remap_every_key(tmp_path):
+    async def go(c):
+        await login(c)
+        post = lambda path, body: c.post(path, data=json.dumps(body), headers={**API, "Content-Type": "application/json"})
+        await post("/api/connect", {"simulate": True})
+        state = (await (await c.get("/api/state", headers=API)).json())["data"]
+        assert len(state["remaps"]) == 19 and state["remaps"]["CAPTURE"] == {"value": []}
+        r = await post("/api/remap", {"key": "CAPTURE", "targets": ["B"]})
+        assert (await r.json())["data"] == ["B"]
+        r = await post("/api/remap", {"key": "CAPTURE", "targets": []})
+        assert (await r.json())["data"] == []
+        r = await post("/api/remap", {"key": "HOME", "targets": ["B"]})
+        assert r.status == 400
+        r = await post("/api/remap", {"key": "A", "targets": ["LS_UP"]})
+        assert r.status == 400
+    run(go, tmp_path)

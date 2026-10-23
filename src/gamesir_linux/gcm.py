@@ -328,6 +328,51 @@ def key_from_scan(scan: int, kind: int = 1) -> int:
     return 0 if scan == 0 else (kind << 8) | scan
 
 
+# -- remapping (cable and 2.4 GHz receiver) -------------------------------------
+# What GameSir Connect uses for the T4N2 (SAPJoyUniDevice_Get/SetKeyMappingHSV), confirmed on
+# hardware (firmware 8201, through the receiver):
+#   read   f1 00 09 <key> 00 00 00 00 <sum>     reply: byte 4 = number of targets, 5..7 targets
+#   set    f1 01 09 <key> <n> <t1> <t2> <t3> <sum>   (1-3 targets, pressed together)
+#   reset  f1 02 09 <key> 00 00 00 00 <sum>     back to the key's own function (0 targets)
+# Codes are our Key values' low bytes. A refused target comes back as 0 targets: 8201 refuses
+# stick directions and 0xD2 ("no function", which Connect offers as NC) for every key tried.
+
+CMD_REMAP = 0xF1
+REMAP_MAX_TARGETS = 3
+NOVA_REMAP_SOURCES = [Key.A, Key.B, Key.X, Key.Y, Key.LB, Key.LT, Key.L3, Key.RB, Key.RT, Key.R3,
+                      Key.UP, Key.DOWN, Key.LEFT, Key.RIGHT, Key.L4, Key.R4, Key.SELECT, Key.START,
+                      Key.CAPTURE]
+NOVA_REMAP_TARGETS = [Key.A, Key.B, Key.X, Key.Y, Key.UP, Key.DOWN, Key.LEFT, Key.RIGHT, Key.LB,
+                      Key.RB, Key.LT, Key.RT, Key.L3, Key.R3, Key.SELECT, Key.START, Key.CAPTURE]
+
+
+def remap_query(key: int) -> bytes:
+    return seal(bytes([CMD_REMAP, 0x00, 0x09, scan_code(key), 0, 0, 0, 0, 0]))
+
+
+def remap_set(key: int, targets: list[int] | tuple[int, ...]) -> bytes:
+    if not 1 <= len(targets) <= REMAP_MAX_TARGETS:
+        raise ValueError(f"1 to {REMAP_MAX_TARGETS} targets, not {len(targets)}")
+    codes = [scan_code(t) for t in targets] + [0] * (REMAP_MAX_TARGETS - len(targets))
+    return seal(bytes([CMD_REMAP, 0x01, 0x09, scan_code(key), len(targets), *codes, 0]))
+
+
+def remap_reset(key: int) -> bytes:
+    return seal(bytes([CMD_REMAP, 0x02, 0x09, scan_code(key), 0, 0, 0, 0, 0]))
+
+
+def remap_parse(request: bytes, reply: bytes) -> tuple[int, ...]:
+    """The key's targets as Keys; () means it does its own function."""
+    verify(request, reply, min_len=9)
+    if reply[3] != request[3]:
+        raise ProtocolError(f"reply is for key {reply[3]:#04x}, expected {request[3]:#04x}")
+    n = reply[4]
+    if n > REMAP_MAX_TARGETS:
+        raise ProtocolError(f"{n} targets in the reply")
+    codes = [key_from_scan(b) for b in reply[5:5 + n]]
+    return tuple(Key(c) if c in Key._value2member_map_ else c for c in codes)
+
+
 # Remappable source keys -> GCM mapping id (getSupportMappingKeyIdByHidKeyCode).
 MAPPING_ID = {Key.L4: 1, Key.R4: 2, 462: 3, 463: 4, Key.A: 11, Key.B: 12, Key.X: 13, Key.Y: 14}
 KEY_BY_MAPPING_ID = {v: k for k, v in MAPPING_ID.items()}

@@ -313,6 +313,66 @@ function regionName(fw) {
 
 function panelButtons() {
   const d = app.dev;
+  if (!d.remaps) return panelBackButtons();
+  const labels = app.meta.keys;
+  const wrap = h("div", {},
+    h("h1", {}, "Buttons"),
+    h("p", { class: "lede" }, "Choose what each button does. A remapped button sends the button you pick instead of its own; the change is stored on the controller."));
+  const rows = h("div", { class: "rows" });
+  for (const key of app.meta.remap_sources) {
+    const entry = d.remaps[key];
+    if (errOf(entry)) { rows.append(row(labels[key], null, unavailable(entry))); continue; }
+    const targets = val(entry);
+    const combo = targets.length > 1 ? targets.join("+") : null;
+    const select = h("select", { "aria-label": labels[key] },
+      h("option", { value: "" }, ["L4", "R4"].includes(key) ? "Nothing (default)" : "Its own function"),
+      h("optgroup", { label: "Act as" }, app.meta.remap_targets.filter((t) => t !== key).map((t) => h("option", { value: t }, labels[t]))),
+      combo ? h("option", { value: combo, disabled: true }, `${targets.map((t) => labels[t]).join(" + ")} together`) : null);
+    select.value = combo || targets[0] || "";
+    const mark = savedMark();
+    select.addEventListener("change", () =>
+      save("/api/remap", { key, targets: select.value ? [select.value] : [] }, (v) => { d.remaps[key] = { value: v }; }, mark));
+    const help = targets.length ? `Now acts as ${targets.map((t) => labels[t]).join(" + ")}` : null;
+    rows.append(row(labels[key], help, [mark, select]));
+  }
+  wrap.append(rows,
+    h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: resetRemaps }, "Reset all buttons")));
+  if (app.status.mode === "usb") {
+    // What the computer receives right now: a remapped button lights up as its new button.
+    const shown = ["A", "B", "X", "Y", "LB", "RB", "LT", "RT", "UP", "DOWN", "LEFT", "RIGHT", "SELECT", "START", "L3", "R3", "HOME"];
+    const chips = Object.fromEntries(shown.map((k) => [k, h("span", { class: "chip" }, labels[k] || k)]));
+    wrap.append(h("h2", {}, "Pressed now"),
+      h("p", { class: "note" }, "Press a button to see what the computer receives. L4, R4 and Capture aren't reported in this mode, so they only show up through what they're mapped to."),
+      h("div", { class: "chips", "aria-live": "off" }, Object.values(chips)));
+    app.live = (st) => {
+      const down = new Set(st.pressed || []);
+      for (const [k, el] of Object.entries(chips)) el.classList.toggle("on", down.has(k));
+    };
+  }
+  wrap.append(h("h2", {}, "Layout"),
+    h("div", { class: "rows" },
+      featureToggle("DPAD_DIAGONAL_LOCK", "Lock D-pad diagonals", "Only up, down, left and right register"),
+      featureToggle("SWAP_LT_LB", "Swap LB and LT"),
+      featureToggle("SWAP_RT_RB", "Swap RB and RT")));
+  wrap.append(h("p", { class: "note" }, "On this firmware a button can act as another button, but not as a stick direction, and it can't be switched off."));
+  return wrap;
+}
+
+async function resetRemaps() {
+  const changed = app.meta.remap_sources.filter((k) => (val(app.dev.remaps[k]) || []).length);
+  if (!changed.length) { toast("Every button already does its own function"); return; }
+  const yes = await confirmDialog("Reset all buttons?", `${changed.length} remapped button${changed.length > 1 ? "s go" : " goes"} back to its own function.`, "Reset");
+  if (!yes) return;
+  for (const key of changed) {
+    try { app.dev.remaps[key] = { value: await api("/api/remap", { key, targets: [] }) }; }
+    catch (e) { toast(e.message, "error"); break; }
+  }
+  render();
+}
+
+// Over Bluetooth only the back buttons can be remapped, with the GameSir app's own command.
+function panelBackButtons() {
+  const d = app.dev;
   const labels = app.meta.keys;
   const wrap = h("div", {},
     h("h1", {}, "Buttons"),
@@ -344,14 +404,13 @@ function panelButtons() {
   if (!d.capabilities.stick_targets) {
     wrap.append(h("p", { class: "note" }, "Mapping a back button to a stick direction needs firmware 6900 or newer."));
   }
-
   wrap.append(h("h2", {}, "Layout"),
     h("div", { class: "rows" },
       featureToggle("DPAD_DIAGONAL_LOCK", "Lock D-pad diagonals", "Only up, down, left and right register"),
       featureToggle("SWAP_LT_LB", "Swap LB and LT"),
       featureToggle("SWAP_RT_RB", "Swap RB and RT")));
   wrap.append(h("p", { class: "callout" },
-    "Remapping the other buttons isn't supported yet: GameSir's command for it is still being worked out."));
+    "Every other button can be remapped by cable or through the 2.4 GHz receiver."));
   return wrap;
 }
 

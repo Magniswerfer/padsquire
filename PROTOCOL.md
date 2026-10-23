@@ -148,8 +148,10 @@ first other report is the reply; there is no echo or checksum check.
 | Bytes | DLL function |
 |---|---|
 | `01 01` | GetVersion / GetDeviceInfo / GetMacAddress (one query, three parsers) |
-| `f5 00` / `f5 01` | Get / SetGamepadParam |
-| `f6 00` / `f6 01` `f6 02` / `f6 03` `f6 04` | GetMacroStep / SetMacroStep / RecordMacro |
+| `f5 00` / `f5 01` | Get / SetGamepadParam: only `{sleepTimeInMinutes[2], autoSleepEnabled}` (Connect's struct), not remapping |
+| `f6 00` / `f6 01` `f6 02` / `f6 03` `f6 04` | GetMacroStep / SetMacroStep / RecordMacro (Connect offers no macros for the T4N2) |
+| `f1 00` / `f1 01` / `f1 02` | Get / Set / reset a key's mapping (`Get/SetKeyMappingHSV` for the T4N2; see below) |
+| `f3 01` | SetGamepadStateReport (see the dongle section) |
 | `1e …` | SetABXYRotationTest |
 | `f2 00 04 f6` (raw `hid_write`) | UpdateFirmware: **never send** |
 
@@ -192,7 +194,24 @@ Read-only results from one controller (firmware 7701), i.e. its out-of-the-box v
 | Home light (`0x05`) | white, effect 1 | **writes work**: set to red from the GUI, read back as (255, 40, 40) |
 | Back buttons L4 / R4 (`0x1F`) | scan 0, flag 0: not assigned | |
 
-Still to decode: the `f5` gamepad-param and `f6` macro layouts.
+**Remapping every key (`f1`, confirmed on hardware 2026-10-23, firmware 8201 through the
+receiver).** For PIDs `0x100F` and `0x1098`, `SAPJoyUniDevice_GetKeyMappingHSV` /
+`SetKeyMappingHSV` go to `FUN_100333f0` / `FUN_10033930`:
+
+| Frame | Meaning |
+|---|---|
+| `f1 00 09 <key> 00 00 00 00 <sum>` | read; the reply's byte 4 is the number of targets (0 = the key's own function), bytes 5–7 the targets |
+| `f1 01 09 <key> <n> <t1> <t2> <t3> <sum>` | map to 1–3 targets, pressed together; the reply says what was stored |
+| `f1 02 09 <key> 00 00 00 00 <sum>` | reset to the key's own function |
+
+Key codes are our `gcm.Key` values' low bytes; the DLL's table (`FUN_10019fa0`) maps Connect's
+`SAPJoyUniKey` numbers onto exactly these (A `B4`, B `B5`, X `B7`, Y `B8`, D-pad `B0`–`B3`, LB
+`BA`, RB `BB`, View `BC`, Menu `BD`, LT `BE`, RT `BF`, L3 `C0`, R3 `C1`, L4 `CB`, R4 `CD`, Capture
+`D4`, stick directions `EF`–`FE`, "NC" `D2`). Connect lets the T4N2 remap 19 keys (`CanMappingKeys`)
+to 17 buttons or NC (`MappingList`). On 8201 the controller stores button targets alone or in
+combinations, and **refuses** (answers with 0 targets) stick directions and NC for every key
+tried. This is separate from the Android app's back-button command `0x1F`, which the settings app
+keeps for Bluetooth.
 
 ### 3. USB firmware update: JieLi UBOOT1.00 (decoded from the DLLs, not yet run)
 
