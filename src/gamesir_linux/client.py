@@ -139,7 +139,7 @@ class NovaClient:
         The controller answers a target it refuses with no targets; that raises NotApplied."""
         await self._set(gcm.remap_set(key, targets) if targets else gcm.remap_reset(key))
         now = await self.remap(key)
-        if tuple(now) != tuple(targets):
+        if sorted(now) != sorted(targets):              # the order may come back differently
             raise NotApplied(f"{getattr(key, 'name', key)}: asked for {list(targets)}, controller reports {list(now)}")
         return now
 

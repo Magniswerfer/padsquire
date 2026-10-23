@@ -600,3 +600,7 @@ input[type="color"] {
 .rows.two .row { grid-template-columns: minmax(8rem, 1fr) minmax(0, 13rem); }
 .rows.two .row-control { justify-self: stretch; flex-wrap: nowrap; }
 .rows.two .row-control select { flex: 1; min-width: 0; }
+.remap-pick { display: flex; flex-direction: column; align-items: stretch; gap: .375rem; flex: 1; min-width: 0; }
+.remap-pick select { width: 100%; }
+.btn.link { background: none; border: 0; padding: .125rem 0; color: var(--accent); text-align: left; box-shadow: none; }
+.btn.link:hover { text-decoration: underline; background: none; }

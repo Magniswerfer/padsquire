@@ -89,7 +89,7 @@ def wait_for_download_mode(before: set[str], timeout: float) -> jlboot.UbootDevi
     new = [d for d in jlboot.disks() if d.path not in before]
     extra = "".join(f" A new device appeared instead: {d.path} {d.vendor!r} {d.product!r}." for d in new)
     raise Failed(f"no download-mode disk appeared within {timeout:.0f} s.{no_sg_hint()}{extra} Nothing more "
-                 "was sent; unplug the controller or hold Home + M for about 10 seconds to get it back.")
+                 "was sent; unplug the controller or hold Home for about 5 seconds to get it back.")
 
 
 def enter(hid_path: str, timeout: float = 20.0) -> jlboot.UbootDevice:
@@ -128,7 +128,7 @@ def wait_for_normal_mode(timeout: float, receiver: bool = False) -> list[hid.Hid
                     return found
         time.sleep(0.5)
     if jlboot.find():
-        raise Failed("it is still in download mode. Unplug it and hold Home + M for about 10 seconds, "
+        raise Failed("it is still in download mode. Unplug it and hold Home for about 5 seconds, "
                      "then turn it on again.")
     raise Failed("it left download mode but its config interface hasn't appeared yet; if the LED isn't "
                  "green, hold Menu + View for 2 seconds.")

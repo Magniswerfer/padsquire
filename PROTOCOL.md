@@ -210,7 +210,8 @@ Key codes are our `gcm.Key` values' low bytes; the DLL's table (`FUN_10019fa0`) 
 `BA`, RB `BB`, View `BC`, Menu `BD`, LT `BE`, RT `BF`, L3 `C0`, R3 `C1`, L4 `CB`, R4 `CD`, Capture
 `D4`, stick directions `EF`–`FE`, "NC" `D2`). Connect lets the T4N2 remap 19 keys (`CanMappingKeys`)
 to 17 buttons or NC (`MappingList`). On 8201 the controller stores button targets alone or in
-combinations, and **refuses** (answers with 0 targets) stick directions and NC for every key
+combinations of up to three (confirmed in the settings app 2026-10-23: A as B + X + LB, `f1 01 09 b4 03 b5 b7 ba`,
+read back in the same order and pressed together), and **refuses** (answers with 0 targets) stick directions and NC for every key
 tried. This is separate from the Android app's back-button command `0x1F`, which the settings app
 keeps for Bluetooth.
 
@@ -221,7 +222,7 @@ yet tried. **Vibration:** the test report `04 L 08 R 08 00 08 00 08` drives the 
 the Nova 2 Lite has no trigger motors (the DLL's 4-motor form moves nothing, and trigger
 strengths stay 0). **Grip strength** (`0x25`) is stored rounded down to a multiple of 25: 1–24 → 0, 26 → 25, 99 → 75; 150 and 200 are kept, 255 → 250. Whether values above 100 vibrate harder is untested; the settings app offers 0–100 in steps of 25.
 
-**Open: gamepad output sometimes stops after a write** (seen twice through the 2.4 GHz receiver, 2026-10-23): after the settings app read all settings or sent a remap, the Xbox interface sent no more input until the controller was restarted; GameSir's own channel still carried the button state, and the remap itself was stored. The same commands sent directly, six times, never did it, and the same app action did not do it later either. Both times it was within about a minute of a controller restart. Not yet tried by cable.
+**Open: gamepad output sometimes stops after a write** (seen twice through the 2.4 GHz receiver, 2026-10-23): after the settings app read all settings or sent a remap, the Xbox interface sent no more input until the controller was restarted; GameSir's own channel still carried the button state, and the remap itself was stored. The same commands sent directly, six times, never did it, and the same app action did not do it later either. Both times it was within about a minute of a controller restart. **By cable it did not happen** (2026-10-23): the app reloaded and sent 19 remaps (`f1 01` / `f1 02`) in 80 s, with an evdev monitor on the gamepad; input came back after every one. So far it is a receiver-only problem.
 
 ### 3. USB firmware update: JieLi UBOOT1.00 (decoded from the DLLs, not yet run)
 

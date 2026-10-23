@@ -322,6 +322,49 @@ function regionName(fw) {
   return { "0": "China build", "1": "international build" }[fw.slice(-1)] || null;
 }
 
+// One button's remap: up to three targets, pressed together. The first menu also offers the
+// button's own function; each further menu can be removed again.
+function remapRow(key, targets) {
+  const d = app.dev, labels = app.meta.keys, max = app.meta.remap_max_targets;
+  const help = h("span", { class: "row-help" });
+  const picks = h("div", { class: "remap-pick" });
+  const mark = savedMark();
+  let chosen = [...targets];
+  const commit = (next) => {
+    next = next.filter((t, i) => t && next.indexOf(t) === i);
+    chosen = next;
+    draw();
+    save("/api/remap", { key, targets: next }, (v) => { d.remaps[key] = { value: v }; chosen = [...v]; draw(); }, mark);
+  };
+  const menu = (i) => {
+    const others = app.meta.remap_targets.filter((t) => t !== key && (t === chosen[i] || !chosen.includes(t)));
+    const first = i === 0
+      ? h("option", { value: "" }, ["L4", "R4"].includes(key) ? "Nothing (default)" : "Its own function")
+      : h("option", { value: "" }, "Remove this button");
+    const select = h("select", { "aria-label": i === 0 ? labels[key] : `${labels[key]}, button ${i + 1}` },
+      first, h("optgroup", { label: i === 0 ? "Act as" : "Together with" }, others.map((t) => h("option", { value: t }, labels[t]))));
+    select.value = chosen[i] || "";
+    select.addEventListener("change", () => {
+      const next = [...chosen];
+      if (i === 0 && !select.value) return commit([]);       // own function again: drop the rest too
+      next[i] = select.value;
+      commit(next);
+    });
+    return select;
+  };
+  const draw = () => {
+    help.textContent = chosen.length ? `Now acts as ${chosen.map((t) => labels[t]).join(" + ")}` : "";
+    const add = chosen.length && chosen.length < max
+      ? h("button", { class: "btn small link", type: "button", onclick: () => { picks.replaceChildren(...[...picks.children].slice(0, -1), menu(chosen.length)); } }, "Add a button pressed together")
+      : null;
+    picks.replaceChildren(...[...chosen.map((_, i) => menu(i)), chosen.length ? null : menu(0), add].filter(Boolean));
+  };
+  draw();
+  return h("div", { class: "row" },
+    h("div", {}, h("span", { class: "row-label" }, labels[key]), help),
+    h("div", { class: "row-control" }, mark, picks));
+}
+
 function panelButtons() {
   const d = app.dev;
   if (!d.remaps) return panelBackButtons();
@@ -333,18 +376,7 @@ function panelButtons() {
   for (const key of app.meta.remap_sources) {
     const entry = d.remaps[key];
     if (errOf(entry)) { rows.append(row(labels[key], null, unavailable(entry))); continue; }
-    const targets = val(entry);
-    const combo = targets.length > 1 ? targets.join("+") : null;
-    const select = h("select", { "aria-label": labels[key] },
-      h("option", { value: "" }, ["L4", "R4"].includes(key) ? "Nothing (default)" : "Its own function"),
-      h("optgroup", { label: "Act as" }, app.meta.remap_targets.filter((t) => t !== key).map((t) => h("option", { value: t }, labels[t]))),
-      combo ? h("option", { value: combo, disabled: true }, `${targets.map((t) => labels[t]).join(" + ")} together`) : null);
-    select.value = combo || targets[0] || "";
-    const mark = savedMark();
-    select.addEventListener("change", () =>
-      save("/api/remap", { key, targets: select.value ? [select.value] : [] }, (v) => { d.remaps[key] = { value: v }; }, mark));
-    const help = targets.length ? `Now acts as ${targets.map((t) => labels[t]).join(" + ")}` : null;
-    rows.append(row(labels[key], help, [mark, select]));
+    rows.append(remapRow(key, val(entry)));
   }
   wrap.append(rows,
     h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: resetRemaps }, "Reset all buttons")));
@@ -389,8 +421,8 @@ function restartBox() {
       ? h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: restartDevice }, receiver ? "Restart the receiver" : "Restart the controller"))
       : app.status.mode === "usb" ? h("p", {}, "The restart button needs a one-time setup: ", h("a", { href: "#setup" }, "see Setup and help"), ".") : null,
     h("p", { class: "note" }, receiver
-      ? "If restarting the receiver doesn't help, turn the controller off and on: hold Home and M for about 10 seconds, turn it on, and hold Menu and View until the light is green."
-      : "Or by hand: hold Home and M for about 10 seconds, turn it on, and hold Menu and View until the light is green."));
+      ? "If restarting the receiver doesn't help, turn the controller off and on: hold Home for about 5 seconds, turn it on, and hold Menu and View until the light is green."
+      : "Or by hand: hold Home for about 5 seconds, turn it on, and hold Menu and View until the light is green."));
   return box;
 }
 
@@ -1280,12 +1312,12 @@ async function panelSetup() {
       "If it shows up but can't be opened, the device permissions above aren't in place yet, or the controller was plugged in before they were: unplug it and plug it in again."),
     qa("The live view or the controller stops responding",
       "This has been seen right after a change, mostly through the receiver. Use Restart on the Buttons page: by cable it restarts the controller, through the receiver it restarts the receiver. Nothing is changed or erased, and settings are kept.",
-      "If that doesn't help, turn the controller off and on: hold Home and M for about 10 seconds, turn it on, and switch to green."),
+      "If that doesn't help, turn the controller off and on: hold Home for about 5 seconds, turn it on, and switch to green."),
     qa("Bluetooth doesn't find it",
       "Put the controller in Android mode: hold Home and A for 2 seconds until the light flashes yellow. Pair it once in your system's Bluetooth settings, then use Find controllers here."),
     qa("Switching to update mode doesn't work",
       "The sg module must be loaded (see above). Use a USB port on the computer itself or a powered USB 2 hub; some hubs disturb the controller's update mode.",
-      "Nothing has been written at that point. To get the controller back: unplug it, hold Home and M for about 10 seconds, and turn it on again. The receiver: unplug it and plug it back in."),
+      "Nothing has been written at that point. To get the controller back: unplug it, hold Home for about 5 seconds, and turn it on again. The receiver: unplug it and plug it back in."),
     qa("A firmware write fails",
       "The controller or receiver stays in update mode on purpose. Don't unplug it and don't restart it: run the same step again. If it keeps failing, write your backup back the same way. Every write is checked block by block, and nothing outside the firmware area is ever touched."),
     qa("Where are my backups?",

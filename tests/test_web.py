@@ -185,6 +185,12 @@ def test_remap_every_key(tmp_path):
         assert r.status == 400
         r = await post("/api/remap", {"key": "A", "targets": ["LS_UP"]})
         assert r.status == 400
+        r = await post("/api/remap", {"key": "CAPTURE", "targets": ["A", "B", "X"]})   # pressed together
+        assert sorted((await r.json())["data"]) == ["A", "B", "X"]
+        for bad in (["A", "A"], ["CAPTURE"], ["A", "B", "X", "Y"]):
+            assert (await post("/api/remap", {"key": "CAPTURE", "targets": bad})).status == 400
+        meta = (await (await c.get("/api/meta", headers=API)).json())["data"]
+        assert meta["remap_max_targets"] == 3
     run(go, tmp_path)
 
 
