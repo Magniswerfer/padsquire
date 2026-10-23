@@ -65,6 +65,22 @@ Open:
 3. **Recovery if the firmware no longer starts**: TBD (PROTOCOL.md section 3, "Recovery").
 4. Controller firmware updates through the receiver (JieLi's HID over-the-air updater): research.
 
+## Next steps (as of 2026-10-23)
+
+For the owner, before the installer works for others:
+
+1. Rename the GitHub repo to `Magniswerfer/padsquire` and make it public (the installer's GitHub
+   fallback and the README links point there). Locally: `git remote set-url origin
+   https://github.com/Magniswerfer/padsquire`.
+2. PyPI: add a pending trusted publisher (project `padsquire`, owner `Magniswerfer`, repo
+   `padsquire`, workflow `release.yml`, environment `pypi`), and create a `pypi` environment in the
+   repo's GitHub settings. Then `git tag v0.1.0 && git push origin v0.1.0` publishes it.
+3. Try the real thing: `curl -fsSL https://raw.githubusercontent.com/Magniswerfer/padsquire/main/install.sh | sh`,
+   then open PadSquire from the app menu.
+4. Point the website (`Magniswerfer/padsquire-website`) at that install command.
+
+Then: Bluetooth testing (the checklist in HARDWARE.md).
+
 ## Rules
 
 - **Firmware writes on hardware the tools haven't seen go in stages, each confirmed by the user
