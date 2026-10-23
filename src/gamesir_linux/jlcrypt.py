@@ -55,3 +55,19 @@ def enc_blocks(data: bytes, file_offset: int, base: int = BLOCK_KEY_BASE) -> byt
         key = (base ^ ((file_offset + i) >> 2)) & 0xFFFF
         out += enc(data[i : i + BLOCK_SIZE], key)
     return bytes(out)
+
+
+# "MengLi" (JieLi's CrcDecode) keystream: each byte is the low byte of a CRC-16 that runs over a
+# fixed GB2312 phrase, seeded from a 32-bit key. The BR23 ROM uses it for memory transfers and
+# the loader for the chip key. Port of jl-uboot-tool's jl_crc_cipher (MIT, kagaimiq).
+_MENGLI_MAGIC = "孟黎我爱你，玉林".encode("gb2312")
+
+
+def mengli(data: bytes, key: int = 0xFFFFFFFF) -> bytes:
+    """Apply (or remove; it is symmetric) the MengLi keystream."""
+    crc = crc16((key >> 16).to_bytes(2, "little"), key & 0xFFFF)
+    out = bytearray(data)
+    for i in range(len(out)):
+        crc = crc16(_MENGLI_MAGIC[i % len(_MENGLI_MAGIC):][:1], crc)
+        out[i] ^= crc & 0xFF
+    return bytes(out)
