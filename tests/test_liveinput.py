@@ -1,0 +1,54 @@
+import os
+from pathlib import Path
+
+import pytest
+
+from gamesir_linux import liveinput
+
+
+def _w(path: Path, text: str):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text + "\n")
+
+
+def fake_sysfs(root: Path) -> Path:
+    """A controller on USB 1-3.3: hidraw11 on interface 2, the xpad gamepad (event15) and its
+    keyboard (event26) on interfaces 0 and 1, plus another pad on a different port."""
+    usb = root / "devices" / "pci0000:00" / "usb1" / "1-3" / "1-3.3"
+    _w(usb / "idVendor", "3537")
+    for name, iface, axes in [("event15", "1-3.3:1.0", "3003f"), ("event26", "1-3.3:1.1", "0")]:
+        _input_node(root, name, usb / iface / "input" / f"input{name[5:]}", axes)
+    hid = usb / "1-3.3:1.2" / "0003:3537:100F.0001"
+    hid.mkdir(parents=True)
+    (root / "class" / "hidraw" / "hidraw11").mkdir(parents=True)
+    os.symlink(hid, root / "class" / "hidraw" / "hidraw11" / "device")
+
+    other = root / "devices" / "pci0000:00" / "usb1" / "1-5"
+    _w(other / "idVendor", "054c")
+    _input_node(root, "event3", other / "1-5:1.0" / "input" / "input3", "3003f")
+    return root
+
+
+def _input_node(root: Path, name: str, dev: Path, axes: str):
+    """class/input/eventN/device -> .../inputN, which has capabilities/abs (3003f: X Y Z RX RY RZ)."""
+    _w(dev / "capabilities" / "abs", axes)
+    event = root / "class" / "input" / name
+    event.mkdir(parents=True)
+    os.symlink(dev, event / "device")
+
+
+def test_finds_the_gamepad_on_the_same_usb_device(tmp_path):
+    root = fake_sysfs(tmp_path)
+    assert liveinput.event_node_for("/dev/hidraw11", root, Path("/dev")) == "/dev/input/event15"
+    with pytest.raises(liveinput.Unavailable, match="no longer connected"):
+        liveinput.event_node_for("/dev/hidraw4", root)
+
+
+def test_state_scales_to_fractions():
+    live = liveinput.LiveInput.__new__(liveinput.LiveInput)
+    stick, trigger = (-32768, 32767), (0, 255)
+    live.range = {"lx": stick, "ly": stick, "rx": stick, "ry": stick, "lt": trigger, "rt": trigger}
+    live.raw = {"lx": -32768, "ly": 32767, "rx": 0, "ry": 0, "lt": 0, "rt": 255}
+    st = live.state()
+    assert (st["lx"], st["ly"], st["lt"], st["rt"]) == (-1.0, 1.0, 0.0, 1.0)
+    assert abs(st["rx"]) < 0.001 and str(st["ry"]) != "-0.0"

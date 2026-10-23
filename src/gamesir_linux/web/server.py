@@ -18,7 +18,7 @@ from pathlib import Path
 
 from aiohttp import web
 
-from .. import __version__, ble, gcm, hid, installer, updater
+from .. import __version__, ble, gcm, hid, installer, liveinput, updater
 from ..client import NotApplied, NovaClient
 from ..gcm import DeadZone, Feature, Key, ProtocolError, Vibration
 from ..simulator import SimulatedNova
@@ -203,6 +203,8 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
         if request.path.startswith("/api/") and request.headers.get(API_HEADER) != "1":
             return fail("missing header", 403)
         resp = await handler(request)
+        if resp.prepared:      # a stream sets its own headers before it starts
+            return resp
         resp.headers["Cache-Control"] = "no-store"
         resp.headers["X-Content-Type-Options"] = "nosniff"
         resp.headers["Referrer-Policy"] = "no-referrer"
@@ -294,6 +296,40 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
             else:
                 await session.connect_ble(address, data.get("name"))
         return ok(session.status())
+
+    @routes.get("/api/input")
+    async def input_stream(request):
+        """Live stick and trigger positions as JSON lines, about 30 a second, until the page
+        stops reading. Not `guarded`: it must not hold the session lock while it runs."""
+        if session.mode != "usb":
+            return fail("live input is only available by cable", 409)
+        try:
+            live = liveinput.LiveInput(liveinput.event_node_for(session.address))
+        except liveinput.Unavailable as e:
+            return fail(str(e), 409)
+        resp = web.StreamResponse(headers={
+            "Content-Type": "application/x-ndjson", "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff"})
+        loop = asyncio.get_running_loop()
+        ready = asyncio.Event()
+        loop.add_reader(live.fd, ready.set)
+        try:
+            await resp.prepare(request)
+            while True:
+                await resp.write(json.dumps(live.state()).encode() + b"\n")
+                try:
+                    await asyncio.wait_for(ready.wait(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    pass       # nothing moved; send the same state as a keepalive
+                ready.clear()
+                live.pump()
+                await asyncio.sleep(1 / 30)
+        except (ConnectionResetError, liveinput.Unavailable):
+            pass
+        finally:
+            loop.remove_reader(live.fd)
+            live.close()
+        return resp
 
     @routes.post("/api/disconnect")
     @guarded

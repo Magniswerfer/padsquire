@@ -157,3 +157,12 @@ def test_simulate_flag_connects_on_start(tmp_path):
         await login(c)
         return (await (await c.get("/api/status", headers=API)).json())["data"]
     assert run(go, tmp_path, simulate=True)["connected"] is True
+
+
+def test_live_input_needs_the_cable(tmp_path):
+    async def go(c):
+        await login(c)
+        await c.post("/api/connect", data=json.dumps({"simulate": True}), headers={**API, "Content-Type": "application/json"})
+        r = await c.get("/api/input", headers=API)
+        assert r.status == 409 and "by cable" in (await r.json())["error"]
+    run(go, tmp_path)
