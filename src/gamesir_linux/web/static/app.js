@@ -797,6 +797,8 @@ function updateView() {
     h("div", { class: "btn-row" }, h("button", { class: "btn", disabled: running || !inUpdate || d.stay,
       onclick: () => runStep("/api/update/restart") }, "Restart controller"))));
   out.push(steps);
+  out.push(h("p", { class: "note" }, h("strong", {}, "Not known yet: "),
+    "how to get the controller into update mode if its firmware no longer starts. The M + X + B shortcut goes through the firmware, so it wouldn't help then. That's why a write that fails keeps the controller in update mode until it has been done again: don't unplug or restart it in between."));
 
   // the job in progress, or the last one
   if (job) {

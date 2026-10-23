@@ -209,9 +209,13 @@ should re-enumerate as a USB disk whose SCSI INQUIRY says vendor `BR23`, product
 The ROM calibrates its clock from USB SOF packets, which other full/low-speed devices on the same
 bus can disturb; a USB 2.0 hub isolates it.
 
-**Recovery.** UBOOT1.00 is in mask ROM, and a BR23 that finds no valid firmware in flash enters
-it by itself. An interrupted flash should therefore leave the controller recoverable over USB.
-Not yet verified on this controller.
+**Recovery if the firmware no longer starts: TBD.** What is known: UBOOT1.00 is in mask ROM, and
+JieLi's BR23 is documented (jl-uboot-tool) to enter it by itself when it finds no valid firmware
+in flash. Not verified on this controller, and there is no safe way to test it short of breaking
+the firmware. The other ways in all go through the firmware: the `f2 00 04 f6` command and the
+**M + X + B** shortcut (seen on hardware: it boots the firmware, which then switches). So the
+tool's rule stands: after a write that did not verify, the controller stays in download mode
+and is not restarted until the write has been redone.
 
 **Protocol.** SCSI vendor commands over `SG_IO` (16-byte CDBs, big-endian fields):
 
@@ -472,4 +476,5 @@ flashing. `script.ver` holds the JieLi build-tool version (`AC695X-v0.01-cfg_too
   "back" means, auto-sleep (assumed minutes; no reply over USB), battery encoding (bit 7 looks wrong)
 - Whether the BLE config channel works from BlueZ while the controller is in PC (XInput) mode
 - SAPJoy HID report layouts
-- A full flash dump through the BR23 loader; then the image-building details listed in section 3
+- TBD: how to reach download mode if the controller's firmware no longer starts (the ROM's own
+  fallback is documented for BR23 but unverified here; see section 3, "Recovery")
