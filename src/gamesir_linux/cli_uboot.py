@@ -1,4 +1,4 @@
-"""`gamesir-linux uboot ...`: the controller's USB download mode, read-only.
+"""`gamesir-linux uboot ...`: the controller's USB download mode.
 
 The steps, each its own command so they can be run (and checked) one at a time:
   enter --confirm   switch the controller on the cable into download mode
@@ -6,7 +6,13 @@ The steps, each its own command so they can be run (and checked) one at a time:
   backup            read the whole flash twice, compare, save it outside the repo
   restart           boot the firmware in flash again
 
-Nothing here erases or writes flash; jlboot refuses those commands outright.
+Writing (jlwrite), each only with --confirm and a verified backup of this same controller:
+  test-write        erase, write and erase back one unused sector above the layout
+  restore           write the backup's code area back (firmware, as it was)
+  flash             write a firmware update, as GameSir Connect would
+
+Writes never reach the reserved areas (settings, Bluetooth address, calibration): the writer
+refuses any address outside its window, and the whole flash is compared before and after.
 """
 
 from __future__ import annotations
@@ -21,7 +27,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import __version__, hid, jlboot
+from . import __version__, hid, installer, jlboot, jlflash, jlwrite, safety
 from .client import NovaClient
 from .gcm import ProtocolError
 
@@ -241,6 +247,169 @@ def a_restart(args) -> int:
     return 1
 
 
+# -- writing -------------------------------------------------------------------
+
+WRITE_WARNING = """\
+This writes to the controller's flash. Nothing above the code area (settings, Bluetooth
+address, calibration) is touched, and every sector is checked afterwards; if something fails,
+the controller stays in download mode and the command can be run again.
+Run again with --confirm to go ahead."""
+ATTEMPTS = 3
+
+
+def _read_all(boot, size: int, label: str) -> bytes:
+    try:
+        return jlboot.read_twice(boot, size, _progress(label))
+    finally:
+        if sys.stderr.isatty():
+            print(file=sys.stderr)
+
+
+def _preflight(boot, backup: Path):
+    """Same controller as the backup? Returns (live flash, its layout, the backup)."""
+    dump, key = safety.load_backup(backup)
+    manifest = json.loads(backup.with_suffix(".json").read_text())
+    ident = jlboot.start(boot, LOADER_CACHE)
+    if ident.chip_key != key or f"{ident.jedec_id:#08x}" != manifest["flash"]["jedec_id"]:
+        raise jlboot.JLBootError(f"this is not the controller in {backup.name} (chip key "
+                                 f"{ident.chip_key:#06x}, flash {ident.jedec_id:#08x})")
+    size = ident.flash_size or len(dump)
+    if size != len(dump):
+        raise jlboot.JLBootError(f"the flash is {size} bytes, the backup {len(dump)}")
+    live = _read_all(boot, size, "reading the flash twice")
+    layout = jlflash.find(live, key)
+    for name in ("BTIF", "USERIF"):
+        lo, hi = layout.area(name)
+        if live[lo:hi] != dump[lo:hi]:
+            raise jlboot.JLBootError(f"{name} ({lo:#x}-{hi - 1:#x}) differs from the backup: "
+                                     "not the same controller, or not the same backup")
+    print(f"controller    same as {backup.name} (chip key, flash ID, Bluetooth address, calibration)")
+    return live, layout, dump
+
+
+def _burn(boot, live: bytes, layout: jlflash.Layout, image: bytes) -> int:
+    code_end = layout.code[1]
+    if len(image) != code_end:
+        raise jlboot.JLBootError(f"the image is {len(image):#x} bytes, the code area ends at {code_end:#x}")
+    writer = jlwrite.Writer(boot, 0, code_end, keep=[(code_end, len(live))])
+
+    def show(what, done, total):
+        if sys.stderr.isatty():
+            print(f"\rwriting... {done * 100 // total}% ({what})   ", end="", file=sys.stderr, flush=True)
+
+    for attempt in range(1, ATTEMPTS + 1):
+        try:
+            jlwrite.burn(writer, image, layout.base, show)
+            break
+        except jlwrite.WriteError as e:
+            print(f"\nattempt {attempt} failed: {e}", file=sys.stderr)
+    else:
+        print(f"error: the write did not verify after {ATTEMPTS} attempts. Do NOT restart the "
+              "controller; it is still in download mode. Run the same command again.", file=sys.stderr)
+        return 1
+    if sys.stderr.isatty():
+        print(file=sys.stderr)
+    after = _read_all(boot, len(live), "reading the flash back twice")
+    if after[:code_end] != image:
+        print("error: the code area does not read back as written. Do NOT restart; run the "
+              "command again.", file=sys.stderr)
+        return 1
+    if after[code_end:] != live[code_end:]:
+        print("error: something above the code area changed. Do NOT restart; compare with the "
+              "backup before doing anything else.", file=sys.stderr)
+        return 1
+    print(f"written       {0:#x}-{code_end - 1:#x}, every sector verified; everything above "
+          f"{code_end:#x} unchanged")
+    print("Next: `gamesir-linux uboot restart`.")
+    return 0
+
+
+def a_test_write(args) -> int:
+    if not args.confirm:
+        print(WRITE_WARNING, file=sys.stderr)
+        return 2
+    dev, boot = _open(args)
+    try:
+        live, layout, dump = _preflight(boot, args.backup)
+        size = len(live)
+        used_end = max([e.end for e in layout.areas.values() if e.end <= size]
+                       + [layout.base + f.end for f in layout.files if f.length < size])
+        addr = args.address if args.address is not None else size - jlwrite.SECTOR
+        if addr % jlwrite.SECTOR or addr < used_end or addr + jlwrite.SECTOR > size:
+            raise jlboot.JLBootError(f"{addr:#x} is not a free sector above the layout (which ends at {used_end:#x})")
+        if live[addr:addr + jlwrite.SECTOR] != b"\xff" * jlwrite.SECTOR:
+            raise jlboot.JLBootError(f"sector {addr:#x} is not blank; not using it")
+        pattern = b"".join(hashlib.sha256(b"gamesir-linux %d" % i).digest() for i in range(128))
+        writer = jlwrite.Writer(boot, addr, addr + jlwrite.SECTOR,
+                                keep=[(0, addr), (addr + jlwrite.SECTOR, size)])
+        writer.program(addr, pattern)
+        crc_ok = not writer.mismatches(addr, pattern)
+        readback = boot.flash_read(addr, jlwrite.SECTOR)
+        print(f"wrote         {addr:#x}: device CRC {'matches' if crc_ok else 'DIFFERS'}, "
+              f"read back {'identical' if readback == pattern else 'DIFFERENT'}")
+        writer.erase(addr)
+        blank = boot.flash_read(addr, jlwrite.SECTOR) == b"\xff" * jlwrite.SECTOR
+        print(f"erased        {addr:#x}: {'blank again' if blank else 'NOT BLANK'}")
+        after = _read_all(boot, size, "reading the flash back twice")
+    finally:
+        dev.close()
+    if after != live:
+        print("error: the flash differs from before the test", file=sys.stderr)
+        return 1
+    if not (crc_ok and readback == pattern and blank):
+        return 1
+    print("flash         identical to before the test. Erase and write work.")
+    return 0
+
+
+def a_restore(args) -> int:
+    if not args.confirm:
+        print(WRITE_WARNING, file=sys.stderr)
+        return 2
+    dev, boot = _open(args)
+    try:
+        live, layout, dump = _preflight(boot, args.backup)
+        saved = jlflash.find(dump, int(json.loads(args.backup.with_suffix(".json").read_text())
+                                       ["chip"]["chip_key"], 16))
+        if saved.code != layout.code or saved.base != layout.base:
+            raise jlboot.JLBootError("the backup's code area is not where the controller's is now")
+        image = dump[:layout.code[1]]
+        same = live[:len(image)] == image
+        print(f"restoring     {0:#x}-{len(image) - 1:#x} from {args.backup.name}"
+              + (" (identical to what is there now)" if same else ""))
+        return _burn(boot, live, layout, image)
+    finally:
+        dev.close()
+
+
+def a_flash(args) -> int:
+    if not args.confirm:
+        print(WRITE_WARNING, file=sys.stderr)
+        return 2
+    bundled = installer.load_manifest(args.firmware_dir)
+    fw = next((f for f in bundled if (args.firmware_dir / f.file).resolve() == args.ufw.resolve()), None)
+    if fw is None:
+        raise jlboot.JLBootError(f"{args.ufw} is not in the firmware manifest in {args.firmware_dir}")
+    dev, boot = _open(args)
+    try:
+        live, layout, dump = _preflight(boot, args.backup)
+        pid, vid = jlflash.identity(live, layout.base)
+        plan = safety.plan_update(safety.DeviceState("controller", pid, vid, args.installed_version),
+                                  fw, args.ufw, bundled=bundled, reinstall=args.reinstall)
+        choice = safety.choose_flash_image(args.ufw, args.backup)
+        errors = plan.errors + choice.errors
+        for e in errors:
+            print(f"BLOCKED       {e}", file=sys.stderr)
+        if errors:
+            return 2
+        image = safety.update_image(args.ufw, choice)
+        print(f"flashing      {fw.file} (v{fw.version}): {choice.partition} -> "
+              f"{choice.start:#x}-{choice.end - 1:#x}")
+        return _burn(boot, live, layout, image)
+    finally:
+        dev.close()
+
+
 # -- wiring --------------------------------------------------------------------
 
 def _size(text: str) -> int:
@@ -254,8 +423,8 @@ def _size(text: str) -> int:
 
 
 def register(sub) -> None:
-    p = sub.add_parser("uboot", help="the controller's USB download mode: identify, back up, restart "
-                                     "(read-only)")
+    p = sub.add_parser("uboot", help="the controller's USB download mode: identify, back up, restore, "
+                                     "update")
     acts = p.add_subparsers(dest="action", required=True)
 
     acts.add_parser("find", help="list controllers in download mode (sends nothing)").set_defaults(run=a_find)
@@ -276,6 +445,31 @@ def register(sub) -> None:
                    help=f"directory outside the repo (default: {BACKUP_DIR})")
     b.add_argument("--size", type=_size, help="bytes to read, a multiple of 4096 (default: from the flash ID)")
     b.set_defaults(run=a_backup)
+
+    t = acts.add_parser("test-write", help="write and erase one unused sector, to test writing")
+    t.add_argument("--backup", type=Path, required=True, help="this controller's flash backup (.bin)")
+    t.add_argument("--address", type=lambda x: int(x, 0), help="sector to use (default: the last one)")
+    t.add_argument("--confirm", action="store_true", help="really write")
+    t.add_argument("--device", help="SCSI generic node, e.g. /dev/sg2 (default: find it)")
+    t.set_defaults(run=a_test_write)
+
+    s = acts.add_parser("restore", help="write the backup's firmware back (keeps settings and calibration)")
+    s.add_argument("backup", type=Path, help="this controller's flash backup (.bin)")
+    s.add_argument("--confirm", action="store_true", help="really write")
+    s.add_argument("--device", help="SCSI generic node, e.g. /dev/sg2 (default: find it)")
+    s.set_defaults(run=a_restore)
+
+    from .cli import DEFAULT_FW_DIR
+    f = acts.add_parser("flash", help="install a firmware update, as GameSir Connect would")
+    f.add_argument("ufw", type=Path, help="the .ufw file, from `gamesir-linux update`")
+    f.add_argument("--backup", type=Path, required=True, help="this controller's flash backup (.bin)")
+    f.add_argument("--installed-version", type=int, required=True,
+                   help="the firmware it runs now, from `gamesir-linux usb info` (e.g. 7701)")
+    f.add_argument("--firmware-dir", type=Path, default=DEFAULT_FW_DIR)
+    f.add_argument("--reinstall", action="store_true")
+    f.add_argument("--confirm", action="store_true", help="really write")
+    f.add_argument("--device", help="SCSI generic node, e.g. /dev/sg2 (default: find it)")
+    f.set_defaults(run=a_flash)
 
     r = acts.add_parser("restart", help="leave download mode and boot the firmware in flash")
     r.add_argument("--device", help="SCSI generic node, e.g. /dev/sg2 (default: find it)")

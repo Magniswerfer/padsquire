@@ -9,14 +9,15 @@ tested against a **simulated** controller. The first real hardware session start
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -e '.[gui,test]'   # no system pip on this box; 7zip for update/extract
-pytest                                   # 148 tests; GAMESIR_INSTALLER=<setup.exe> adds a real-installer test,
+pytest                                   # 168 tests; GAMESIR_INSTALLER=<setup.exe> adds a real-installer test,
                                          # GAMESIR_BACKUP=<dump.bin> GAMESIR_UFW=<.ufw> a real layout check
 gamesir-linux probe --guided             # read-only report of the controller in every mode -> JSON
 gamesir-linux ble scan | info | deadzone | feature | vibration | sleep | restore
 gamesir-linux usb ...                    # same actions over the cable (green LED mode), via hid.py
 gamesir-linux gui [--simulate]           # browser app on 127.0.0.1
 gamesir-linux update | extract | ufw | plan
-gamesir-linux uboot find | enter --confirm | info | backup | restart   # download mode, read-only
+gamesir-linux uboot find | enter --confirm | info | backup | restart   # download mode
+gamesir-linux uboot test-write | restore | flash ... --confirm        # writes (need a backup)
 ```
 
 ## Layout
@@ -32,6 +33,8 @@ gamesir-linux uboot find | enter --confirm | info | backup | restart   # downloa
 - `jlflash.py`: reads a flash layout (file table, app directory) and checks that an image keeps
   every reserved area; `safety.choose_flash_image` picks the image against a backup. `plan`
   refuses without `--backup`.
+- `jlwrite.py`: the only code that erases or writes flash (FB01, FB04), inside one window that
+  may not touch a reserved area; `burn()` follows JieLi's order. Tests: `tests/test_jlwrite.py`.
 - `probe.py`: read-only hardware probe. `PROTOCOL.md`: all reverse-engineering notes.
 
 ## First hardware session: what to confirm, in order

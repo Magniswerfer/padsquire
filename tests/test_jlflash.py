@@ -4,12 +4,17 @@ import os
 import struct
 from pathlib import Path
 
+import random
+
 import pytest
 
 from conftest import ISD_TEMPLATE
 from gamesir_linux import cli, jlcrypt, jlflash, safety, ufw
 
 KEY = 0x3496
+# The raw flash header of a Nova 2 Lite: PID and VID read in plain text, the CRC covers the
+# descrambled bytes 2..31.
+HEADER = bytes.fromhex("bb1ebf1d4e324c54f031a467ccadff684143363935585f5452414e53ffffffff")
 ALL_FF = b"\xff" * jlflash.ENTRY
 
 
@@ -20,8 +25,6 @@ def _entry(name: str, typ: int, offset: int, length: int, crc: int = 0xFFFF, ind
 def make_image(code_start=0x1000, code_end=0x64000, vm=(0x64000, 0x14000), key=KEY,
                length=None, app_len=0x5F000) -> bytes:
     """A firmware image shaped like flash2.bin (code_start 0x1000) or flash.bin (0)."""
-    header = b"\x20\x02" + bytes(8) + b"\x02\x10" + bytes(2) + b"AC695X_TRANS".ljust(16, b"\xff")   # 30 bytes
-    header = jlcrypt.crc16(header).to_bytes(2, "little") + header
     files = [_entry("uboot.boot", 0x03, 0xA0, 0x100), _entry("isd_config.ini", 0x5E, 0x2088, 0x89),
              _entry("app_dir_head", 0x17, 0x3000, 0xFFFFFFFF), _entry("key_mac", 0x70, 0x7F000, 0x1000)]
     areas = [_entry("app.bin", 0x60, 0x120, app_len), _entry("VM", 0xE6, *vm),
@@ -29,12 +32,12 @@ def make_image(code_start=0x1000, code_end=0x64000, vm=(0x64000, 0x14000), key=K
              _entry("BTIF", 0x40, 0x79000, 0x1000), _entry("EXIF", 0xEB, 0x7A000, 0x1000),
              _entry("USERIF", 0xA6, 0x7B000, 0x4000), ALL_FF]
     img = bytearray(b"\xff" * (length or code_end - code_start))
-    img[0:32] = jlcrypt.enc(header, 0xFFFF)
+    img[0x3400:len(img) - 0x100] = random.Random(app_len).randbytes(len(img) - 0x3500)   # "code"
+    img[0:32] = HEADER
     for i, e in enumerate(files):
         img[32 * (i + 1):32 * (i + 2)] = jlcrypt.enc(e, 0xFFFF)
     for i, e in enumerate(areas):
         img[0x3000 + 32 * i:0x3000 + 32 * (i + 1)] = jlcrypt.enc(e, key ^ ((32 * i) >> 2))
-    img[0x3200:0x3400] = bytes(range(256)) * 2        # stands in for the code
     return bytes(img)
 
 

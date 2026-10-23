@@ -332,13 +332,29 @@ in `resources/dfu/` and `jl_firmware_upgrade_x86.dll`; static analysis):
   `EOFFSET` (`isd_config.ini`, 1 → `0x1000`) picks one: **`flash2.bin`** for the Nova 2 Lite.
 - The upgrade thread (`FUN_10007260`) checks the device's flash is at least the image header's
   size field (`0x7F000`), overwrites the image's **last 16 bytes** with a runtime record (header
-  byte 2 > `0x0F`; constant `0x1501` and values parsed from the `.ufw`), then **prepends
+  byte 2 > `0x0F`; decoded below), then **prepends
   `EOFFSET` bytes** (`FUN_10008c50`), giving a `0x64000`-byte image from address 0.
 - The burn (`FUN_1000b560`): header first into the spare sector (sector 0 here), CRC-checked;
   erase `0x2000` up to the **image length** (the first `false`; with `true` it would erase up to
   the flash size minus `EOFFSET`, VM and calibration included); write top-down in 4 KB chunks;
   rewrite `0x1000` then `0`; CRC16 (`FC 13`) every 4 KB from 0 to the image end; retry up to 5
   times; `FC 0C` restart (the `true`). **Everything from `0x64000` up is never erased or written.**
+
+**The 16-byte record** (`std::string::replace` of the image's last 16 bytes, so its size
+stays): `"dll\0"` (a string the DLL copies over its `FF` defaults), `01 15` (`0x1501`), the
+erase-all flag (`00`), `FF`, then 6 bytes from the `.ufw`'s `JLDGAUTH` block, then `FF FF`. The
+block is `blimit.bin` (type `0xA1`, 144 bytes): block-descrambled like the other config
+partitions, then ENC with the 16-bit key at its offset `0x0E` (those two bytes stay as they
+are); it starts `JLDGAUTH`, has a CRC-16 of `0x0C`–`0x8F` at `0x0A`, and if flag bit 2 at `0x1E`
+is set the record takes its bytes `0x18`–`0x1D`. For 8201 the record is
+`646c6c00 0115 00ff 855682ed e98c ffff`; the last 8 bytes are already in `flash2.bin`, so only
+`0x63FF0`–`0x63FF7` change.
+
+**Writing** (`jlwrite.py`, tested against the fake chip only): sector erase `FB 01 addr32`
+(reply echoes the command) and flash write `FB 04 addr32 size16 00 crc16` with the data CRC
+little-endian, as jl-uboot-tool sends it; JieLi's DLL puts it big-endian at bytes 9–10 instead.
+Loaders from BR17 on are documented to ignore it, and every sector is CRC-checked afterwards
+either way. After each erase the sector's CRC must equal that of 4 KB of `FF`, as JieLi checks.
 
 The JieLi DLL's obfuscated strings are hex, then ENC with key **`0x6D52`** (an earlier note here
 said `0x7117 ^ (pos >> 2)`; that was wrong).
@@ -429,7 +445,11 @@ flashing. `script.ver` holds the JieLi build-tool version (`AC695X-v0.01-cfg_too
    decrypts with the controller's chip key, it ends inside the code area, and `VM`, `BTIF`,
    `EXIF`, `USERIF` and `key_mac` are at the same addresses and outside the write range
    (`jlflash.check_update`). For the Nova 2 Lite that is `flash2.bin` at `0x1000`–`0x63FFF`.
-7. Still to build: the flasher itself, which does everything the dry run checks and nothing more.
+7. The flasher (`uboot flash`, `uboot restore`, `uboot test-write`) first proves it is the
+   backup's controller (chip key, flash ID, and the `BTIF` and `USERIF` sectors byte for byte),
+   writes only inside `[0, end of the code area)`, retries a burn that fails its CRC check up to
+   3 times, then reads the whole flash back twice: the code area must equal the image and
+   everything above it must be unchanged. It never restarts the controller by itself.
 
 ## Open questions (need hardware)
 

@@ -148,3 +148,39 @@ def check_update(device: Layout, image: bytes, chip_key: int) -> UpdatePlan:
     if old_key_mac and (new_key_mac is None or new_key_mac.offset != old_key_mac.offset):
         problems.append("key_mac moves in the image's file table")
     return UpdatePlan(start, end, problems)
+
+
+def identity(data: bytes, base: int) -> tuple[str, str]:
+    """(PID, VID) from a flash header, e.g. ("AC695X_TRANS", "N2LT"); stored in plain text."""
+    vid = data[base + 4:base + 8].split(b"\xff")[0].split(b"\0")[0]
+    pid = data[base + 16:base + 32].split(b"\xff")[0].split(b"\0")[0]
+    return pid.decode("ascii", "replace"), vid.decode("ascii", "replace")
+
+
+AUTH_MAGIC = b"JLDGAUTH"
+
+
+def ufw_auth(blimit: bytes) -> bytes:
+    """The 6 bytes JieLi's updater takes from a .ufw's JLDGAUTH block (blimit.bin, already
+    block-descrambled) for the record at the end of the image; zeros without a valid block.
+    The block is ENC-scrambled with the key stored at offset 0x0E (which stays as is)."""
+    if len(blimit) != 0x90:
+        return bytes(6)
+    key = int.from_bytes(blimit[0x0E:0x10], "little")
+    block = bytearray(jlcrypt.enc(blimit, key))
+    block[0x0E:0x10] = blimit[0x0E:0x10]
+    if (block[:8] != AUTH_MAGIC
+            or int.from_bytes(block[0x0A:0x0C], "little") != jlcrypt.crc16(bytes(block[0x0C:0x90]))
+            or not block[0x1E] & 4):
+        return bytes(6)
+    return bytes(block[0x18:0x1E])
+
+
+def find(data: bytes, chip_key: int) -> Layout:
+    """The layout of a whole flash dump, wherever its header is (0x1000, 0 or 0x10000)."""
+    for base in (0x1000, 0, 0x10000):
+        try:
+            return parse(data, base, chip_key)
+        except FlashError:
+            continue
+    raise FlashError("no readable flash layout")

@@ -151,14 +151,9 @@ def choose_flash_image(fw_path: str | Path, backup: str | Path) -> FlashChoice:
         dump, key = load_backup(backup)
     except (OSError, KeyError, ValueError) as e:
         return FlashChoice(None, errors=[f"cannot use the backup: {e}"])
-    device = None
-    for base in (0x1000, 0, 0x10000):
-        try:
-            device = jlflash.parse(dump, base, key)
-            break
-        except jlflash.FlashError:
-            continue
-    if device is None:
+    try:
+        device = jlflash.find(dump, key)
+    except jlflash.FlashError:
         return FlashChoice(None, errors=["cannot read the flash layout in the backup"])
     f = ufw.load(fw_path)
     fits, refused = [], []
@@ -175,3 +170,12 @@ def choose_flash_image(fw_path: str | Path, backup: str | Path) -> FlashChoice:
                                          + "; ".join(f"{n}: {', '.join(p.problems)}" for n, p in refused)])
     return FlashChoice(None, errors=["several images fit this controller's flash ("
                                      + ", ".join(n for n, _ in fits) + "); refusing to guess"])
+
+
+def update_image(fw_path: str | Path, choice: FlashChoice) -> bytes:
+    """The bytes to burn from flash address 0, as GameSir Connect would: blank space up to the
+    image's place, then the image with JieLi's 16-byte record over its end."""
+    from . import jlwrite
+    f = ufw.load(fw_path)
+    auth = jlflash.ufw_auth(f.payload("blimit.bin")) if f.entry("blimit.bin") else bytes(6)
+    return b"\xff" * choice.start + jlwrite.connect_record(f.payload(choice.partition), auth)

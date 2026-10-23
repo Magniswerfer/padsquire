@@ -28,8 +28,11 @@ class FakeUboot:
     and memory reads come back plain."""
 
     def __init__(self, flash: bytes, *, product="UBOOT1.00", vendor="BR23", crc=jlcrypt.crc16,
-                 flaky_at: int | None = None, buffer_size=512, flash_type=jlboot.SPI0_NOR):
-        self.flash, self.product, self.vendor, self.crc = flash, product, vendor, crc
+                 flaky_at: int | None = None, buffer_size=512, flash_type=jlboot.SPI0_NOR,
+                 jedec=JEDEC, fail_after: int | None = None, corrupt_write_at: int | None = None):
+        self.flash, self.product, self.vendor, self.crc = bytearray(flash), product, vendor, crc
+        self.jedec, self.fail_after, self.corrupt_write_at = jedec, fail_after, corrupt_write_at
+        self.writes: list[tuple[str, int, int]] = []      # ("erase" | "write", address, length)
         self.flaky_at, self.buffer_size, self.flash_type = flaky_at, buffer_size, flash_type
         self.ram = bytearray(0x2C000)
         self.loader = False
@@ -68,7 +71,7 @@ class FakeUboot:
             assert addr == 0xAC6900
             return self._reply(cdb, bytes(4) + jlcrypt.mengli(CHIP_KEY.to_bytes(2, "little"))[::-1])
         if cmd == jlboot.ONLINE_DEVICE:
-            return self._reply(cdb, bytes([self.flash_type, 0]) + JEDEC.to_bytes(4, "little"))
+            return self._reply(cdb, bytes([self.flash_type, 0]) + self.jedec.to_bytes(4, "little"))
         if cmd == jlboot.READ_FLASH:
             assert size <= self.buffer_size and data_in_len == size
             data = bytearray(self.flash[addr:addr + size])
@@ -77,7 +80,24 @@ class FakeUboot:
                 data[self.flaky_at - addr] ^= 0x01
             return bytes(data)
         if cmd == jlboot.FLASH_CRC16_RAW:
-            return self._reply(cdb, self.crc(self.flash[addr:addr + size]).to_bytes(2, "big"))
+            return self._reply(cdb, self.crc(bytes(self.flash[addr:addr + size])).to_bytes(2, "big"))
+        if cmd in (0xFB01, 0xFB04):
+            if self.fail_after is not None and len(self.writes) >= self.fail_after:
+                raise ScsiFail("USB went away")
+            if cmd == 0xFB01:
+                assert addr % 0x1000 == 0 and data_out is None
+                self.writes.append(("erase", addr, 0x1000))
+                self.flash[addr:addr + 0x1000] = b"\xff" * 0x1000
+                return self._reply(cdb)
+            assert len(data_out) == size and int.from_bytes(cdb[9:11], "little") == jlcrypt.crc16(data_out)
+            self.writes.append(("write", addr, size))
+            data = bytearray(data_out)
+            if self.corrupt_write_at is not None and addr <= self.corrupt_write_at < addr + size:
+                data[self.corrupt_write_at - addr] ^= 0x10
+                self.corrupt_write_at = None                  # once
+            for i, b in enumerate(data):                       # NOR: a write only clears bits
+                self.flash[addr + i] &= b
+            return b""
         if cmd == jlboot.RUN_APP:
             self.restarted, self.loader = True, False
             return self._reply(cdb)
