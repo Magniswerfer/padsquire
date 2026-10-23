@@ -155,7 +155,8 @@ serve fake update feeds from a local HTTP server.
 6. ~~2.4 GHz receiver on hardware (`3537:1098`)~~; Bluetooth on hardware
 7. ~~Remap every button (`f1`)~~; Connect offers no macros for this controller
 8. ~~USB update mode: flash backup, restore and firmware update (first update 7701 → 8201)~~
-9. Update the 2.4 GHz receiver (`AC632N`) when GameSir ships firmware newer than 2800 (analysis in PROTOCOL.md)
+9. ~~2.4 GHz receiver: update mode, backup and restore on hardware~~ (`gamesir-linux uboot ... --receiver`);
+   install when GameSir ships firmware newer than 2800, and in the settings app
 
 ## Disclaimer
 

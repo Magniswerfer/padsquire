@@ -240,7 +240,7 @@ def same_controller(boot: jlboot.JLBoot, backup_path: Path, cache_dir: Path = LO
         raise Failed(f"cannot use the backup: {e}") from e
     ident = jlboot.start(boot, cache_dir)
     if ident.chip_key != key or f"{ident.jedec_id:#08x}" != manifest["flash"]["jedec_id"]:
-        raise Failed(f"this is not the controller in {backup_path.name} (chip key "
+        raise Failed(f"this is not the device in {backup_path.name} (chip key "
                      f"{ident.chip_key:#06x}, flash {ident.jedec_id:#08x})")
     size = ident.flash_size or len(dump)
     if size != len(dump):
@@ -250,9 +250,9 @@ def same_controller(boot: jlboot.JLBoot, backup_path: Path, cache_dir: Path = LO
     for name in ("BTIF", "USERIF"):
         lo, hi = layout.area(name)
         if live[lo:hi] != dump[lo:hi]:
-            raise Failed(f"{name} ({lo:#x}-{hi - 1:#x}) differs from the backup: not the same controller, "
+            raise Failed(f"{name} ({lo:#x}-{hi - 1:#x}) differs from the backup: not the same device, "
                          "or not the same backup")
-    log(f"Same controller as {backup_path.name}: chip key, flash ID, Bluetooth address and calibration match.")
+    log(f"Same device as {backup_path.name}: chip key, flash ID, Bluetooth data and user data match.")
     return live, layout, dump
 
 

@@ -454,7 +454,19 @@ like the controller's. Layout (4 KB variant): code `0x0`–`0x29FFF`, `VM` `0x2A
 The 256-byte variant puts `VM` at `0x28700` and `BTIF` at `0x3BF00`; writing it would need
 256-byte erases, which `jlwrite` does not do.
 
-**Support in the tools (not yet run on the receiver):** `jlboot` knows the bd19 loader (pinned,
+**Confirmed on hardware (2026-10-23):** `f2 00 04 f6` on `0x1098` puts the receiver into download
+mode: `4c4a:3442`, USB name "BR34UBOOT1.00", SCSI INQUIRY **`BD19` / `UBOOT1.00`**. The bd19
+loader at `0x2000` works. Chip key **`0x3496`** (as the images expect); flash JEDEC bytes `13 71
+CD`, **512 KB**, of which the layout uses the lower 256 KB. Layout: the **4 KB variant** (header
+byte 13 `0x10`), so `flash.bin` is the image for it. Its firmware area equals the 2800 `flash.bin`
+except for the factory burner's trailer, the same pattern as on the controller (6 bytes at
+`-0x20`, `22 84` at `-0x10`, `1a 00` in the last two bytes; the auth bytes `030cecdbfe72` in
+between come from the image). A full backup (two identical reads, device CRC matching), a restore
+of `0x0`–`0x29FFF` with the header-at-0 sequence (every sector verified, nothing above `0x2A000`
+changed) and a restart (`FC 0C`, straight back as `0x1098` with the controller linked) all
+worked; afterwards reads and the controller's version through the receiver were normal.
+
+**Support in the tools:** `jlboot` knows the bd19 loader (pinned,
 SHA-256 checked); `jlflash` takes the firmware area of an image without `PRCT` as running from
 its placement (the `app_dir_head` CRC tag) up to `VM`, and refuses a layout that is not on 4 KB
 boundaries; `jlwrite.burn` handles a header at 0 the way JieLi does (copy into `0x1000` first,

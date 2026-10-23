@@ -134,9 +134,10 @@ def check_update(device: Layout, image: bytes, chip_key: int) -> UpdatePlan:
     except FlashError as e:
         return UpdatePlan(start, end, [f"the image doesn't fit this controller: {e}"])
 
-    if device.code[1] % 0x1000 or end % 0x1000:
-        problems.append(f"the firmware area ends at {device.code[1]:#x}, not on a 4 KB boundary: this "
-                        "layout needs 256-byte erases, which this tool does not do")
+    for what, at in (("this device's firmware area ends", device.code[1]), ("the image ends", end)):
+        if at % 0x1000:
+            problems.append(f"{what} at {at:#x}, not on a 4 KB boundary: that layout needs 256-byte "
+                            "erases, which this tool does not do")
     if new.code[0] != device.code[0]:
         problems.append(f"the image's code starts at {new.code[0]:#x}, this controller's at "
                         f"{device.code[0]:#x}: it is built for the other layout")
