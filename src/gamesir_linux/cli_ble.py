@@ -72,7 +72,7 @@ async def a_scan(args) -> int:
     if args.link == "usb" and not args.simulate:
         found = hid.find()
         for d in found:
-            print(f"{d.path}  {d.name or 'GameSir'}  ({d.link})")
+            print(f"{d.path}  GameSir Nova 2 Lite  ({d.link})")
         if not found:
             print("nothing found (is the cable in, and the LED green?)", file=sys.stderr)
         return 0 if found else 1
@@ -212,6 +212,6 @@ def _add_actions(p, link: str) -> None:
 def run(args) -> int:
     try:
         return asyncio.run(args.run(args))
-    except (ble.BleError, hid.HidError, ProtocolError, NotApplied) as e:
+    except (ble.BleError, hid.HidError, ProtocolError, NotApplied, ValueError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1

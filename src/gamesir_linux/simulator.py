@@ -22,6 +22,7 @@ class SimulatedNova:
         self.vibration = gcm.Vibration(75, 0, False, False, 75, 0, False, False)   # a real controller's defaults
         self.auto_sleep = 10
         self.mappings: dict[int, tuple[int, int]] = {gcm.Key.L4: (0, 0xFF), gcm.Key.R4: (0, 0xFF)}
+        self.remaps: dict[int, bytes] = {}       # key code -> target codes (f1); absent = own function
         self.quick_trigger = (False, False)
         self.slot_count, self.slot = 3, 0
         self.light = (255, 255, 255)
@@ -30,6 +31,10 @@ class SimulatedNova:
 
     def reset(self) -> None:
         self.__init__(self.firmware, self.battery)
+
+    async def send(self, frame: bytes) -> None:
+        """Reports without a reply (the vibration test): logged, nothing else."""
+        self.log.append(frame)
 
     async def request(self, frame: bytes, accept: Callable[[bytes], bool] | None = None) -> bytes:
         self.log.append(frame)
@@ -56,6 +61,15 @@ class SimulatedNova:
                     self.mappings[src] = (0, 0xFF)
                 scan, flag = self.mappings.get(src, (0, 0xFF))
                 return gcm.seal(bytes([f[0], f[1], f[2], scan, flag, 0]))
+            if f[0] == gcm.CMD_REMAP and len(f) == 9 and f[2] == 9:
+                key, targets = f[3], bytes(f[5:5 + f[4]])
+                if f[1] == 1 and all((0x100 | t) in gcm.NOVA_REMAP_TARGETS for t in targets):
+                    self.remaps[key] = targets
+                elif f[1] == 2:
+                    self.remaps.pop(key, None)
+                # A set answers with what was stored: nothing, if the target was refused (like 8201).
+                now = self.remaps.get(key, b"") if f[1] != 1 or self.remaps.get(key) == targets else b""
+                return gcm.seal(bytes([f[0], f[1], 9, key, len(now), *now.ljust(3, b"\0"), 0]))
             if f[0] == gcm.CMD_TRIGGER_QUICK:
                 if f[1] == 1:
                     self.quick_trigger = (f[2] == 1, f[3] == 1)

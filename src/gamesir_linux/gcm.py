@@ -47,6 +47,48 @@ def verify(request: bytes, reply: bytes | None, min_len: int = 2) -> bytes:
     return reply
 
 
+# -- vibration test ---------------------------------------------------------------
+# Connect's test for the T4N2 (proxyT4N2, "vibrate"): one raw report, no checksum and no reply,
+# `04 <left> 08 <right> 08 00 08 00 08`, then the same with zeros to stop (after 100 ms-1 s).
+# Values are percent like the vibration settings. Confirmed on hardware: the first two slots are
+# the grip motors. The Nova 2 Lite has no trigger motors: the DLL's own form (04 between values,
+# slots 3-4 for triggers) moves nothing there, and it refuses trigger vibration strengths.
+
+def rumble(left: int, right: int) -> bytes:
+    if not (0 <= left <= 100 and 0 <= right <= 100):
+        raise ValueError("strength must be 0-100")
+    return bytes([0x04, left, 0x08, right, 0x08, 0x00, 0x08, 0x00, 0x08])
+
+
+# -- gamepad state reports -----------------------------------------------------
+# SAPJoyUniDevice_SetGamepadStateReport: `f3 01 05 <mode> <sum>` turns the 0xF4 reports on the
+# vendor channel off (0) or on (1 original, 2 mapped buttons). Connect sends "mapped" when it
+# opens the controller and "off" when it closes it; the reply echoes the request. In a report,
+# bytes 20-21 are the controller's firmware version as hex digits when byte 2 is 23 or more
+# (older firmware sends shorter reports). Confirmed through the 2.4 GHz receiver, where it is the
+# only way to learn the controller's version: basic info there is the receiver's.
+
+CMD_STATE_REPORT = 0xF3
+STATE_REPORT = 0xF4
+
+
+class StateReport(IntEnum):
+    OFF = 0
+    ORIGINAL = 1
+    MAPPED = 2
+
+
+def state_report_set(mode: StateReport) -> bytes:
+    return seal(bytes([CMD_STATE_REPORT, 0x01, 0x05, int(mode), 0]))
+
+
+def state_report_version(report: bytes) -> str | None:
+    """The controller's firmware version from a 0xF4 state report, e.g. "8201"."""
+    if len(report) < 22 or report[0] != STATE_REPORT or report[1] != 0 or report[2] < 23:
+        return None
+    return f"{report[20]:02x}{report[21]:02x}"
+
+
 # -- the common 6-byte query/set shape ----------------------------------------
 # Dead zones (0x07), feature toggles (0x23) and general settings (0x26) all use
 #   query: [cmd, sub, 6, 0, 0, sum]   set: [cmd, sub, 6, 1, value, sum]
@@ -83,6 +125,12 @@ class DeadZone(IntEnum):
     RIGHT_TRIGGER_BACK = 8
     LEFT_STICK_ANTI = 9      # "reverse" dead zone in the app
     RIGHT_STICK_ANTI = 10
+
+
+# Firmware 8201 overflows above this outer dead zone: from 26% a stick at full tilt comes out as
+# the opposite extreme (16-bit wrap-around), at 30-50% somewhere random. Confirmed 2026-10-23.
+OUTER_DEAD_ZONE_MAX = 25
+OUTER_ZONES = {DeadZone.LEFT_STICK_OUTER, DeadZone.RIGHT_STICK_OUTER}
 
 
 def dead_zone_query(zone: DeadZone) -> bytes:
@@ -297,6 +345,51 @@ def scan_code(key: int) -> int:
 def key_from_scan(scan: int, kind: int = 1) -> int:
     """getHidKeyCodeByGcmScanCode: kind 1 = gamepad, 2 = keyboard."""
     return 0 if scan == 0 else (kind << 8) | scan
+
+
+# -- remapping (cable and 2.4 GHz receiver) -------------------------------------
+# What GameSir Connect uses for the T4N2 (SAPJoyUniDevice_Get/SetKeyMappingHSV), confirmed on
+# hardware (firmware 8201, through the receiver):
+#   read   f1 00 09 <key> 00 00 00 00 <sum>     reply: byte 4 = number of targets, 5..7 targets
+#   set    f1 01 09 <key> <n> <t1> <t2> <t3> <sum>   (1-3 targets, pressed together)
+#   reset  f1 02 09 <key> 00 00 00 00 <sum>     back to the key's own function (0 targets)
+# Codes are our Key values' low bytes. A refused target comes back as 0 targets: 8201 refuses
+# stick directions and 0xD2 ("no function", which Connect offers as NC) for every key tried.
+
+CMD_REMAP = 0xF1
+REMAP_MAX_TARGETS = 3
+NOVA_REMAP_SOURCES = [Key.A, Key.B, Key.X, Key.Y, Key.LB, Key.RB, Key.LT, Key.RT,
+                      Key.UP, Key.DOWN, Key.LEFT, Key.RIGHT, Key.L4, Key.R4, Key.L3, Key.R3,
+                      Key.SELECT, Key.START, Key.CAPTURE]
+NOVA_REMAP_TARGETS = [Key.A, Key.B, Key.X, Key.Y, Key.UP, Key.DOWN, Key.LEFT, Key.RIGHT, Key.LB,
+                      Key.RB, Key.LT, Key.RT, Key.L3, Key.R3, Key.SELECT, Key.START, Key.CAPTURE]
+
+
+def remap_query(key: int) -> bytes:
+    return seal(bytes([CMD_REMAP, 0x00, 0x09, scan_code(key), 0, 0, 0, 0, 0]))
+
+
+def remap_set(key: int, targets: list[int] | tuple[int, ...]) -> bytes:
+    if not 1 <= len(targets) <= REMAP_MAX_TARGETS:
+        raise ValueError(f"1 to {REMAP_MAX_TARGETS} targets, not {len(targets)}")
+    codes = [scan_code(t) for t in targets] + [0] * (REMAP_MAX_TARGETS - len(targets))
+    return seal(bytes([CMD_REMAP, 0x01, 0x09, scan_code(key), len(targets), *codes, 0]))
+
+
+def remap_reset(key: int) -> bytes:
+    return seal(bytes([CMD_REMAP, 0x02, 0x09, scan_code(key), 0, 0, 0, 0, 0]))
+
+
+def remap_parse(request: bytes, reply: bytes) -> tuple[int, ...]:
+    """The key's targets as Keys; () means it does its own function."""
+    verify(request, reply, min_len=9)
+    if reply[3] != request[3]:
+        raise ProtocolError(f"reply is for key {reply[3]:#04x}, expected {request[3]:#04x}")
+    n = reply[4]
+    if n > REMAP_MAX_TARGETS:
+        raise ProtocolError(f"{n} targets in the reply")
+    codes = [key_from_scan(b) for b in reply[5:5 + n]]
+    return tuple(Key(c) if c in Key._value2member_map_ else c for c in codes)
 
 
 # Remappable source keys -> GCM mapping id (getSupportMappingKeyIdByHidKeyCode).

@@ -39,7 +39,7 @@ def test_settings_roundtrip():
 def test_restore():
     sim = SimulatedNova()
     nova = NovaClient(sim)
-    run(nova.set_dead_zone(DeadZone.LEFT_STICK_OUTER, 40))
+    run(nova.set_dead_zone(DeadZone.LEFT_STICK_OUTER, 20))
     run(nova.restore_defaults())
     assert run(nova.dead_zone(DeadZone.LEFT_STICK_OUTER)) == 0   # factory default
 
@@ -89,3 +89,37 @@ def test_second_batch_roundtrip():
 def test_invalid_slot_is_reported():
     with pytest.raises(NotApplied):
         run(NovaClient(SimulatedNova()).switch_slot(7))
+
+
+def test_remap_every_key_on_the_simulator():
+    from gamesir_linux.client import NotApplied, NovaClient
+    from gamesir_linux.gcm import Key
+    from gamesir_linux.simulator import SimulatedNova
+    nova = NovaClient(SimulatedNova())
+
+    async def go():
+        assert await nova.remap(Key.A) == ()
+        assert await nova.set_remap(Key.A, [Key.B]) == (Key.B,)
+        assert await nova.set_remap(Key.CAPTURE, [Key.A, Key.B]) == (Key.A, Key.B)
+        with pytest.raises(NotApplied):                        # refused, like firmware 8201
+            await nova.set_remap(Key.L4, [Key.LS_UP])
+        assert await nova.set_remap(Key.A, []) == ()
+    asyncio.run(go())
+
+
+def test_vibration_test_sends_the_grip_report_and_stops():
+    from gamesir_linux import gcm
+    sim = SimulatedNova()
+    asyncio.run(NovaClient(sim).test_vibration(80, 0, seconds=0))
+    assert sim.log[-2:] == [bytes.fromhex("045008000800080008"), gcm.rumble(0, 0)]
+    with pytest.raises(ValueError):
+        gcm.rumble(101, 0)
+
+
+def test_outer_dead_zone_is_capped_at_25():
+    from gamesir_linux.gcm import DeadZone
+    nova = NovaClient(SimulatedNova())
+    asyncio.run(nova.set_dead_zone(DeadZone.LEFT_STICK_OUTER, 25))
+    with pytest.raises(ValueError, match="firmware"):
+        asyncio.run(nova.set_dead_zone(DeadZone.RIGHT_STICK_OUTER, 26))
+    asyncio.run(nova.set_dead_zone(DeadZone.LEFT_STICK_INNER, 40))     # only the outer ones

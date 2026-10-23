@@ -358,19 +358,19 @@ input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer;
 .pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1.75rem; margin-top: 1rem; }
 .pair h2 { margin-top: 0; }
 .pair > div > h2 { margin: 0 0 .75rem; }
-.dz {
-  display: block; width: 100%; max-width: 13rem; height: auto; aspect-ratio: 1; margin: 0 auto .75rem; padding: 1rem;
+.curve {
+  display: block; width: 100%; max-width: 17rem; height: auto; margin: 0 auto .75rem; padding: .75rem;
   background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-m);
+  font: 500 9px var(--body); fill: var(--muted);
 }
-.dz .rim { fill: none; stroke: var(--plastic-edge); stroke-width: 1.5; }
-.dz .outer { fill: var(--ignored); }
-.dz .live { fill: var(--panel); }
-.dz .inner { fill: var(--ignored); }
-.dz .anti { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 3 3; }
-.dz .dot { fill: var(--accent); stroke: var(--panel); stroke-width: 1.5; }
+.curve .ignored { fill: var(--ignored); }
+.curve .axis { fill: none; stroke: var(--plastic-edge); stroke-width: 1.25; }
+.curve .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+.curve .dot { fill: var(--accent); stroke: var(--panel); stroke-width: 1.5; }
+.curve .tick { font-size: 8px; }
 .legend { display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center; color: var(--muted); font-size: .8125rem; margin: -.25rem 0 1rem; }
 .legend i { display: inline-block; width: .75rem; height: .75rem; border-radius: 3px; margin-right: .375rem; vertical-align: -1px; background: var(--ignored); }
-.legend i.a { background: none; border: 1.5px dashed var(--accent); border-radius: 50%; }
+.legend i.a { background: none; height: 0; border-top: 2px solid var(--accent); border-radius: 0; vertical-align: 3px; }
 
 .travel {
   position: relative; height: 2.25rem; border: 1px solid var(--line-strong); border-radius: var(--radius-s);
@@ -508,3 +508,95 @@ input[type="color"] {
   .bar { position: static; }
   .bar-status { width: 100%; }
 }
+
+/* -- firmware install, setup and help, live buttons (in the redesign's cards and pills) -------- */
+.update h3, .steps h3 { font: 600 1.125rem/1.2 var(--display); margin: 0 0 .375rem; }
+.steps li .note { margin: .25rem 0 0; }
+.steps li .btn-row { margin-top: .75rem; }
+.steps li.done::before { content: "\2713"; background: var(--ok-soft); color: var(--ok); }
+.steps select { max-width: 100%; margin-top: .5rem; }
+.note.ok { color: var(--ok); }
+.problems, .warnings { margin: .5rem 0 0; padding-left: 1.25rem; font-size: .9375rem; }
+.problems { color: var(--danger); }
+.warnings { color: var(--muted); }
+
+.callout.danger {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--danger-soft) 70%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 25%, transparent); border-left-color: var(--danger);
+}
+.callout p { margin: 0; }
+.callout p + p, .callout .btn-row + p { margin-top: .5rem; }
+.callout .btn-row { margin-top: .75rem; }
+
+.job {
+  margin-top: 1.75rem; padding: 1rem 1.125rem; max-width: 42rem;
+  background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-m);
+}
+.job.failed { border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); }
+.job.done h3 { color: var(--ok); }
+.job h3 { margin: 0 0 .5rem; }
+.job .callout { margin-top: .75rem; }
+.job progress {
+  appearance: none; -webkit-appearance: none; display: block; width: 100%; height: .5rem; margin: .5rem 0;
+  border: 0; border-radius: 999px; background: var(--line); overflow: hidden;
+}
+.job progress::-webkit-progress-bar { background: var(--line); border-radius: 999px; }
+.job progress::-webkit-progress-value { background: var(--accent); border-radius: 999px; }
+.job progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
+.log { margin: .75rem 0 0; padding-left: 1.25rem; font-size: .8125rem; color: var(--muted); overflow-wrap: anywhere; }
+
+/* buttons held right now */
+.chips { display: flex; flex-wrap: wrap; gap: .375rem; margin-top: .75rem; }
+.chip {
+  padding: .3125rem .75rem; border-radius: 999px; font-size: .8125rem; font-weight: 600; color: var(--muted);
+  background: var(--raised); border: 1px solid var(--line-strong); transition: background .08s, color .08s;
+}
+.chip.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+.signal {
+  font: 600 .75rem var(--body); vertical-align: middle; margin-left: .5rem; padding: .1875rem .5rem; border-radius: 999px;
+  color: var(--ok); background: var(--ok-soft);
+}
+.signal.off { color: var(--danger); background: var(--danger-soft); }
+
+/* two columns of rows on wide screens, inside one card */
+@media (min-width: 64rem) {
+  .rows.two { grid-template-columns: 1fr 1fr; }
+  .rows.two .row:nth-child(odd) { border-right: 1px solid var(--line); }
+  .rows.two .row:nth-last-child(2):nth-child(odd) { border-bottom: 0; }
+}
+
+/* setup and help */
+.need {
+  font: 600 .75rem var(--body); vertical-align: middle; margin-left: .5rem; padding: .1875rem .5rem; border-radius: 999px;
+  color: var(--muted); background: var(--panel); border: 1px solid var(--line);
+}
+.command { display: flex; align-items: center; gap: .5rem; margin-top: .625rem; max-width: 46rem; }
+.command code {
+  flex: 1; overflow-x: auto; white-space: pre; padding: .5625rem .75rem; border-radius: var(--radius-s);
+  background: var(--panel); border: 1px solid var(--line-strong); font-size: .8125rem;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+.explain { margin-top: .625rem; max-width: 46rem; font-size: .9375rem; }
+.explain summary { cursor: pointer; color: var(--accent-ink); font-weight: 600; }
+.explain ul { padding-left: 1.25rem; margin: .5rem 0; }
+.explain li { margin: .25rem 0; color: var(--muted); }
+.explain a { color: var(--accent-ink); }
+.explain pre.file {
+  overflow-x: auto; padding: .625rem .75rem; margin: .5rem 0 0; font-size: .75rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-s);
+}
+.faq {
+  max-width: 46rem; padding: .875rem 1.125rem; background: var(--raised);
+  border: 1px solid var(--line); border-bottom-width: 0;
+}
+.faq:first-of-type { border-radius: var(--radius-m) var(--radius-m) 0 0; }
+.faq:last-of-type { border-bottom-width: 1px; border-radius: 0 0 var(--radius-m) var(--radius-m); }
+.faq summary { cursor: pointer; font-weight: 600; }
+.faq p { color: var(--muted); margin: .625rem 0 0; }
+.faq .command { margin-top: .625rem; }
+
+/* remap list: the label keeps its room, the menu takes a fixed width */
+.rows.two .row { grid-template-columns: minmax(8rem, 1fr) minmax(0, 13rem); }
+.rows.two .row-control { justify-self: stretch; flex-wrap: nowrap; }
+.rows.two .row-control select { flex: 1; min-width: 0; }

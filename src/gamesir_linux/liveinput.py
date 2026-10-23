@@ -1,4 +1,4 @@
-"""Live stick and trigger positions, from the gamepad device Linux creates for the controller.
+"""Live stick, trigger and button state, from the gamepad device Linux creates for the controller.
 
 Over the cable in PC/Xbox mode the kernel's xpad driver turns the controller into an evdev
 node ("GameSir Nova 2 Lite"). Its values come after the controller's own dead zones, which is
@@ -13,10 +13,17 @@ import os
 import struct
 from pathlib import Path
 
+EV_KEY = 0x01
 EV_ABS = 0x03
 # xpad: ABS_X/ABS_Y left stick, ABS_RX/ABS_RY right stick, ABS_Z / ABS_RZ triggers.
 AXES = {0x00: "lx", 0x01: "ly", 0x03: "rx", 0x04: "ry", 0x02: "lt", 0x05: "rt"}
 STICKS = {"lx", "ly", "rx", "ry"}
+# xpad's buttons, named like gcm.Key. L4, R4 and Capture are not reported in this mode.
+BUTTONS = {0x130: "A", 0x131: "B", 0x133: "X", 0x134: "Y", 0x136: "LB", 0x137: "RB",
+           0x13A: "SELECT", 0x13B: "START", 0x13C: "HOME", 0x13D: "L3", 0x13E: "R3"}
+HATS = {0x10: ("LEFT", "RIGHT"), 0x11: ("UP", "DOWN")}   # the D-pad, as ABS_HAT0X / ABS_HAT0Y
+TRIGGER_PRESSED = 0.5
+KEY_BYTES = 96                                             # (KEY_MAX + 1) / 8
 
 EVENT = struct.Struct("llHHi")          # struct input_event (timeval, type, code, value)
 ABSINFO = struct.Struct("6i")           # value, minimum, maximum, fuzz, flat, resolution
@@ -28,6 +35,10 @@ class Unavailable(RuntimeError):
 
 def _eviocgabs(axis: int) -> int:
     return (2 << 30) | (ABSINFO.size << 16) | (ord("E") << 8) | (0x40 + axis)
+
+
+def _eviocgkey() -> int:
+    return (2 << 30) | (KEY_BYTES << 16) | (ord("E") << 8) | 0x18
 
 
 def _usb_device(path: Path) -> Path | None:
@@ -61,7 +72,7 @@ def event_node_for(hidraw: str, sys_root: Path = Path("/sys"), dev_root: Path = 
 
 
 class LiveInput:
-    """Positions as fractions: sticks -1..1 (up is negative), triggers 0..1."""
+    """Positions as fractions: sticks -1..1 (up is negative), triggers 0..1; buttons held."""
 
     def __init__(self, path: str):
         try:
@@ -75,6 +86,17 @@ class LiveInput:
             value, lo, hi, *_ = ABSINFO.unpack(buf)
             self.range[name] = (lo, hi)
             self.raw[name] = value
+        self.hats = {}
+        for axis in HATS:
+            try:
+                self.hats[axis] = ABSINFO.unpack(fcntl.ioctl(self.fd, _eviocgabs(axis), bytes(ABSINFO.size)))[0]
+            except OSError:
+                self.hats[axis] = 0
+        try:
+            bits = int.from_bytes(fcntl.ioctl(self.fd, _eviocgkey(), bytes(KEY_BYTES)), "little")
+        except OSError:
+            bits = 0
+        self.held = {name for code, name in BUTTONS.items() if bits >> code & 1}
 
     def pump(self) -> bool:
         """Read every queued event. Raises Unavailable once the device is gone."""
@@ -93,6 +115,12 @@ class LiveInput:
                 if kind == EV_ABS and code in AXES:
                     self.raw[AXES[code]] = value
                     changed = True
+                elif kind == EV_ABS and code in HATS:
+                    self.hats[code] = value
+                    changed = True
+                elif kind == EV_KEY and code in BUTTONS:
+                    (self.held.add if value else self.held.discard)(BUTTONS[code])
+                    changed = True
 
     def state(self) -> dict[str, float]:
         out = {}
@@ -103,6 +131,16 @@ class LiveInput:
                 out[name] = round(max(-1.0, min(1.0, (2 * (value - lo) / span) - 1)), 3) + 0.0   # no -0.0
             else:
                 out[name] = round(max(0.0, min(1.0, (value - lo) / span)), 3)
+        pressed = set(self.held)
+        for axis, (neg, pos) in HATS.items():
+            if self.hats[axis] < 0:
+                pressed.add(neg)
+            elif self.hats[axis] > 0:
+                pressed.add(pos)
+        for trigger in ("lt", "rt"):
+            if out[trigger] >= TRIGGER_PRESSED:
+                pressed.add(trigger.upper())
+        out["pressed"] = sorted(pressed)
         return out
 
     def close(self) -> None:

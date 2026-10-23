@@ -33,6 +33,10 @@ ERRORS = (NotApplied, ProtocolError, ble.BleError, hid.HidError, ValueError, Key
 # Reads that get no reply over the USB cable (firmware 7701). Asking costs 11 x 200 ms each,
 # so the state read skips them and the GUI shows them as unavailable.
 USB_UNSUPPORTED = {"auto_sleep", "slots"}
+# Feature toggles the controller (8201) reads but refuses to change by cable or receiver: a set
+# reads back unchanged. Confirmed 2026-10-23 through the receiver. Bluetooth not yet tried.
+USB_READONLY_FEATURES = {Feature.LOW_BATTERY_WARNING, Feature.SWAP_STICKS, Feature.INVERT_STICKS_XY,
+                         Feature.PLAY_WHILE_CHARGING, Feature.SWAP_LT_LB, Feature.SWAP_RT_RB}
 
 
 def _key_name(code: int):
@@ -73,7 +77,7 @@ KEY_LABELS = {
     Key.A: "A", Key.B: "B", Key.X: "X", Key.Y: "Y", Key.UP: "D-pad up", Key.DOWN: "D-pad down",
     Key.LEFT: "D-pad left", Key.RIGHT: "D-pad right", Key.LB: "LB", Key.RB: "RB", Key.LT: "LT",
     Key.RT: "RT", Key.L3: "Left stick click", Key.R3: "Right stick click", Key.SELECT: "View",
-    Key.START: "Menu", Key.HOME: "Home", Key.L4: "Left back button", Key.R4: "Right back button",
+    Key.START: "Menu", Key.HOME: "Home", Key.L4: "Left back button (L4)", Key.R4: "Right back button (R4)",
     Key.CAPTURE: "Capture",
 }
 for _k in gcm.NOVA_STICK_TARGETS:
@@ -88,6 +92,7 @@ class Session:
     def __init__(self):
         self.client: NovaClient | None = None
         self.mode: str | None = None          # "ble" | "usb" | "simulated"
+        self.via: str | None = None           # for "usb": "cable" or "dongle" (the 2.4 GHz receiver)
         self.address: str | None = None
         self.name: str | None = None
         self._ctx = None
@@ -106,9 +111,10 @@ class Session:
         await self.disconnect()
         await self._open(ble.connect(address), "ble", address, name)
 
-    async def connect_usb(self, path: str, name: str | None = None):
+    async def connect_usb(self, path: str, name: str | None = None, via: str = "cable"):
         await self.disconnect()
         await self._open(hid.connect(path), "usb", path, name)
+        self.via = via
 
     async def _open(self, ctx, mode: str, address: str, name: str | None):
         transport = await ctx.__aenter__()
@@ -122,10 +128,17 @@ class Session:
             except Exception:
                 pass
         self._ctx = None
-        self.client = self.mode = self.address = self.name = None
+        self.client = self.mode = self.address = self.name = self.via = None
+
+    @property
+    def through_dongle(self) -> bool:
+        """Over the receiver, basic info is the receiver's (firmware) mixed with the controller's
+        (MAC, battery); the controller's own firmware version is not in it."""
+        return self.mode == "usb" and self.via == "dongle"
 
     def status(self) -> dict:
-        return {"connected": self.connected, "mode": self.mode, "address": self.address, "name": self.name}
+        return {"connected": self.connected, "mode": self.mode, "address": self.address, "name": self.name,
+                "via": self.via}
 
 
 async def _try(coro):
@@ -136,7 +149,8 @@ async def _try(coro):
         return {"error": str(e)}
 
 
-async def read_state(nova: NovaClient, skip: set[str] = frozenset()) -> dict:
+async def read_state(nova: NovaClient, skip: set[str] = frozenset(), through_dongle: bool = False,
+                     remaps: bool = False) -> dict:
     async def maybe(name, read):
         return {"error": "not available over this connection"} if name in skip else await _try(read())
 
@@ -153,7 +167,14 @@ async def read_state(nova: NovaClient, skip: set[str] = frozenset()) -> dict:
         "slots": await maybe("slots", nova.slots),
         "light": await _try(nova.light()),
     }
+    if remaps:
+        # Every key (f1), by cable or receiver; Bluetooth keeps the back-button mapping (0x1F).
+        state["remaps"] = {k.name: await _try(nova.remap(k)) for k in gcm.NOVA_REMAP_SOURCES}
     fw = info.get("value", {}).get("firmware_version") if "value" in info else None
+    if through_dongle:
+        # Basic info is the receiver's there; the controller's version comes from a state report.
+        state["controller_firmware"] = await _try(nova.controller_firmware())
+        fw = state["controller_firmware"].get("value")
     state["capabilities"] = {
         "stick_targets": bool(fw and fw.isdigit() and int(fw) >= gcm.STICK_TARGETS_MIN_FIRMWARE),
     }
@@ -182,7 +203,8 @@ def _firmware_status(fw_dir: Path, device_version: str | None) -> dict:
 
 
 def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
-              simulate: bool = False, scanner=None, usb_finder=None) -> web.Application:
+              simulate: bool = False, scanner=None, usb_finder=None,
+              backup_dir: Path | None = None, loader_cache: Path | None = None) -> web.Application:
     session = Session()
     scan = scanner or ble.scan
     find_usb = usb_finder or hid.find
@@ -217,7 +239,8 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     routes = web.RouteTableDef()
 
     async def state_of(nova: NovaClient) -> dict:
-        return await read_state(nova, USB_UNSUPPORTED if session.mode == "usb" else frozenset())
+        return await read_state(nova, USB_UNSUPPORTED if session.mode == "usb" else frozenset(),
+                                session.through_dongle, remaps=session.mode in ("usb", "simulated"))
 
     def need_client():
         if not session.connected:
@@ -259,6 +282,9 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
             "targets": [k.name for k in gcm.NOVA_TARGETS],
             "stick_targets": [Key(k).name for k in gcm.NOVA_STICK_TARGETS],
             "remappable": [k.name for k in gcm.NOVA_REMAPPABLE],
+            "remap_sources": [k.name for k in gcm.NOVA_REMAP_SOURCES],
+            "usb_readonly_features": [f.name for f in USB_READONLY_FEATURES],
+            "remap_targets": [k.name for k in gcm.NOVA_REMAP_TARGETS],
         })
 
     @routes.get("/api/status")
@@ -268,7 +294,9 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     @routes.post("/api/scan")
     @guarded
     async def do_scan(_):
-        usb = [{"address": d.path, "name": d.name or "GameSir Nova 2 Lite", "link": "usb"} for d in find_usb()]
+        # By ID, as Steam and the kernel's xpad do: the USB name is "2.4G XBOX 360 For Windows".
+        usb = [{"address": d.path, "name": "GameSir Nova 2 Lite", "link": "usb",
+                "via": "dongle" if d.pid == 0x1098 else "cable"} for d in find_usb()]
         try:
             found = await scan()
         except ble.BleError:
@@ -292,7 +320,8 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
                 match = next((d for d in find_usb() if d.path == address), None)
                 if match is None:
                     return fail("that USB controller is no longer connected; search again")
-                await session.connect_usb(match.path, data.get("name") or match.name)
+                await session.connect_usb(match.path, "GameSir Nova 2 Lite",
+                                          "dongle" if match.pid == 0x1098 else "cable")
             else:
                 await session.connect_ble(address, data.get("name"))
         return ok(session.status())
@@ -330,6 +359,24 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
             loop.remove_reader(live.fd)
             live.close()
         return resp
+
+    @routes.get("/api/devices")
+    async def devices(_):
+        """What is plugged in (sysfs only), for the page to notice plugging and unplugging. A USB
+        session whose device has gone is closed here."""
+        from . import setup
+        found = setup.devices(find_usb)
+        lost = False
+        if session.mode == "usb" and session.address not in {d["address"] for d in found["usb"]}:
+            async with session.lock:
+                await session.disconnect()
+            lost = True
+        return ok({**found, "status": session.status(), "lost": lost})
+
+    @routes.get("/api/setup")
+    async def setup_checks(_):
+        from . import setup
+        return ok(setup.checks(fw_dir))
 
     @routes.post("/api/disconnect")
     @guarded
@@ -380,6 +427,17 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
         await nova.set_vibration(new)
         return ok(await nova.vibration())
 
+    @routes.post("/api/vibration/test")
+    @guarded
+    async def vibration_test(request):
+        d = await body(request)
+        motor, strength = d.get("motor"), _byte(d.get("strength", 75), "strength")
+        if motor not in ("left", "right") or strength > 100:
+            return fail("motor must be left or right, strength 0-100")
+        nova = need_client()
+        await nova.test_vibration(strength if motor == "left" else 0, strength if motor == "right" else 0)
+        return ok(None)
+
     @routes.post("/api/auto-sleep")
     @guarded
     async def set_sleep(request):
@@ -406,6 +464,22 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
                 return fail(f"{target.name} is not a valid target")
         await nova.set_mapping(source, target)
         return ok(await nova.mapping(source))
+
+    @routes.post("/api/remap")
+    @guarded
+    async def set_remap(request):
+        d = await body(request)
+        key = Key[d["key"]]
+        if key not in gcm.NOVA_REMAP_SOURCES:
+            return fail(f"{key.name} cannot be remapped")
+        targets = d.get("targets") or []
+        if not isinstance(targets, list) or len(targets) > gcm.REMAP_MAX_TARGETS:
+            return fail(f"targets must be a list of up to {gcm.REMAP_MAX_TARGETS} keys")
+        targets = [Key[t] for t in targets]
+        if any(t not in gcm.NOVA_REMAP_TARGETS for t in targets):
+            return fail("one of those targets cannot be used")
+        nova = need_client()
+        return ok(list(await nova.set_remap(key, targets)))
 
     @routes.post("/api/trigger-quick")
     @guarded
@@ -448,13 +522,18 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     @routes.get("/api/firmware")
     @guarded
     async def firmware(_):
-        version = None
+        version = dongle = None
         if session.connected:
             try:
-                version = (await session.client.info()).firmware_version
+                info = (await session.client.info()).firmware_version
+                if session.through_dongle:
+                    dongle = info
+                    version = await session.client.controller_firmware()
+                else:
+                    version = info
             except ERRORS:
                 pass
-        return ok(_firmware_status(fw_dir, version))
+        return ok({**_firmware_status(fw_dir, version), "dongle_version": dongle})
 
     @routes.post("/api/firmware/check")
     async def firmware_check(_):
@@ -475,6 +554,12 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
         except (updater.UpdateError, installer.ExtractError, OSError) as e:
             return fail(str(e), 502)
         return ok({"updated": r.updated, "latest": r.latest})
+
+    from . import update
+    from .. import updatemode
+    app[update.KEY] = update.add_routes(routes, session, fw_dir, find_usb, ok, fail, body,
+                                        backup_dir or updatemode.BACKUP_DIR,
+                                        loader_cache or updatemode.LOADER_CACHE)
 
     app.add_routes(routes)
     app.router.add_static("/static/", STATIC, show_index=False)
@@ -500,6 +585,8 @@ def serve(fw_dir: Path, *, host: str = "127.0.0.1", port: int = 0, simulate: boo
         raise SystemExit("refusing to listen on a non-loopback address")
     token = secrets.token_urlsafe(24)
     sock = socket.socket(socket.AF_INET6 if host == "::1" else socket.AF_INET)
+    # Restart on the same port at once, even while an old page's connection is still closing.
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind((host, port))
     actual = sock.getsockname()[1]
     url = f"http://{'127.0.0.1' if host != '::1' else '[::1]'}:{actual}/?token={token}"

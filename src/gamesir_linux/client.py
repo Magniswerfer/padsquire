@@ -7,6 +7,7 @@ then reads the value back and raises if the controller did not take it.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Callable, Protocol
 
 from . import gcm
@@ -41,6 +42,28 @@ class NovaClient:
         reply = await self.t.request(gcm.basic_info_query(), lambda r: len(r) >= 19)
         return gcm.basic_info_parse(reply)
 
+    async def controller_firmware(self) -> str:
+        """The controller's own firmware version, from a state report. Through the 2.4 GHz
+        receiver this is the only source: info() there reports the receiver's firmware."""
+        read = getattr(self.t, "state_report", None)
+        if read is None:
+            raise ProtocolError("not available over this connection")
+        version = gcm.state_report_version(await read())
+        if version is None:
+            raise ProtocolError("this firmware's state reports carry no version")
+        return version
+
+    async def test_vibration(self, left: int, right: int, seconds: float = 0.6) -> None:
+        """Run the grip motors for a moment (strength in percent), then stop them."""
+        send = getattr(self.t, "send", None)
+        if send is None:
+            raise ProtocolError("not available over this connection")
+        await send(gcm.rumble(left, right))
+        try:
+            await asyncio.sleep(seconds)
+        finally:
+            await send(gcm.rumble(0, 0))
+
     async def battery(self) -> Battery:
         q = gcm.host_info_query()
         return gcm.host_info_parse(q, await self._ask(q))
@@ -52,6 +75,9 @@ class NovaClient:
         return gcm.dead_zone_parse(q, await self._ask(q))
 
     async def set_dead_zone(self, zone: DeadZone, value: int) -> None:
+        if zone in gcm.OUTER_ZONES and value > gcm.OUTER_DEAD_ZONE_MAX:
+            raise ValueError(f"outer dead zone above {gcm.OUTER_DEAD_ZONE_MAX}% breaks the stick at full tilt "
+                             "(a bug in the controller's firmware)")
         await self._set(gcm.dead_zone_set(zone, value))
         if (now := await self.dead_zone(zone)) != value:
             raise NotApplied(f"{zone.name}: asked for {value}, controller reports {now}")
@@ -102,6 +128,20 @@ class NovaClient:
         ok = now.kind == "disabled" if target is None else (now.kind == "key" and now.targets[:1] == (target,))
         if not ok:
             raise NotApplied(f"{getattr(source, 'name', source)}: controller reports {now}")
+
+    async def remap(self, key: int) -> tuple[int, ...]:
+        """What `key` does (cable and receiver): its targets, or () for its own function."""
+        q = gcm.remap_query(key)
+        return gcm.remap_parse(q, await self._ask(q))
+
+    async def set_remap(self, key: int, targets: list[int] | tuple[int, ...]) -> tuple[int, ...]:
+        """Make `key` act as `targets` (1-3 keys pressed together), or its own function if empty.
+        The controller answers a target it refuses with no targets; that raises NotApplied."""
+        await self._set(gcm.remap_set(key, targets) if targets else gcm.remap_reset(key))
+        now = await self.remap(key)
+        if tuple(now) != tuple(targets):
+            raise NotApplied(f"{getattr(key, 'name', key)}: asked for {list(targets)}, controller reports {list(now)}")
+        return now
 
     async def reset_mapping(self, source: int) -> Mapping:
         await self._set(gcm.mapping_reset(source))

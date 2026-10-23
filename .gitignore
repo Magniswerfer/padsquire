@@ -6,5 +6,7 @@ dist/
 # never commit vendor firmware or installers
 *.ufw
 *.exe
+*.bin
 firmware/
 .venv/
+.claude/settings.local.json

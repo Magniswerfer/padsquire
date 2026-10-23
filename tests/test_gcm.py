@@ -137,3 +137,29 @@ def test_light_frames():
     assert len(f) == f[2] == 10
     light = gcm.light_parse(gcm.light_query(), gcm.seal(f[:3] + b"\x00" + f[4:]))
     assert light.rgb == (255, 0, 128) and light.effect == gcm.EFFECT_SOLID and light.key == Key.HOME
+
+
+def test_state_report_frames_and_version():
+    assert gcm.state_report_set(gcm.StateReport.MAPPED) == bytes.fromhex("f3010502fb")
+    assert gcm.state_report_set(gcm.StateReport.OFF) == bytes.fromhex("f3010500f9")
+    # Captured through the 2.4 GHz receiver, controller on firmware 8201.
+    report = bytes.fromhex("f40017" + "00" * 16 + "ff82018d") + bytes(41)
+    assert gcm.state_report_version(report) == "8201"
+    assert gcm.state_report_version(b"\xf4\x00\x16" + bytes(61)) is None      # older, shorter report
+
+
+def test_remap_frames_match_the_controller():
+    K = gcm.Key
+    # Sent to and answered by a real Nova 2 Lite (8201) through the 2.4 GHz receiver.
+    assert gcm.remap_query(K.CAPTURE) == bytes.fromhex("f10009d400000000ce")
+    assert gcm.remap_set(K.CAPTURE, [K.B]) == bytes.fromhex("f10109d401b5000085")
+    assert gcm.remap_set(K.CAPTURE, [K.A, K.B]) == bytes.fromhex("f10109d402b4b5003a")
+    assert gcm.remap_reset(K.CAPTURE) == bytes.fromhex("f10209d400000000d0")
+    q = gcm.remap_query(K.CAPTURE)
+    assert gcm.remap_parse(q, bytes.fromhex("f10009d401b5000084")) == (K.B,)
+    assert gcm.remap_parse(q, bytes.fromhex("f10009d402b4b50039")) == (K.A, K.B)
+    assert gcm.remap_parse(q, bytes.fromhex("f10009d400000000ce")) == ()
+    with pytest.raises(ProtocolError):
+        gcm.remap_parse(q, bytes.fromhex("f10009cb00000000c5"))     # another key's reply
+    with pytest.raises(ValueError):
+        gcm.remap_set(K.A, [K.B, K.X, K.Y, K.LB])

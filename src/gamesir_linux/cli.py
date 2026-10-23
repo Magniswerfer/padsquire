@@ -8,7 +8,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import __version__, installer, safety, ufw
+from . import __version__, installer, jlflash, safety, ufw
 
 DEFAULT_FW_DIR = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "gamesir-linux" / "firmware"
 
@@ -116,15 +116,28 @@ def cmd_plan(args) -> int:
         dongle_version=args.dongle_version, bundled=bundled, reinstall=args.reinstall,
     )
     print(f"candidate  {fw.file} (v{fw.version})")
+    errors = list(plan.errors)
+    if args.backup is None:
+        errors.append("no flash backup of this controller (--backup, from `gamesir-linux uboot backup`)")
+    else:
+        image = safety.choose_flash_image(Path(args.firmware_dir) / fw.file, args.backup)
+        errors += image.errors
+        if image.partition:
+            print(f"image      {image.partition} -> {image.start:#x}-{image.end - 1:#x}; keeps "
+                  + ", ".join(jlflash.RESERVED))
     for w in plan.warnings:
         print(f"warning    {w}")
-    for e in plan.errors:
+    for e in errors:
         print(f"BLOCKED    {e}")
-    print("verdict    " + ("would flash" if plan.allowed else "will not flash"))
-    return 0 if plan.allowed else 2
+    print("verdict    " + ("would flash" if not errors else "will not flash"))
+    return 0 if not errors else 2
 
 
 def main(argv=None) -> int:
+    if os.environ.get("GAMESIR_DEBUG"):
+        import logging
+        logging.basicConfig(level=logging.DEBUG, format="%(asctime)s.%(msecs)03d %(name)s %(message)s",
+                            datefmt="%H:%M:%S")
     p = argparse.ArgumentParser(prog="gamesir-linux", description="GameSir Nova 2 Lite tools for Linux")
     p.add_argument("--version", action="version", version=__version__)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -160,11 +173,13 @@ def main(argv=None) -> int:
     pl.add_argument("--version", type=int, help="installed firmware version, e.g. 8101")
     pl.add_argument("--dongle-version", type=int)
     pl.add_argument("--reinstall", action="store_true")
+    pl.add_argument("--backup", type=Path, help="this controller's flash backup (.bin with its .json)")
     pl.set_defaults(func=cmd_plan)
 
-    from . import cli_ble, cli_probe
+    from . import cli_ble, cli_probe, cli_uboot
     cli_ble.register(sub)
     cli_probe.register(sub)
+    cli_uboot.register(sub)
 
     g = sub.add_parser("gui", help="open the graphical settings app in your browser")
     g.add_argument("--simulate", action="store_true", help="start connected to a simulated controller")

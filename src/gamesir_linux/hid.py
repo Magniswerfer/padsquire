@@ -16,6 +16,7 @@ the bare frame, so gcm.verify() checks the right byte in both cases.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import select
 from dataclasses import dataclass
@@ -29,6 +30,8 @@ VENDOR_ID = 0x3537
 # interface, but we don't know its protocol, so it is deliberately left out.
 CONFIG_PIDS = {0x100F: "cable", 0x1098: "2.4 GHz dongle"}
 DESCRIPTOR_PREFIX = bytes.fromhex("067aff")   # Usage Page (0xFF7A)
+
+log = logging.getLogger("gamesir_linux.hid")   # GAMESIR_DEBUG=1: every frame, sent and received
 
 REPORT_SIZE = 64
 READ_TIMEOUT = 0.2
@@ -108,6 +111,7 @@ class HidTransport:
         while self._read(0.001) is not None:
             pass
         # Report ID 0 first: the kernel strips it, since the interface has no report IDs.
+        log.debug("send %s", frame.hex(" "))
         os.write(self.fd, b"\x00" + frame + bytes(REPORT_SIZE - len(frame)))
         last = b""
         for _ in range(self.attempts):
@@ -116,12 +120,66 @@ class HidTransport:
                 continue
             last = _trim(report)
             if accept(last):
+                log.debug("recv %s", last.hex(" "))
                 return last
         raise HidError(f"no valid reply to {frame.hex(' ')} (last report: {last.hex(' ') or 'nothing'})")
 
     async def request(self, frame: bytes, accept: Callable[[bytes], bool] | None = None) -> bytes:
         async with self._lock:
             return await asyncio.to_thread(self._exchange, frame, accept or (lambda _r: True))
+
+    def _state_report(self) -> bytes:
+        echo = lambda r: r[:2] == bytes([gcm.CMD_STATE_REPORT, 0x01])
+        self._exchange(gcm.state_report_set(gcm.StateReport.MAPPED), echo)
+        try:
+            for _ in range(self.attempts):
+                report = self._read(self.timeout)
+                if report and report[0] == STATE_REPORT and len(report) > 2 and report[1] == 0:
+                    return report
+            raise HidError("no state report arrived")
+        finally:
+            self._exchange(gcm.state_report_set(gcm.StateReport.OFF), echo)
+
+    def _send(self, frame: bytes) -> None:
+        log.debug("send %s", frame.hex(" "))
+        os.write(self.fd, b"\x00" + frame + bytes(REPORT_SIZE - len(frame)))
+
+    async def send(self, frame: bytes) -> None:
+        """One report that gets no reply (the vibration test)."""
+        async with self._lock:
+            await asyncio.to_thread(self._send, frame)
+
+    async def state_report(self) -> bytes:
+        """One 0xF4 state report: switched on for the moment it takes, then off again."""
+        async with self._lock:
+            return await asyncio.to_thread(self._state_report)
+
+
+# GameSir's UpdateFirmware for PID 0x100F (sapjoyuniapis_t4n2, SAPJoyUniDevice_UpdateFirmware):
+# one zero-padded report, no reply awaited, then the handle is closed and the controller drops off
+# USB to come back as JieLi's USB download disk. Nothing is erased or written by this command.
+UPDATE_MODE = bytes.fromhex("f20004f6")
+
+
+def send_update_mode(fd: int) -> None:
+    os.write(fd, b"\x00" + UPDATE_MODE + bytes(REPORT_SIZE - len(UPDATE_MODE)))
+
+
+def enter_update_mode(path: str) -> None:
+    """Switch the controller on `path` into its USB download (firmware update) mode."""
+    try:
+        fd = os.open(path, os.O_RDWR)
+    except PermissionError:
+        raise HidError(f"no permission to open {path}. Install the udev rules in "
+                       "contrib/udev/ (see HARDWARE.md), then replug the controller") from None
+    except OSError as e:
+        raise HidError(f"could not open {path}: {e.strerror}") from e
+    try:
+        send_update_mode(fd)
+    except OSError as e:
+        raise HidError(f"could not write to {path}: {e.strerror}") from e
+    finally:
+        os.close(fd)
 
 
 class connect:

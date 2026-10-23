@@ -23,7 +23,7 @@ function h(tag, attrs = {}, ...children) {
     else if (v === true) el.setAttribute(k, "");
     else el.setAttribute(k, v);
   }
-  for (const c of children.flat()) {
+  for (const c of children.flat(Infinity)) {
     if (c === null || c === undefined || c === false) continue;
     el.append(c instanceof Node ? c : document.createTextNode(String(c)));
   }
@@ -85,6 +85,7 @@ const SECTIONS = [
   { id: "power", label: "Power" },
   { id: "firmware", label: "Firmware", offline: true },
   { id: "guide", label: "Button guide", offline: true },
+  { id: "setup", label: "Setup and help", offline: true },
 ];
 
 const app = {
@@ -94,6 +95,11 @@ const app = {
   section: "controller",
   scanning: false,
   found: null,
+  devices: null,          // what is plugged in, polled (USB only)
+  setup: null,            // this computer's checks
+  connecting: false,
+  userDisconnected: false,
+  polls: 0,
 };
 
 const val = (entry) => (entry && "value" in entry ? entry.value : undefined);
@@ -143,25 +149,28 @@ function unavailable(entry) {
   return h("span", { class: "unavailable" }, `Not available: ${errOf(entry)}`);
 }
 
-function toggle(label, help, entry, onChange) {
+function toggle(label, help, entry, onChange, readonly = false) {
   if (errOf(entry)) return row(label, help, unavailable(entry));
   const mark = savedMark();
   const id = `t-${Math.random().toString(36).slice(2)}`;
-  const input = h("input", { type: "checkbox", role: "switch", "aria-labelledby": id, checked: !!val(entry) });
+  const input = h("input", { type: "checkbox", role: "switch", "aria-labelledby": id, checked: !!val(entry), disabled: readonly });
   input.addEventListener("change", () => onChange(input.checked, mark));
   return row(label, help, [mark, h("label", { class: "switch" }, input, h("span"))], { id });
 }
 
 function featureToggle(feature, label, help) {
   const entry = app.dev.features[feature];
-  return toggle(label, help, entry, (on, mark) =>
-    save("/api/feature", { feature, enabled: on }, (v) => { app.dev.features[feature] = { value: v }; }, mark));
+  // The controller ignores changes to some toggles by cable or receiver: show them, but say so.
+  const readonly = app.status.mode === "usb" && app.meta.usb_readonly_features.includes(feature);
+  const note = readonly ? "Can't be changed by cable or the receiver. Bluetooth isn't tested yet." : null;
+  return toggle(label, [help, note].filter(Boolean).join(". "), entry, (on, mark) =>
+    save("/api/feature", { feature, enabled: on }, (v) => { app.dev.features[feature] = { value: v }; }, mark), readonly);
 }
 
-function slider({ label, help, value, min = 0, max = 100, unit = "", onInput, onCommit }) {
+function slider({ label, help, value, min = 0, max = 100, step = 1, unit = "", onInput, onCommit }) {
   const out = h("output", {}, `${value}${unit}`);
   const mark = savedMark();
-  const input = h("input", { type: "range", min, max: Math.max(max, value), step: 1, value, "aria-label": label });
+  const input = h("input", { type: "range", min, max: Math.max(max, value), step, value, "aria-label": label });
   input.addEventListener("input", () => { out.textContent = `${input.value}${unit}`; onInput && onInput(+input.value); });
   input.addEventListener("change", () => onCommit(+input.value, mark));
   return row(label, help, h("div", { class: "slider" }, input, out, mark), { stack: true });
@@ -184,7 +193,9 @@ function renderChrome() {
   const st = $("#status");
   st.replaceChildren();
   if (app.status.connected) {
-    const via = { simulated: "Simulated controller", usb: "Connected by cable" }[app.status.mode] || "Connected over Bluetooth";
+    const via = app.status.mode === "simulated" ? "Simulated controller"
+      : app.status.mode === "usb" ? (app.status.via === "dongle" ? "Connected through the 2.4 GHz receiver" : "Connected by cable")
+      : "Connected over Bluetooth";
     st.append(h("span", { class: "conn on" }, via));
     const bat = app.dev && val(app.dev.battery);
     if (bat) {
@@ -222,7 +233,10 @@ function sectionHint(id) {
   if (!app.dev) return null;
   const d = app.dev;
   let text = null;
-  if (id === "controller" && val(d.info)) text = `firmware ${val(d.info).firmware_version}`;
+  if (id === "controller" && val(d.info)) {
+    const own = app.status.via === "dongle" ? val(d.controller_firmware) : val(d.info).firmware_version;
+    text = own ? `firmware ${own}` : "through the receiver";
+  }
   if (id === "profiles" && val(d.slots)) text = `${val(d.slots)[1] + 1} of ${val(d.slots)[0]}`;
   if (id === "power" && val(d.auto_sleep) !== undefined) text = `sleep ${val(d.auto_sleep)} min`;
   return text ? h("span", { class: "hint" }, text) : null;
@@ -244,9 +258,12 @@ function wireMap() {
 function panelConnect() {
   const wrap = h("div", {},
     h("h1", {}, "Connect your controller"),
-    h("p", { class: "lede" }, "Settings are read from the controller and written back to it, by cable or over Bluetooth. Nothing is stored on this computer."),
+    setupNotice(),
+    h("p", { class: "note" }, "Plug it in by cable or through the 2.4 GHz receiver and it's found and connected automatically."),
+    h("p", { class: "lede" }, "Settings are read from the controller and written back to it, by cable, through the 2.4 GHz receiver or over Bluetooth. Nothing is stored on this computer."),
     h("ol", { class: "steps" },
       h("li", {}, "By cable: plug the controller in and hold Menu and View for 2 seconds until the light turns green (PC mode)."),
+      h("li", {}, "Or through the 2.4 GHz receiver: plug the receiver in, turn the controller on, and hold Menu and View for 2 seconds until the light turns green."),
       h("li", {}, "Or over Bluetooth: turn the controller on in Android mode by holding Home and A for 2 seconds until the light turns yellow."),
       h("li", {}, "Find it below and connect.")),
   );
@@ -258,10 +275,10 @@ function panelConnect() {
   if (app.found) {
     if (app.found.length === 0) {
       wrap.append(h("p", { class: "note" },
-        "No Nova 2 Lite found. By cable, check the light is green. Over Bluetooth, check it is in Android mode and close to this computer. If it still doesn't appear, pair it once in your system's Bluetooth settings."));
+        "No Nova 2 Lite found. By cable or receiver, check the light is green. Over Bluetooth, check it is in Android mode and close to this computer. If it still doesn't appear, pair it once in your system's Bluetooth settings."));
     } else {
       wrap.append(h("ul", { class: "found" }, app.found.map((d) =>
-        h("li", {}, h("span", {}, d.name, h("span", { class: "addr" }, d.link === "usb" ? `USB cable, ${d.address}` : d.address)),
+        h("li", {}, h("span", {}, d.name, h("span", { class: "addr" }, d.link === "usb" ? `${d.via === "dongle" ? "2.4 GHz receiver" : "USB cable"}, ${d.address}` : d.address)),
           h("button", { class: "btn primary small", onclick: () => connect({ address: d.address, name: d.name, link: d.link }) }, "Connect")))));
     }
   }
@@ -275,14 +292,22 @@ function panelController() {
   const info = val(d.info);
   const bat = val(d.battery);
   const fact = (term, value, small) => h("div", { class: "fact" }, h("dt", {}, term), h("dd", {}, value ?? "Unknown", small ? h("small", {}, small) : null));
+  const dongle = app.status.mode === "usb" && app.status.via === "dongle";
+  const where = app.status.mode !== "usb" ? `Connected to ${app.status.address}`
+    : dongle ? `Connected through the 2.4 GHz receiver (${app.status.address})` : `Connected by cable (${app.status.address})`;
+  // Through the receiver the firmware version in the basic info is the receiver's own.
+  const own = val(d.controller_firmware);
+  const firmware = dongle
+    ? [fact("Firmware", own, own ? regionName(own) : "not reported"), fact("Receiver firmware", info && info.firmware_version)]
+    : [fact("Firmware", info && info.firmware_version, info ? regionName(info.firmware_version) : null)];
   return h("div", {},
     h("h1", {}, app.status.name || "Nova 2 Lite"),
     h("p", { class: "lede" }, app.status.mode === "simulated"
       ? "This is the simulator: changes behave like the real controller but go nowhere."
-      : `${app.status.mode === "usb" ? `Connected by cable (${app.status.address})` : `Connected to ${app.status.address}`}. Every value shown here was read back from the controller.`),
+      : `${where}. Every value shown here was read back from the controller.`),
     h("dl", { class: "facts" },
       fact("Battery", bat ? `${bat.level}%` : null, bat && bat.charging ? "charging" : null),
-      fact("Firmware", info && info.firmware_version, info ? regionName(info.firmware_version) : null),
+      ...firmware,
       fact("Hardware", info && info.hardware_version),
       fact("Made", info && info.production_date),
       fact("Bluetooth address", info && info.mac),
@@ -298,6 +323,113 @@ function regionName(fw) {
 }
 
 function panelButtons() {
+  const d = app.dev;
+  if (!d.remaps) return panelBackButtons();
+  const labels = app.meta.keys;
+  const wrap = h("div", {},
+    h("h1", {}, "Buttons"),
+    h("p", { class: "lede" }, "Choose what each button does. A remapped button sends the button you pick instead of its own; the change is stored on the controller."));
+  const rows = h("div", { class: "rows two" });
+  for (const key of app.meta.remap_sources) {
+    const entry = d.remaps[key];
+    if (errOf(entry)) { rows.append(row(labels[key], null, unavailable(entry))); continue; }
+    const targets = val(entry);
+    const combo = targets.length > 1 ? targets.join("+") : null;
+    const select = h("select", { "aria-label": labels[key] },
+      h("option", { value: "" }, ["L4", "R4"].includes(key) ? "Nothing (default)" : "Its own function"),
+      h("optgroup", { label: "Act as" }, app.meta.remap_targets.filter((t) => t !== key).map((t) => h("option", { value: t }, labels[t]))),
+      combo ? h("option", { value: combo, disabled: true }, `${targets.map((t) => labels[t]).join(" + ")} together`) : null);
+    select.value = combo || targets[0] || "";
+    const mark = savedMark();
+    select.addEventListener("change", () =>
+      save("/api/remap", { key, targets: select.value ? [select.value] : [] }, (v) => { d.remaps[key] = { value: v }; }, mark));
+    const help = targets.length ? `Now acts as ${targets.map((t) => labels[t]).join(" + ")}` : null;
+    rows.append(row(labels[key], help, [mark, select]));
+  }
+  wrap.append(rows,
+    h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: resetRemaps }, "Reset all buttons")));
+  if (app.status.mode === "usb") {
+    // What the computer receives right now: a remapped button lights up as its new button.
+    const shown = ["A", "B", "X", "Y", "LB", "RB", "LT", "RT", "UP", "DOWN", "LEFT", "RIGHT", "SELECT", "START", "L3", "R3", "HOME"];
+    const chips = Object.fromEntries(shown.map((k) => [k, h("span", { class: "chip" }, labels[k] || k)]));
+    const signal = h("span", { class: "signal" }, "Connecting…");
+    let last = 0;
+    wrap.append(h("h2", {}, "Pressed now ", signal),
+      h("p", { class: "note" }, "Press a button to see what the computer receives. L4, R4 and Capture aren't reported in this mode, so they only show up through what they're mapped to."),
+      h("div", { class: "chips", "aria-live": "off" }, Object.values(chips)));
+    liveWatch(() => {
+      const ok = Date.now() - last < 2500;
+      signal.textContent = ok ? "receiving" : "no live signal";
+      signal.classList.toggle("off", !ok);
+    });
+    app.live = (st) => {
+      last = Date.now();
+      const down = new Set(st.pressed || []);
+      for (const [k, el] of Object.entries(chips)) el.classList.toggle("on", down.has(k));
+    };
+  }
+  wrap.append(h("h2", {}, "Layout"),
+    h("div", { class: "rows" },
+      featureToggle("DPAD_DIAGONAL_LOCK", "Lock D-pad diagonals", "Only up, down, left and right register"),
+      featureToggle("SWAP_LT_LB", "Swap LB and LT"),
+      featureToggle("SWAP_RT_RB", "Swap RB and RT")));
+  wrap.append(h("p", { class: "note" }, "On this firmware a button can act as another button, but not as a stick direction, and it can't be switched off."),
+    restartBox());
+  return wrap;
+}
+
+// Occasionally, right after a change, the controller stops sending input until it restarts.
+function restartBox() {
+  const receiver = app.status.mode === "usb" && app.status.via === "dongle";
+  const sg = !(app.setup || []).some((c) => c.id === "sg" && !c.ok);
+  const box = h("div", { class: "callout" },
+    h("p", {}, h("strong", {}, "If the controller stops responding after a change. "),
+      "This happens now and then, mostly through the receiver; the change itself is kept. A restart fixes it."),
+    app.status.mode === "usb" && sg
+      ? h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: restartDevice }, receiver ? "Restart the receiver" : "Restart the controller"))
+      : app.status.mode === "usb" ? h("p", {}, "The restart button needs a one-time setup: ", h("a", { href: "#setup" }, "see Setup and help"), ".") : null,
+    h("p", { class: "note" }, receiver
+      ? "If restarting the receiver doesn't help, turn the controller off and on: hold Home and M for about 10 seconds, turn it on, and hold Menu and View until the light is green."
+      : "Or by hand: hold Home and M for about 10 seconds, turn it on, and hold Menu and View until the light is green."));
+  return box;
+}
+
+async function restartDevice() {
+  const receiver = app.status.via === "dongle";
+  const yes = await confirmDialog(receiver ? "Restart the receiver?" : "Restart the controller?",
+    receiver ? "The receiver restarts and the controller links to it again, in a few seconds. Nothing is changed or erased."
+             : "The controller restarts in a few seconds. Your settings are kept; nothing is changed or erased.", "Restart");
+  if (!yes) return;
+  try { await api("/api/update/reboot", { confirm: true }); }
+  catch (e) { toast(e.message, "error"); return; }
+  app.status = await api("/api/status"); app.dev = null;
+  toast("Restarting…");
+  render();
+  for (let i = 0; i < 80; i++) {
+    await new Promise((r) => setTimeout(r, 500));
+    const job = ((await api("/api/update").catch(() => null)) || {}).job;
+    if (job && job.kind === "reboot" && job.state !== "running") {
+      toast(job.state === "done" ? (receiver ? "The receiver restarted" : "The controller restarted") : job.error,
+        job.state === "done" ? "info" : "error");
+      return;        // watchDevices connects again once it is back
+    }
+  }
+}
+
+async function resetRemaps() {
+  const changed = app.meta.remap_sources.filter((k) => (val(app.dev.remaps[k]) || []).length);
+  if (!changed.length) { toast("Every button already does its own function"); return; }
+  const yes = await confirmDialog("Reset all buttons?", `${changed.length} remapped button${changed.length > 1 ? "s go" : " goes"} back to its own function.`, "Reset");
+  if (!yes) return;
+  for (const key of changed) {
+    try { app.dev.remaps[key] = { value: await api("/api/remap", { key, targets: [] }) }; }
+    catch (e) { toast(e.message, "error"); break; }
+  }
+  render();
+}
+
+// Over Bluetooth only the back buttons can be remapped, with the GameSir app's own command.
+function panelBackButtons() {
   const d = app.dev;
   const labels = app.meta.keys;
   const wrap = h("div", {},
@@ -330,72 +462,86 @@ function panelButtons() {
   if (!d.capabilities.stick_targets) {
     wrap.append(h("p", { class: "note" }, "Mapping a back button to a stick direction needs firmware 6900 or newer."));
   }
-
   wrap.append(h("h2", {}, "Layout"),
     h("div", { class: "rows" },
       featureToggle("DPAD_DIAGONAL_LOCK", "Lock D-pad diagonals", "Only up, down, left and right register"),
       featureToggle("SWAP_LT_LB", "Swap LB and LT"),
       featureToggle("SWAP_RT_RB", "Swap RB and RT")));
   wrap.append(h("p", { class: "callout" },
-    "The other buttons can only be remapped through the USB cable or the 2.4 GHz dongle. That connection isn't supported on Linux yet."));
+    "Every other button can be remapped by cable or through the 2.4 GHz receiver."));
   return wrap;
 }
 
-// stick dead-zone picture: outer rim = full travel
-function deadZonePicture() {
-  const svg = s("svg", { class: "dz", viewBox: "0 0 160 160", role: "img" });
-  const outer = s("circle", { class: "outer", cx: 80, cy: 80, r: 70 });
-  const live = s("circle", { class: "live", cx: 80, cy: 80, r: 70 });
-  const inner = s("circle", { class: "inner", cx: 80, cy: 80, r: 0 });
-  const anti = s("circle", { class: "anti", cx: 80, cy: 80, r: 0 });
-  const rim = s("circle", { class: "rim", cx: 80, cy: 80, r: 70 });
-  const dot = s("circle", { class: "dot", cx: 80, cy: 80, r: 3 });
-  svg.append(outer, live, inner, anti, rim, dot);
-  const update = ({ inner: i, outer: o, anti: a }) => {
-    live.setAttribute("r", Math.max(0, 70 * (1 - o / 100)));
-    inner.setAttribute("r", 70 * Math.min(i, 100) / 100);
-    anti.setAttribute("r", 70 * Math.min(a, 100) / 100);
-    svg.setAttribute("aria-label", `Inner dead zone ${i}%, outer dead zone ${o}%, anti-dead zone ${a}%`);
+// stick response curve: how far the stick is pushed (across) against what the computer gets (up).
+// Assumes the usual scaling: output rises evenly from the inner dead zone to full at the outer one.
+// `anti` is drawn only where the controller applies it (not by cable or receiver, firmware 8201).
+function responseCurve(antiApplied) {
+  const X0 = 30, Y0 = 136, W = 160, H = 124;              // plot area: (X0, Y0) is travel 0, output 0
+  const px = (t) => X0 + W * t / 100, py = (o) => Y0 - H * o / 100;
+  const svg = s("svg", { class: "curve", viewBox: "0 0 200 168", role: "img" });
+  const low = s("rect", { class: "ignored", y: py(100), height: H });
+  const high = s("rect", { class: "ignored", y: py(100), height: H });
+  const axes = s("path", { class: "axis", d: `M${X0} ${py(100)} V${Y0} H${X0 + W}` });
+  const line = s("polyline", { class: "line" });
+  const dot = s("circle", { class: "dot", r: 4, cx: px(0), cy: py(0) });
+  const label = (x, y, text, extra = {}) => { const t = s("text", { x, y, ...extra }); t.textContent = text; return t; };
+  svg.append(low, high, axes, line, dot,
+    label(X0 + W / 2, 160, "Stick pushed", { "text-anchor": "middle" }),
+    label(14, py(50), "Output", { "text-anchor": "middle", transform: `rotate(-90 14 ${py(50)})` }),
+    label(X0 - 4, py(100) + 4, "100", { "text-anchor": "end", class: "tick" }),
+    label(X0 - 4, Y0 + 4, "0", { "text-anchor": "end", class: "tick" }));
+  let z = { inner: 0, outer: 0, anti: 0 };
+  const update = (values) => {
+    z = { ...values, anti: antiApplied ? values.anti : 0 };
+    const full = 100 - z.outer;
+    low.setAttribute("x", px(0)); low.setAttribute("width", px(z.inner) - px(0));
+    high.setAttribute("x", px(full)); high.setAttribute("width", px(100) - px(full));
+    line.setAttribute("points", [[0, 0], [z.inner, 0], [z.inner, z.anti], [full, 100], [100, 100]]
+      .map(([t, o]) => `${px(t)},${py(o)}`).join(" "));
+    svg.setAttribute("aria-label", `Inner dead zone ${values.inner}%, outer dead zone ${values.outer}%, anti-dead zone ${values.anti}%`);
   };
-  // live stick position, -1..1 per axis (y: up is negative), clamped to the rim
-  const move = (x, y) => {
-    const m = Math.hypot(x, y);
-    const k = m > 1 ? 1 / m : 1;
-    dot.setAttribute("cx", 80 + 70 * x * k);
-    dot.setAttribute("cy", 80 + 70 * y * k);
-    return Math.min(m, 1);
+  // live output, 0..1: placed on the curve, at the least stick travel that gives it
+  const show = (m) => {
+    const o = 100 * Math.min(m, 1), full = 100 - z.outer;
+    const t = o <= 0 ? 0 : o >= 100 ? full : o <= z.anti ? z.inner
+      : z.inner + (o - z.anti) / (100 - z.anti) * (full - z.inner);
+    dot.setAttribute("cx", px(t)); dot.setAttribute("cy", py(o));
+    return Math.round(o);
   };
-  return { svg, update, move };
+  return { svg, update, show };
 }
 
 function panelSticks() {
   const d = app.dev;
   const wrap = h("div", {},
     h("h1", {}, "Sticks"),
-    h("p", { class: "lede" }, "Dead zones decide how far a stick must move before it counts, and where it reaches full tilt. Shaded areas are ignored."));
+    h("p", { class: "lede" }, "Dead zones decide how far a stick must move before it counts, and where it reaches full tilt."));
   const pair = h("div", { class: "pair" });
   const live = [];
+  // Firmware 8201 stores the anti-dead zone but doesn't apply it by cable or receiver (2026-10-23).
+  const antiApplied = app.status.mode !== "usb";
   for (const [side, prefix, axes] of [["Left stick", "LEFT", ["lx", "ly"]], ["Right stick", "RIGHT", ["rx", "ry"]]]) {
     const zones = { inner: `${prefix}_STICK_INNER`, outer: `${prefix}_STICK_OUTER`, anti: `${prefix}_STICK_ANTI` };
     const entries = Object.fromEntries(Object.entries(zones).map(([k, z]) => [k, d.dead_zones[z]]));
     const values = Object.fromEntries(Object.entries(entries).map(([k, e]) => [k, val(e) ?? 0]));
-    const pic = deadZonePicture();
+    const pic = responseCurve(antiApplied);
     pic.update(values);
     const readout = h("p", { class: "live-readout", "aria-live": "off" });
-    live.push((st) => { readout.textContent = `Tilt ${Math.round(100 * pic.move(st[axes[0]], st[axes[1]]))}%`; });
+    live.push((st) => { readout.textContent = `Output ${pic.show(Math.hypot(st[axes[0]], st[axes[1]]))}%`; });
     const col = h("div", {}, h("h2", {}, side), pic.svg, readout,
-      h("div", { class: "legend" }, h("span", {}, h("i"), "Ignored"), h("span", {}, h("i", { class: "a" }), "Output starts here")));
+      h("div", { class: "legend" }, h("span", {}, h("i"), "Stick travel that is ignored"), h("span", {}, h("i", { class: "a" }), "What the computer gets")));
     const rows = h("div", { class: "rows" });
     const spec = [
       ["inner", "Inner dead zone", "Movement near the centre is ignored"],
       ["outer", "Outer dead zone", "Full tilt is reached this far before the edge"],
-      ["anti", "Anti-dead zone", "Output jumps to this value as soon as the stick moves"],
+      ["anti", "Anti-dead zone", antiApplied ? "Output jumps to this value as soon as the stick moves"
+        : "Stored, but the controller ignores it by cable and through the receiver"],
     ];
     for (const [key, label, help] of spec) {
       const zone = zones[key];
       if (errOf(entries[key])) { rows.append(row(label, help, unavailable(entries[key]))); continue; }
       rows.append(slider({
-        label, help, value: values[key], unit: "%", max: 50,
+        label, help, value: values[key], unit: "%", max: key === "outer" ? 25 : 50,
         onInput: (v) => { values[key] = v; pic.update(values); },
         onCommit: (v, mark) => save("/api/dead-zone", { zone, value: v }, (got) => { d.dead_zones[zone] = { value: got }; }, mark),
       }));
@@ -407,8 +553,8 @@ function panelSticks() {
   wrap.append(pair, h("h2", {}, "Both sticks"), h("div", { class: "rows" },
     featureToggle("SWAP_STICKS", "Swap left and right stick"),
     featureToggle("SWAP_LEFT_STICK_DPAD", "Swap left stick and D-pad")));
-  wrap.append(h("p", { class: "note" }, liveNote("The dot shows where each stick is now, as the computer receives it. ") +
-    "Values are shown as percentages of full travel. That's an assumption until it has been checked on a real controller."));
+  wrap.append(h("p", { class: "note" }, liveNote("The line shows what the computer gets for each amount of stick travel, and the dot shows each stick now. ") +
+    "The outer dead zone stops at 25%: above that the controller's firmware gets full tilt wrong, and the stick jumps to the opposite side."));
   app.live = (st) => live.forEach((f) => f(st));
   return wrap;
 }
@@ -423,7 +569,10 @@ function panelTriggers() {
   const live = [];
   for (const [side, prefix, qi, axis] of [["Left trigger", "LEFT", 0, "lt"], ["Right trigger", "RIGHT", 1, "rt"]]) {
     const zones = { start: `${prefix}_TRIGGER_FRONT`, end: `${prefix}_TRIGGER_BACK` };
-    const values = { start: val(d.dead_zones[zones.start]) ?? 0, end: val(d.dead_zones[zones.end]) ?? 0 };
+    // "back" is where full press is reached (95 out of the box, confirmed with the live view), so the
+    // end dead zone is 100 minus it.
+    const back = val(d.dead_zones[zones.end]);
+    const values = { start: val(d.dead_zones[zones.start]) ?? 0, end: back == null ? 0 : Math.max(0, 100 - back) };
     const startEl = h("span", { class: "dead start" });
     const endEl = h("span", { class: "dead end" });
     const paint = () => { startEl.style.width = `${values.start}%`; endEl.style.width = `${values.end}%`; };
@@ -438,13 +587,14 @@ function panelTriggers() {
       h("div", { class: "travel", role: "img", "aria-label": `${side}: first ${values.start}% and last ${values.end}% of travel ignored` }, startEl, endEl, levelEl),
       h("div", { class: "travel-scale" }, h("span", {}, "Released"), h("span", {}, "Fully pressed")), readout);
     const rows = h("div", { class: "rows" });
-    for (const [key, label, help] of [["start", "Start dead zone", "Ignored at the beginning of the pull"], ["end", "End dead zone", "Full press is reached this early"]]) {
+    for (const [key, label, help] of [["start", "Start dead zone", "Ignored at the beginning of the pull"], ["end", "End dead zone", "Full press is reached this much before the end of the pull"]]) {
       const zone = zones[key];
       if (errOf(d.dead_zones[zone])) { rows.append(row(label, help, unavailable(d.dead_zones[zone]))); continue; }
       rows.append(slider({
         label, help, value: values[key], unit: "%", max: 50,
         onInput: (v) => { values[key] = v; paint(); },
-        onCommit: (v, mark) => save("/api/dead-zone", { zone, value: v }, (got) => { d.dead_zones[zone] = { value: got }; }, mark),
+        onCommit: (v, mark) => save("/api/dead-zone", { zone, value: key === "end" ? 100 - v : v },
+          (got) => { d.dead_zones[zone] = { value: got }; }, mark),
       }));
     }
     if (errOf(d.trigger_quick)) rows.append(row("Quick trigger", null, unavailable(d.trigger_quick)));
@@ -470,13 +620,22 @@ function liveNote(text) {
 }
 
 let liveAbort = null;
+let liveTimer = null;
 
 function stopLive() {
   if (liveAbort) { liveAbort.abort(); liveAbort = null; }
+  clearInterval(liveTimer);
+  liveTimer = null;
+}
+
+// Runs `check` every second while the live view is open (stopped by stopLive).
+function liveWatch(check) {
+  clearInterval(liveTimer);
+  liveTimer = setInterval(check, 1000);
 }
 
 async function startLive(onState) {
-  stopLive();
+  if (liveAbort) { liveAbort.abort(); liveAbort = null; }   // replace the stream, keep the watch
   if (app.status.mode !== "usb") return;
   const ctl = new AbortController();
   liveAbort = ctl;
@@ -509,13 +668,23 @@ function panelVibration() {
   if (errOf(d.vibration)) { wrap.append(unavailable(d.vibration)); return wrap; }
   const v = val(d.vibration);
   const rows = h("div", { class: "rows" });
-  for (const [field, label] of [["left_grip", "Left grip"], ["right_grip", "Right grip"]]) {
-    rows.append(slider({
-      label, value: v[field], unit: "%",
+  for (const [field, label, motor] of [["left_grip", "Left grip", "left"], ["right_grip", "Right grip", "right"]]) {
+    const item = slider({
+      label, value: v[field], unit: "%", step: 25,         // the controller stores multiples of 25
       onCommit: (n, mark) => save("/api/vibration", { [field]: n }, (got) => { d.vibration = { value: got }; }, mark),
-    }));
+    });
+    const test = h("button", { class: "btn small", onclick: async () => {
+      test.disabled = true;
+      try { await api("/api/vibration/test", { motor, strength: val(d.vibration)[field] || 75 }); }
+      catch (e) { toast(e.message, "error"); }
+      test.disabled = false;
+    } }, "Test");
+    item.querySelector(".row-control").append(test);
+    rows.append(item);
   }
-  wrap.append(rows, h("p", { class: "note" }, "A real controller reports 75% out of the box. 100% as the maximum hasn't been confirmed yet."));
+  wrap.append(rows,
+    h("p", { class: "note" }, "Test runs that motor for a moment at the strength set above."),
+    h("p", { class: "note" }, "The Nova 2 Lite has a motor in each grip and none in the triggers. Strength goes in steps of 25%, the only values the controller keeps; out of the box it's 75%."));
   return wrap;
 }
 
@@ -597,8 +766,14 @@ async function panelFirmware() {
   let fw;
   try { fw = await api("/api/firmware"); } catch (e) { wrap.append(h("p", { class: "note" }, e.message)); return wrap; }
   const device = fw.device_version;
+  const receiver = fw.dongle_version;
+  const shipped = fw.available.find((f) => f.target === "dongle");
+  const receiverNote = receiver && shipped ? (Number(receiver) >= shipped.version ? "up to date" : `${shipped.version} is available`) : null;
   wrap.append(h("dl", { class: "facts" },
-    h("div", { class: "fact" }, h("dt", {}, "On the controller"), h("dd", {}, device || "Not connected", device ? h("small", {}, regionName(device)) : null)),
+    h("div", { class: "fact" }, h("dt", {}, "On the controller"), h("dd", {},
+      device || (receiver ? "Unknown" : "Not connected"),
+      device ? h("small", {}, regionName(device)) : null)),
+    receiver ? h("div", { class: "fact" }, h("dt", {}, "On the 2.4 GHz receiver"), h("dd", {}, receiver, receiverNote ? h("small", {}, receiverNote) : null)) : null,
     h("div", { class: "fact" }, h("dt", {}, "Downloaded release"), h("dd", {}, fw.extracted ? `GameSir Connect ${fw.extracted}` : "None yet"))));
 
   if (fw.available.length) {
@@ -632,9 +807,203 @@ async function panelFirmware() {
     } catch (e) { status.textContent = e.message; dl.disabled = false; }
   } }, fw.extracted ? "Download latest firmware" : "Download firmware");
   wrap.append(h("div", { class: "btn-row" }, check, dl), status);
-  wrap.append(h("p", { class: "callout" },
-    "Installing firmware happens over the USB cable in update mode, which this tool can't do yet. Downloaded files are checked against GameSir's checksums and kept until then."));
+
+  upd.fw = fw;
+  upd.box = h("div", { class: "update", "aria-live": "polite" }, h("p", { class: "busy" }, "Looking for the controller…"));
+  upd.shown = "";
+  wrap.append(h("h2", {}, "Install firmware"), upd.box);
+  pollUpdate();
   return wrap;
+}
+
+// ---------------------------------------------------------------------------
+// installing firmware: the update-mode steps run on the server as jobs; this polls them
+
+const upd = { timer: null, box: null, fw: null, data: null, shown: "", backup: null, file: null,
+              checks: {}, seenJob: null };
+
+function stopUpdatePoll() {
+  clearTimeout(upd.timer);
+  upd.timer = null;
+}
+
+async function pollUpdate() {
+  stopUpdatePoll();
+  if (!upd.box) return;
+  if (!upd.box.isConnected) {
+    // The panel is built before render() puts it on the page: wait for it, unless we left.
+    if (app.section === "firmware") upd.timer = setTimeout(pollUpdate, 100);
+    return;
+  }
+  try { upd.data = await api("/api/update"); } catch (e) { upd.data = { error: e.message }; }
+  if (!upd.box.isConnected) return;
+  await afterJob(upd.data.job);
+  await ensureCheck();
+  const key = JSON.stringify([upd.data, upd.backup, upd.file, upd.checks[checkKey()]]);
+  if (key !== upd.shown) {
+    upd.shown = key;
+    upd.box.replaceChildren(...updateView());
+  }
+  const running = upd.data.job && upd.data.job.state === "running";
+  upd.timer = setTimeout(pollUpdate, running ? 500 : 2000);
+}
+
+// When a job has just finished: keep the rest of the app in step with the controller.
+async function afterJob(job) {
+  if (!job || job.state === "running" || upd.seenJob === `${job.id}${job.state}`) return;
+  const first = upd.seenJob === null;
+  upd.seenJob = `${job.id}${job.state}`;
+  if (first) return;                 // finished before this page was opened
+  if (job.state === "failed") { toast(job.error, "error"); return; }
+  if (job.kind === "backup") { upd.backup = job.result.backup; toast("Backup saved"); }
+  if (job.kind === "restore") toast("Backup written back. Restart it to use it.");
+  if (job.kind === "install") toast(`Firmware ${job.result.version} installed. Restart it to use it.`);
+  if (job.kind === "enter") { app.status = await api("/api/status"); app.dev = null; renderChrome(); }
+  if (job.kind === "restart") {
+    try {
+      const usb = (await api("/api/scan", {})).filter((d) => d.link === "usb");
+      if (usb.length === 1) await connect(usb[0]);
+      toast(job.result && job.result.device === "receiver" ? "The receiver is back in normal mode" : "The controller is back in normal mode");
+    } catch (e) { toast(e.message, "error"); }
+    upd.fw = await api("/api/firmware").catch(() => upd.fw);
+  }
+}
+
+const checkKey = () => `${upd.file}|${upd.backup}|${upd.data && upd.data.installed_version}`;
+
+async function ensureCheck() {
+  if (!upd.file || !upd.backup || upd.checks[checkKey()]) return;
+  const key = checkKey();
+  try { upd.checks[key] = await api("/api/update/check", { file: upd.file, backup: upd.backup }); }
+  catch (e) { upd.checks[key] = { allowed: false, errors: [e.message], warnings: [] }; }
+}
+
+async function runStep(path, body, title, text, okLabel) {
+  if (title && !(await confirmDialog(title, text, okLabel))) return;
+  try {
+    upd.data.job = await api(path, body || {});
+    upd.shown = "";
+  } catch (e) { toast(e.message, "error"); }
+  pollUpdate();
+}
+
+const addr = (n) => `0x${n.toString(16)}`;
+
+function updateView() {
+  const d = upd.data;
+  if (d.error) return [h("p", { class: "note" }, d.error)];
+  const job = d.job;
+  const running = job && job.state === "running";
+  const inUpdate = d.mode === "download";
+  const out = [];
+
+  const notice = setupNotice(true);
+  if (notice) out.push(notice);
+  const device = d.device || "controller";
+  const thing = device === "receiver" ? "receiver" : "controller";
+  const where = inUpdate ? `${thing === "receiver" ? "Receiver" : "Controller"} in update mode`
+    : d.mode === "normal" ? "Normal mode" : "Not found";
+  out.push(h("dl", { class: "facts" },
+    h("div", { class: "fact" }, h("dt", {}, "Device"), h("dd", {}, where,
+      inUpdate && d.identity ? h("small", {}, `${d.identity.chip}, ${d.identity.flash_size / 1024} KB flash`) : null)),
+    h("div", { class: "fact" }, h("dt", {}, "Firmware on it"), h("dd", {}, (inUpdate && d.installed_version) || "Unknown"))));
+
+  // 1. update mode
+  const steps = h("ol", { class: "steps" });
+  let first;
+  if (inUpdate) {
+    first = h("p", { class: "note" }, thing === "receiver"
+      ? "The receiver is in update mode. The controller can't connect through it until you restart it."
+      : "The controller is in update mode. Its normal functions are off until you restart it.");
+  } else if (d.mode === "normal") {
+    const enter = (target, title, text) => runStep("/api/update/enter", { confirm: true, target }, title, text, "Switch");
+    first = h("div", {}, h("p", { class: "note" }, "Nothing is written in this step."),
+      h("div", { class: "btn-row" },
+        d.cable ? h("button", { class: "btn primary", disabled: running, onclick: () => enter("controller", "Switch the controller to update mode?",
+          "The controller stops working as a gamepad until you restart it from this page. Nothing is written yet.") }, "Switch the controller to update mode") : null,
+        d.receiver ? h("button", { class: `btn${d.cable ? "" : " primary"}`, disabled: running, onclick: () => enter("receiver", "Switch the receiver to update mode?",
+          "The controller can't connect through the receiver until you restart the receiver from this page. Nothing is written yet.") }, "Switch the receiver to update mode") : null),
+      h("p", { class: "note" }, "The controller's firmware is installed by cable; the receiver's through the receiver itself."));
+  } else first = h("p", { class: "note" }, "Connect the controller by cable, or plug in the 2.4 GHz receiver with the controller on, and switch it to PC/Xbox mode: hold Menu + View until the Home light is green.");
+  steps.append(h("li", { class: inUpdate ? "done" : "" }, h("h3", {}, "Switch to update mode"), first));
+
+  // 2. backup
+  const mine = d.identity ? d.backups.filter((b) => b.chip_key === d.identity.chip_key && b.jedec_id === d.identity.jedec_id) : d.backups;
+  if (upd.backup && !mine.some((b) => b.name === upd.backup)) upd.backup = null;
+  if (!upd.backup && mine.length) upd.backup = mine[0].name;
+  const backupStep = h("li", { class: mine.length ? "done" : "" }, h("h3", {}, `Back up the ${thing}`));
+  if (mine.length) {
+    const sel = h("select", { "aria-label": "Backup", disabled: running, onchange: (e) => { upd.backup = e.target.value; pollUpdate(); } },
+      mine.map((b) => h("option", { value: b.name, selected: b.name === upd.backup }, `${b.created.replace("T", " ").slice(0, 16)}  (${b.name})`)));
+    backupStep.append(h("p", { class: "note" }, d.identity ? `Backups of this ${thing}:` : "Backups on this computer:"), sel);
+  } else {
+    backupStep.append(h("p", { class: "note" }, thing === "receiver"
+      ? "There is no backup of this receiver yet. Every write needs one: it holds the firmware and the pairing with your controller."
+      : "There is no backup of this controller yet. Every write needs one: it holds the firmware, settings, Bluetooth address and calibration."));
+  }
+  backupStep.append(h("div", { class: "btn-row" }, h("button", { class: `btn${mine.length ? "" : " primary"}`, disabled: running || !inUpdate,
+    onclick: () => runStep("/api/update/backup") }, mine.length ? "Make another backup" : "Make a backup")),
+    h("p", { class: "note" }, "Backups are saved in ~/.local/share/gamesir-linux/backups. Copy them somewhere safe."));
+  steps.append(backupStep);
+
+  // 3. install or restore
+  const files = (upd.fw && upd.fw.available || []).filter((f) => f.target === (thing === "receiver" ? "dongle" : "controller"));
+  if (upd.file && !files.some((f) => f.file === upd.file)) upd.file = null;
+  if (!upd.file && files.length) upd.file = (files.find((f) => f.matches_device_region !== false && f.newer_than_device !== false) || files[0]).file;
+  const install = h("li", {}, h("h3", {}, "Install firmware"));
+  if (!files.length) install.append(h("p", { class: "note" }, "Download firmware above first."));
+  else {
+    install.append(h("select", { "aria-label": "Firmware", disabled: running, onchange: (e) => { upd.file = e.target.value; pollUpdate(); } },
+      files.map((f) => h("option", { value: f.file, selected: f.file === upd.file },
+        f.target === "dongle" ? `Receiver firmware ${f.version}` : `Firmware ${f.version}, ${f.region === "china" ? "China" : "International"} build`))));
+    const check = upd.checks[checkKey()];
+    if (!upd.backup) install.append(h("p", { class: "note" }, "Needs a backup of this controller."));
+    else if (!check) install.append(h("p", { class: "note" }, "Checking…"));
+    else if (check.allowed) {
+      install.append(h("p", { class: "note ok" }, `Fits this ${thing}: ${check.partition} goes to ${addr(check.start)}–${addr(check.end - 1)}. ${thing === "receiver" ? "The pairing with your controller is kept." : "Settings, Bluetooth address and calibration are kept."}`));
+    } else install.append(h("ul", { class: "problems" }, check.errors.map((e) => h("li", {}, e))));
+    if (check && check.warnings.length) install.append(h("ul", { class: "warnings" }, check.warnings.map((w) => h("li", {}, w))));
+    const f = files.find((x) => x.file === upd.file);
+    install.append(h("div", { class: "btn-row" },
+      h("button", { class: "btn primary", disabled: running || !inUpdate || !(check && check.allowed), onclick: () => runStep("/api/update/install",
+        { file: upd.file, backup: upd.backup, confirm: true }, `Install firmware ${f && f.version}?`,
+        `The firmware area of the ${thing} is erased and rewritten. Keep it plugged in until it finishes. If anything fails, it stays in update mode and you can run it again or write the backup back.`,
+        "Install") }, `Install firmware ${f ? f.version : ""}`)));
+  }
+  install.append(h("p", { class: "note" }, thing === "receiver"
+      ? "To go back to the firmware in a backup, write the backup back. The pairing stays as it is."
+      : "To go back to the firmware in a backup, write the backup back. Settings, Bluetooth address and calibration stay as they are."),
+    h("div", { class: "btn-row" }, h("button", { class: "btn", disabled: running || !inUpdate || !upd.backup, onclick: () => runStep("/api/update/restore",
+      { backup: upd.backup, confirm: true }, "Write the backup back?",
+      `The firmware area of the ${thing} is erased and rewritten with the firmware in the backup. Keep it plugged in until it finishes.`, "Write it back") },
+      "Write the backup back")));
+  steps.append(install);
+
+  // 4. restart
+  steps.append(h("li", {}, h("h3", {}, `Restart the ${thing}`),
+    d.stay ? h("p", { class: "callout danger" }, "The last write did not verify. Don't restart or unplug the controller: run the same step again.") : null,
+    h("div", { class: "btn-row" }, h("button", { class: "btn", disabled: running || !inUpdate || d.stay,
+      onclick: () => runStep("/api/update/restart") }, `Restart ${thing}`))));
+  out.push(steps);
+  out.push(h("p", { class: "note" }, h("strong", {}, "Not known yet: "),
+    "how to get the controller into update mode if its firmware no longer starts. The M + X + B shortcut goes through the firmware, so it wouldn't help then. That's why a write that fails keeps the controller in update mode until it has been done again: don't unplug or restart it in between."));
+
+  // the job in progress, or the last one
+  if (job) {
+    const names = { enter: "Switching to update mode", identify: "Identifying the chip", backup: "Backing up",
+                    restore: "Writing the backup back", install: "Installing firmware", restart: "Restarting" };
+    const box = h("div", { class: `job ${job.state}` }, h("h3", {}, names[job.kind] || job.kind,
+      job.state === "done" ? ": done" : job.state === "failed" ? ": failed" : "…"));
+    if (running) {
+      box.append(h("p", { class: "note" }, job.label || "Starting…"),
+        h("progress", { max: job.total || 1, value: job.done || 0 }),
+        ["restore", "install"].includes(job.kind) ? h("p", { class: "note" }, h("strong", {}, "Keep it plugged in until this finishes.")) : null);
+    }
+    if (job.error) box.append(h("p", { class: "callout danger" }, job.error));
+    if (job.log.length) box.append(h("ol", { class: "log" }, job.log.map((l) => h("li", {}, l))));
+    out.push(box);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -711,7 +1080,7 @@ function panelGuide() {
     h("h2", {}, "Modes and lights"),
     h("p", { class: "note" }, "On the cable or the 2.4 GHz receiver the controller picks a mode by itself. To change it, hold View and Menu for 2 seconds; it cycles through the three."),
     table(["Mode", "Light", "Use it for"], [
-      ["Xbox", "Green", "PC. This is the mode gamesir-linux configures over the cable."],
+      ["Xbox", "Green", "PC. This is the mode gamesir-linux configures, by cable or through the receiver."],
       ["Switch", "Red", "Nintendo Switch."],
       ["DS4", "Blue", "Android, and anything that expects a PlayStation controller."],
     ]),
@@ -752,13 +1121,14 @@ function panelGuide() {
 const PANELS = {
   controller: panelController, buttons: panelButtons, sticks: panelSticks, triggers: panelTriggers,
   vibration: panelVibration, lighting: panelLighting, profiles: panelProfiles, power: panelPower, firmware: panelFirmware,
-  guide: panelGuide,
+  guide: panelGuide, setup: panelSetup,
 };
 
 let renderSeq = 0;
 async function render() {
   app.section = sectionFromHash();
   stopLive();
+  stopUpdatePoll();
   app.live = null;
   renderChrome();
   const panel = $("#panel");
@@ -793,9 +1163,13 @@ async function scan() {
 }
 
 async function connect(target) {
+  if (app.connecting) return;
+  app.connecting = true;
   try {
     app.status = await api("/api/connect", target);
+    app.userDisconnected = false;
   } catch (e) { toast(e.message, "error"); return; }
+  finally { app.connecting = false; }
   app.dev = null; render();
   await reload(false);
 }
@@ -803,7 +1177,123 @@ async function connect(target) {
 async function disconnect() {
   try { app.status = await api("/api/disconnect", {}); } catch (e) { toast(e.message, "error"); }
   app.dev = null; app.found = null;
+  app.userDisconnected = true;     // no automatic reconnect until it is unplugged
   go("controller");
+}
+
+// Plugging in and out: poll what is on USB (sysfs, cheap) and act on changes. Bluetooth is not
+// polled: a scan takes seconds, so it stays behind the Find button.
+async function watchDevices() {
+  try {
+    const d = await api("/api/devices");
+    const before = JSON.stringify(app.devices && app.devices.usb);
+    app.devices = d;
+    const updating = (upd.data && upd.data.job && upd.data.job.state === "running") || d.download.length > 0;
+    if (!d.usb.length) app.userDisconnected = false;
+    if (d.lost) {
+      app.status = d.status; app.dev = null;
+      toast("The controller was disconnected", "error");
+      render();
+    } else if (!app.status.connected && !updating) {
+      if (d.usb.length === 1 && !app.userDisconnected && !app.connecting) {
+        toast(d.usb[0].via === "dongle" ? "Found the controller through the 2.4 GHz receiver" : "Found the controller on the cable");
+        await connect(d.usb[0]);
+      } else if (JSON.stringify(d.usb) !== before) {
+        app.found = d.usb.concat((app.found || []).filter((x) => x.link === "ble"));
+        if (!SECTIONS.find((x) => x.id === app.section).offline) render();
+      }
+    }
+    // Re-check this computer now and then, so the notices go away once a command has been run.
+    if (++app.polls % 10 === 0) {
+      const setup = await api("/api/setup");
+      if (JSON.stringify(setup) !== JSON.stringify(app.setup)) {
+        app.setup = setup;
+        if (["setup", "firmware"].includes(app.section) || !app.status.connected) render();
+      }
+    }
+  } catch { /* the server is gone; api() said so elsewhere */ }
+  setTimeout(watchDevices, 2000);
+}
+
+// ---------------------------------------------------------------------------
+// setup and help: what this computer still needs, and what to do when something goes wrong
+
+function copyButton(text) {
+  const btn = h("button", { class: "btn small", onclick: async () => {
+    try { await navigator.clipboard.writeText(text); btn.textContent = "Copied"; }
+    catch { btn.textContent = "Select and copy it"; }
+    setTimeout(() => { btn.textContent = "Copy"; }, 1600);
+  } }, "Copy");
+  return btn;
+}
+
+function command(text) {
+  return h("div", { class: "command" }, h("code", {}, text), copyButton(text));
+}
+
+// What this computer still lacks, said on the front page and before firmware steps.
+function missing(need) {
+  return (app.setup || []).filter((c) => !c.ok && c.need === need && c.id !== "device");
+}
+
+function setupNotice(only) {
+  const now = only ? [] : missing("settings");
+  const later = missing("updates");
+  if (!now.length && !later.length) return null;
+  const names = (list) => list.map((c) => c.title).join(", ");
+  return h("div", {},
+    now.length ? h("p", { class: "callout danger" },
+      `Before the controller can be used, this computer needs a one-time setup: ${names(now)}. It takes one command; `,
+      h("a", { href: "#setup" }, "see Setup and help"), " for it and what it does.") : null,
+    later.length ? h("p", { class: "callout" },
+      `Before firmware updates and backups work: ${names(later)}. `,
+      h("a", { href: "#setup" }, "See Setup and help"), " for what to run and why.") : null);
+}
+
+const NEEDS = { settings: "Needed for everything", updates: "Needed for firmware updates and backups", optional: "Optional" };
+
+async function panelSetup() {
+  const wrap = h("div", {}, h("h1", {}, "Setup and help"),
+    h("p", { class: "lede" }, "What this computer needs to work with the controller, checked just now. Each command comes with what it does and links to its documentation: read that first, run it in a terminal, then check again."));
+  try { app.setup = await api("/api/setup"); }
+  catch (e) { wrap.append(h("p", { class: "note" }, e.message)); return wrap; }
+  const list = h("ol", { class: "steps" });
+  for (const c of app.setup) {
+    list.append(h("li", { class: c.ok ? "done" : "" },
+      h("h3", {}, c.title, h("span", { class: "need" }, NEEDS[c.need])),
+      h("p", { class: "note" }, c.detail),
+      c.command ? command(c.command) : null,
+      c.command && c.explain.length ? h("details", { class: "explain" }, h("summary", {}, "What this does"),
+        h("ul", {}, c.explain.map((x) => h("li", {}, x))),
+        c.file ? [h("p", {}, `The file, ${c.file.path}:`), h("pre", { class: "file" }, c.file.content)] : null,
+        c.docs.length ? h("p", {}, "Documentation: ", c.docs.map((d, i) => [i ? ", " : "",
+          h("a", { href: d.url, target: "_blank", rel: "noopener noreferrer" }, d.title)])) : null) : null,
+      c.id === "firmware" && !c.ok ? h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => go("firmware") }, "Go to Firmware")) : null));
+  }
+  wrap.append(list, h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: render }, "Check again")));
+
+  const qa = (q, ...a) => h("details", { class: "faq" }, h("summary", {}, q), ...a.map((x) => typeof x === "string" ? h("p", {}, x) : x));
+  wrap.append(h("h2", {}, "If something doesn't work"),
+    qa("The controller isn't found",
+      "Check the Home light is green: hold Menu and View for 2 seconds; each press moves to the next mode (green, red, blue). In blue mode it pretends to be a PlayStation controller and can't be configured.",
+      "By cable, try another cable or port: some cables only charge. Through the receiver, turn the controller on and wait for it to link before switching to green.",
+      "If it shows up but can't be opened, the device permissions above aren't in place yet, or the controller was plugged in before they were: unplug it and plug it in again."),
+    qa("The live view or the controller stops responding",
+      "This has been seen right after a change, mostly through the receiver. Use Restart on the Buttons page: by cable it restarts the controller, through the receiver it restarts the receiver. Nothing is changed or erased, and settings are kept.",
+      "If that doesn't help, turn the controller off and on: hold Home and M for about 10 seconds, turn it on, and switch to green."),
+    qa("Bluetooth doesn't find it",
+      "Put the controller in Android mode: hold Home and A for 2 seconds until the light flashes yellow. Pair it once in your system's Bluetooth settings, then use Find controllers here."),
+    qa("Switching to update mode doesn't work",
+      "The sg module must be loaded (see above). Use a USB port on the computer itself or a powered USB 2 hub; some hubs disturb the controller's update mode.",
+      "Nothing has been written at that point. To get the controller back: unplug it, hold Home and M for about 10 seconds, and turn it on again. The receiver: unplug it and plug it back in."),
+    qa("A firmware write fails",
+      "The controller or receiver stays in update mode on purpose. Don't unplug it and don't restart it: run the same step again. If it keeps failing, write your backup back the same way. Every write is checked block by block, and nothing outside the firmware area is ever touched."),
+    qa("Where are my backups?",
+      "In ~/.local/share/gamesir-linux/backups, one file per backup with a .json next to it. They hold the firmware and your controller's Bluetooth pairing and calibration: copy them somewhere safe, and don't share them."),
+    qa("Starting this app",
+      command("gamesir-linux gui"),
+      "It runs on this computer only (127.0.0.1) and opens your browser with a one-time link. Stop it with Ctrl+C in its terminal."));
+  return wrap;
 }
 
 async function restore() {
@@ -824,8 +1314,10 @@ async function start() {
     $("#panel").replaceChildren(h("p", {}, e.message));
     return;
   }
+  try { app.setup = await api("/api/setup"); } catch { /* shown on the Setup page */ }
   render();
   if (app.status.connected) await reload(false);
+  watchDevices();
 }
 
 start();

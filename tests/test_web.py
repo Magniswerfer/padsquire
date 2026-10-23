@@ -126,14 +126,16 @@ def test_usb_controllers_are_listed_and_only_found_paths_open(tmp_path):
     async def no_bluetooth():
         raise ble.BleError("Bluetooth is unavailable")
 
-    found = [hid.HidDevice("/dev/hidraw99", 0x100F, "2.4G XBOX 360 For Windows")]
+    found = [hid.HidDevice("/dev/hidraw99", 0x100F, "2.4G XBOX 360 For Windows"),
+             hid.HidDevice("/dev/hidraw98", 0x1098, "2.4G XBOX 360 For Windows")]
 
     async def go(c):
         await login(c)
         h = {**API, "Content-Type": "application/json"}
         r = await c.post("/api/scan", data="{}", headers=h)
         assert (await r.json())["data"] == [
-            {"address": "/dev/hidraw99", "name": "2.4G XBOX 360 For Windows", "link": "usb"}]
+            {"address": "/dev/hidraw99", "name": "GameSir Nova 2 Lite", "link": "usb", "via": "cable"},
+            {"address": "/dev/hidraw98", "name": "GameSir Nova 2 Lite", "link": "usb", "via": "dongle"}]
         r = await c.post("/api/connect", data=json.dumps({"address": "/dev/sda", "link": "usb"}), headers=h)
         assert r.status == 400 and "no longer connected" in (await r.json())["error"]
     run(go, tmp_path, scanner=no_bluetooth, usb_finder=lambda: found)
@@ -166,3 +168,47 @@ def test_live_input_needs_the_cable(tmp_path):
         r = await c.get("/api/input", headers=API)
         assert r.status == 409 and "by cable" in (await r.json())["error"]
     run(go, tmp_path)
+
+
+def test_remap_every_key(tmp_path):
+    async def go(c):
+        await login(c)
+        post = lambda path, body: c.post(path, data=json.dumps(body), headers={**API, "Content-Type": "application/json"})
+        await post("/api/connect", {"simulate": True})
+        state = (await (await c.get("/api/state", headers=API)).json())["data"]
+        assert len(state["remaps"]) == 19 and state["remaps"]["CAPTURE"] == {"value": []}
+        r = await post("/api/remap", {"key": "CAPTURE", "targets": ["B"]})
+        assert (await r.json())["data"] == ["B"]
+        r = await post("/api/remap", {"key": "CAPTURE", "targets": []})
+        assert (await r.json())["data"] == []
+        r = await post("/api/remap", {"key": "HOME", "targets": ["B"]})
+        assert r.status == 400
+        r = await post("/api/remap", {"key": "A", "targets": ["LS_UP"]})
+        assert r.status == 400
+    run(go, tmp_path)
+
+
+def test_setup_checks_explain_their_commands(tmp_path):
+    async def go(c):
+        await login(c)
+        checks = (await (await c.get("/api/setup", headers=API)).json())["data"]
+        assert {x["id"] for x in checks} >= {"udev", "sg", "7zip", "firmware", "bluetooth", "device"}
+        for x in checks:
+            if x["command"]:                         # every command says what it does
+                assert x["explain"] and all(d["url"].startswith("https://") for d in x["docs"])
+    run(go, tmp_path)
+
+
+def test_devices_lists_what_is_plugged_in(tmp_path):
+    from gamesir_linux import hid
+    plugged = [hid.HidDevice("/dev/hidraw98", 0x1098, "2.4G XBOX 360 For Windows")]
+
+    async def go(c):
+        await login(c)
+        d = (await (await c.get("/api/devices", headers=API)).json())["data"]
+        assert d["usb"] == [{"address": "/dev/hidraw98", "name": "GameSir Nova 2 Lite", "link": "usb",
+                             "via": "dongle"}] and d["lost"] is False
+        plugged.clear()
+        d = (await (await c.get("/api/devices", headers=API)).json())["data"]
+        assert d["usb"] == [] and d["lost"] is False         # nothing was connected, nothing lost
+    run(go, tmp_path, usb_finder=lambda: plugged)

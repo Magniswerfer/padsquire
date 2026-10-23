@@ -1,147 +1,170 @@
 # gamesir-linux
 
-Linux-native configuration and firmware tools for GameSir controllers, starting with the
-**Nova 2 Lite** (GameSir model code T4N2). Unofficial, built by reverse-engineering GameSir
-Connect (Windows) and the GameSir Android app.
-
-> **Status:** configuring the controller **over the USB cable works on real hardware** (Nova 2
-> Lite, firmware 7701): reading every setting, changing them, and live stick and trigger
-> feedback. Bluetooth and the 2.4 GHz dongle are built but not yet tested on hardware. Firmware
-> can be downloaded, extracted and verified, but never flashed. Reverse-engineering notes are in
-> [PROTOCOL.md](PROTOCOL.md); the hardware checklist is [HARDWARE.md](HARDWARE.md).
+Configure and update the GameSir **Nova 2 Lite** on Linux, without Windows or GameSir Connect.
+Unofficial: built by reverse-engineering GameSir Connect (Windows) and the GameSir Android app.
 
 ![The settings app, Sticks page](docs/screenshot.png)
 
-## What works
+## What it does
 
-| | Cable | Bluetooth | 2.4 GHz dongle |
+- **A settings app in your browser** (`gamesir-linux gui`). It finds the controller by itself when
+  you plug it in, and shows every setting with the controller drawing as the map. Dead zones are
+  drawn as you drag, with the live stick or trigger position on top. On the Buttons page, the
+  buttons you press light up as the computer receives them.
+- **Every setting GameSir Connect has for this controller.** That covers dead zones, stick
+  options, button remapping (19 buttons, each to any other), vibration strength with a test per
+  motor, the Home light and quick triggers.
+- **Firmware updates**, for the controller and its 2.4 GHz receiver. The app installs GameSir's
+  own firmware exactly as GameSir Connect does, after a full backup of the device. See
+  [Firmware updates](#firmware-updates).
+- **Setup and help** inside the app. It checks what your computer still needs and gives the
+  command for each item, with what every part does and links to its documentation, plus
+  answers for when something doesn't work.
+
+| | Cable | 2.4 GHz receiver | Bluetooth |
 |---|---|---|---|
-| Firmware version, MAC, battery | yes | untested | not yet |
-| Read dead zones, feature toggles, vibration, Home light, quick triggers, back buttons | yes | untested | not yet |
-| Change them | Home light confirmed, the rest untested | untested | not yet |
-| Live stick and trigger positions | yes | no | not yet |
-| Auto-sleep, profiles | no (the controller doesn't answer over USB) | untested | not yet |
+| Read and change settings | yes | yes | built, not tested on hardware yet |
+| Remap every button | yes | yes | back buttons only, not tested |
+| Live sticks, triggers and buttons | yes | yes | no |
+| Controller firmware update | yes | no (use the cable) | no |
+| Receiver firmware update | | yes | |
 
-- **Settings app in your browser** (`gamesir-linux gui`): the controller drawing is the map; click
-  a stick, a trigger or the back buttons to configure them. Dead zones are drawn as you drag, with
-  the live stick or trigger position on top, so you can see the effect straight away. A button
-  guide labels every control and lists the modes, lights and shortcuts. `--simulate` lets you try
-  it without a controller.
-- **Command line** (`gamesir-linux usb …` and `gamesir-linux ble …`): the same settings, by cable
-  or over Bluetooth. Every change is read back to confirm the controller took it.
-- **Firmware feed** (`gamesir-linux update`): follows GameSir Connect's own update feed, verifies
-  each release's SHA-512 and extracts the firmware. A systemd timer can run it weekly.
-- **Firmware tools**: extract firmware from a GameSir Connect installer (no Windows, no Wine),
-  decode and verify `.ufw` files, and dry-run an update through the safety checks.
-- **Probe** (`gamesir-linux probe`): a read-only report of how the controller appears in each mode,
-  for bring-up and bug reports.
+Tested on one Nova 2 Lite (firmware 7701 and 8201) and its receiver (firmware 2800).
 
-## Install
+## Get started
+
+You need Linux with Python 3.11 or newer, and git.
 
 ```sh
-git clone https://github.com/Magniswerfer/gamesir-linux && cd gamesir-linux
-python3 -m venv .venv && .venv/bin/pip install -e '.[gui]'
-ln -s "$PWD/.venv/bin/gamesir-linux" ~/.local/bin/      # put it on your PATH
+git clone https://github.com/Magniswerfer/gamesir-linux
+cd gamesir-linux
+python3 -m venv .venv
+.venv/bin/pip install -e '.[gui]'
+.venv/bin/gamesir-linux gui
 ```
 
-Python 3.11 or newer. The cable commands need nothing beyond Python; Bluetooth needs `bleak`
-(the `ble` extra) and the settings app needs `aiohttp` (the `gui` extra, which includes both).
-`update` and `extract` need 7-Zip (`sudo dnf install 7zip`, or `p7zip` elsewhere).
+What these do:
 
-To use the controller without `sudo`, install the udev rules:
+- `git clone` downloads this project and `cd` goes into its folder.
+- `python3 -m venv .venv` makes a private Python environment in the `.venv` folder, so nothing
+  is installed system-wide ([venv](https://docs.python.org/3/library/venv.html)).
+- `pip install -e '.[gui]'` installs gamesir-linux into that environment, with the extras the app
+  needs: aiohttp for the web server and bleak for Bluetooth
+  ([pip install](https://pip.pypa.io/en/stable/cli/pip_install/)).
+- `gamesir-linux gui` starts the app and opens it in your browser.
 
-```sh
-sudo cp contrib/udev/70-gamesir.rules /etc/udev/rules.d/
-sudo udevadm control --reload && sudo udevadm trigger
-```
+Then open **Setup and help** in the app. It tells you what's still missing, usually a one-time
+permission rule so the controller can be used without `sudo`, and explains each command before
+you run it. Optional: `ln -s "$PWD/.venv/bin/gamesir-linux" ~/.local/bin/` puts `gamesir-linux`
+on your PATH. For an app-menu entry, copy `contrib/desktop/gamesir-linux.desktop` to
+`~/.local/share/applications/`.
 
-For an app-menu entry: `cp contrib/desktop/gamesir-linux.desktop ~/.local/share/applications/`.
+The app runs on `127.0.0.1` only and opens a one-time link. Other websites in your browser can't
+reach it: the server rejects requests without the link's session cookie, requests for any other
+host name, and API calls without a custom header. Fonts are bundled, so nothing loads from the
+internet.
 
 ## Connect the controller
 
-**By cable** (recommended, and the only connection tested so far): plug it in and hold **View +
-Menu** for 2 seconds until the Home light turns **green** (PC/Xbox mode). In the blue mode it
-pretends to be a PlayStation controller and can't be configured.
+- **By cable:** plug it in and hold **View + Menu** for 2 seconds until the Home light is
+  **green** (PC/Xbox mode). Each press moves to the next mode: green, red (Switch), blue
+  (PlayStation). In blue mode it pretends to be a DualShock 4 and can't be configured.
+- **Through the 2.4 GHz receiver:** plug the receiver in, turn the controller on, wait for it to
+  link, then switch it to green the same way.
+- **Over Bluetooth:** hold **Home + A** for 2 seconds until the light flashes **yellow** (Android
+  mode), pair it in your system's Bluetooth settings, then use **Find controllers** in the app.
 
-**Over Bluetooth**: hold **Home + A** for 2 seconds until the light flashes **yellow** (Android
-mode), then pair it.
+## Firmware updates
 
-## The settings app
+On the app's **Firmware** page: download the firmware (fetched from GameSir's own update feed and
+checked against its checksums), switch the controller or the receiver to update mode, make a
+backup, install, restart. The controller's firmware is installed by cable; the receiver's through
+the receiver itself.
 
-```sh
-gamesir-linux gui                # opens in your default browser
-gamesir-linux gui --simulate     # try it without a controller
-```
+What keeps it safe:
 
-Click **Find controllers**: it lists the controller on the cable and any in Bluetooth range.
+- **A backup first.** The whole flash is read twice and compared before anything is written, and
+  every write needs a backup of the same device. The backup is also your way back: writing it
+  back restores the old firmware.
+- **Only the firmware area is written.** Settings, the Bluetooth address and pairing, and the
+  factory stick calibration are never touched, and the whole flash is compared before and after.
+- **Every block is checked** against the device's own checksum. A failed write keeps the device
+  in update mode so it can be done again; it is never restarted half-written.
+- Writes follow the same order as GameSir's own updater, and use only "erase a block" and "write
+  a block". The command that burns the chip's key can't be sent.
 
-The app runs a small server on `127.0.0.1` only and opens a one-time link. The link sets a session
-cookie; the server rejects requests without it, requests for any other host name (DNS rebinding),
-and API calls without a custom header, so other websites open in your browser can't reach your
-controller. Fonts are bundled (Barlow, SIL Open Font License), so nothing loads from the internet.
+Backups are kept in `~/.local/share/gamesir-linux/backups`, readable only by you. They contain
+your controller's Bluetooth pairing and calibration: copy them somewhere safe, and don't share
+them.
+
+Still unknown: how to reach update mode if the firmware itself no longer starts. The ways in all
+go through the firmware. That's why a failed write is never followed by a restart.
+
+## Known firmware quirks
+
+Found on firmware 8201. The app works around each one:
+
+- **Six on/off settings can't be changed by cable or receiver.** They are low battery warning,
+  play while charging, swap sticks, invert sticks X/Y, swap LB/LT and swap RB/RT. The controller
+  keeps its value. The app shows them read-only. Bluetooth is not tested yet.
+- **Outer dead zone above 25% is broken.** The stick at full tilt comes out on the opposite side.
+  The app stops at 25%.
+- **The anti-dead zone has no effect by cable or receiver.** The controller stores the value
+  but doesn't use it. Bluetooth is not tested yet.
+- **Vibration strength goes in steps of 25%.** Other values are rounded down. The Nova 2 Lite has
+  two vibration motors, in the grips, and none in the triggers.
+- **Remapping takes buttons only:** a button can't act as a stick direction or be switched off.
+- **Sometimes the controller stops responding right after a change**, mostly through the receiver.
+  The change is kept, and a restart fixes it; the Buttons page has a button for that.
+- Auto-sleep and profiles get no answer by cable or receiver.
 
 ## Command line
 
+Everything in the app also works from a terminal:
+
 ```sh
 gamesir-linux usb info                              # firmware, battery, MAC
-gamesir-linux usb deadzone                          # list all dead zones
-gamesir-linux usb deadzone left-stick-inner 3       # set one (percent)
-gamesir-linux usb feature swap-sticks on
+gamesir-linux usb deadzone left-stick-inner 3       # set a dead zone (percent)
 gamesir-linux usb vibration --left-grip 50 --right-grip 50
+gamesir-linux update                                # fetch the newest firmware
+gamesir-linux uboot --help                          # update mode: backup, restore, flash, restart
 ```
 
-Swap `usb` for `ble` to do the same over Bluetooth, or add `--simulate` to try any command
-without a controller.
+`usb` works by cable and through the receiver; `ble` does the same over Bluetooth, and
+`--simulate` tries any command without a controller. `gamesir-linux --help` lists everything. For
+automatic weekly firmware checks there is a systemd timer in `contrib/systemd/`.
 
-Firmware:
+## How it works
 
-```sh
-gamesir-linux update                 # fetch the newest firmware (or: update --check)
-gamesir-linux extract ~/Downloads/GameSir\ Connect\ Setup\ 1.16.7.exe   # from an installer
-gamesir-linux ufw ~/.local/share/gamesir-linux/firmware/T4Nlite2_V182_2026-04-24.ufw
-
-# Dry run: what would happen to a controller on firmware 7701?
-gamesir-linux plan --target controller --pid AC695X_TRANS --vid N2LT --version 7701 --dongle-version 2800
-```
-
-Automatic weekly firmware checks:
-
-```sh
-cp contrib/systemd/gamesir-linux-update.* ~/.config/systemd/user/
-systemctl --user enable --now gamesir-linux-update.timer
-```
-
-## How it talks to the controller
-
-In green mode the controller shows up as `3537:100F` with a vendor HID interface (usage page
-`0xFF7A`). GameSir Connect's Windows DLL talks to it in 64-byte reports, and the commands turned
-out to be the same GCM protocol the Android app uses over Bluetooth, so one client drives both.
-Details, including the controller's out-of-the-box settings, are in [PROTOCOL.md](PROTOCOL.md).
+In green mode the controller shows up as `3537:100F` by cable, or `3537:1098` through the
+receiver, with a vendor HID interface. GameSir Connect talks to it in 64-byte reports using the
+same "GCM" protocol the Android app uses over Bluetooth, so one client drives all three. Firmware
+updates use the chip's built-in USB update mode (JieLi "UBOOT1.00"), where the device shows up as a
+USB disk that takes special commands. All the details are in [PROTOCOL.md](PROTOCOL.md); testing
+on hardware is described in [HARDWARE.md](HARDWARE.md).
 
 ## Tests
 
 ```sh
-pytest                                              # synthetic firmware and devices only
-GAMESIR_INSTALLER=path/to/setup.exe pytest          # also verifies a real installer
+.venv/bin/pip install -e '.[gui,test]'
+.venv/bin/pytest
 ```
 
-The repo contains no GameSir files. Tests build synthetic `.ufw` files, installers and sysfs trees
-with the same structure as the real ones, replay replies captured from a real controller, and
-serve fake update feeds from a local HTTP server.
+The repository contains no GameSir files. Tests build synthetic firmware files, installers,
+flash images and sysfs trees shaped like the real ones. They replay replies captured from a real
+controller, and include a fake chip in update mode for the firmware writer.
 
 ## Roadmap
 
-1. ~~Firmware extraction, `.ufw` parser, safety gate~~
-2. ~~Bluetooth config CLI (GCM over BLE), tested against a simulator~~
-3. ~~Firmware update feed, read-only hardware probe~~
-4. ~~Browser-based settings app~~
-5. ~~First real hardware: configuration over the USB cable, live input, button guide~~
-6. Test the 2.4 GHz dongle (expected as `3537:1098`) and Bluetooth on hardware
-7. Remap every button and record macros (`f5` / `f6` commands, still to decode)
-8. USB update mode: device detection, flash dump, then a first supervised update
+- Test Bluetooth on hardware, including the six settings refused by cable.
+- Find the cause of the occasional stop after a change.
+- Remap one button to several pressed together (the controller supports it; the app doesn't yet).
+- Controller firmware updates through the 2.4 GHz receiver (JieLi's over-the-air updater, which
+  GameSir Connect doesn't use for this controller): research.
+- Other GameSir controllers.
 
 ## Disclaimer
 
-Unofficial and not affiliated with GameSir. Flashing firmware can brick hardware; there is
-deliberately no flash command yet, and when there is, the safety checks will reduce that risk but
-cannot remove it.
+Unofficial and not affiliated with GameSir. Firmware updates can brick hardware. The safety
+checks above reduce that risk but cannot remove it. Tested on one controller and one receiver so
+far. MIT licensed; see [LICENSE](LICENSE).
