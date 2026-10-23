@@ -100,19 +100,25 @@ body {
 
 /* -- the controller map ---------------------------------------------------- */
 .pad { width: 100%; height: auto; overflow: visible; }
-.pad .shell { fill: var(--plastic); stroke: var(--plastic-edge); stroke-width: 2; pointer-events: none; }
+.pad .shell { fill: var(--panel); stroke: var(--plastic-edge); stroke-width: 1.8; stroke-linejoin: round; pointer-events: none; }
+.pad .edge { fill: none; stroke: var(--plastic-edge); stroke-width: 1.4; pointer-events: none; }
 .pad .grip { fill: transparent; stroke: none; }
 .pad .part:hover .grip, .pad .part:focus-visible .grip { fill: var(--accent-soft); opacity: .7; }
 .pad .part.active .grip { fill: var(--accent-soft); }
-.pad .plastic { fill: var(--plastic); stroke: var(--plastic-edge); stroke-width: 2; }
-.pad .well { fill: var(--bg); stroke: var(--plastic-edge); stroke-width: 1.5; }
-.pad .cap { fill: var(--plastic); stroke: var(--plastic-edge); stroke-width: 2; }
-.pad .key { fill: var(--bg); stroke: var(--plastic-edge); stroke-width: 1.5; }
-.pad .underside { fill: none; stroke: var(--plastic-edge); stroke-width: 1.75; stroke-dasharray: 4 3; }
+.pad .plastic { fill: var(--panel); stroke: var(--plastic-edge); stroke-width: 1.6; stroke-linejoin: round; }
+.pad .well { fill: var(--panel); stroke: var(--plastic-edge); stroke-width: 1.4; }
+.pad .cap { fill: var(--panel); stroke: var(--plastic-edge); stroke-width: 1.4; }
+.pad .texture { fill: none; stroke: var(--plastic-edge); stroke-width: 2.2; stroke-dasharray: .8 1.6; pointer-events: none; }
+.pad .pip { fill: var(--plastic-edge); pointer-events: none; }
+.pad .key { fill: var(--panel); stroke: var(--plastic-edge); stroke-width: 1.4; }
+.pad .glyph { font: 500 11px var(--display); fill: var(--plastic-edge); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.pad .glyph.tiny { font-size: 6.5px; }
+.pad .underside { fill: none; stroke: var(--plastic-edge); stroke-width: 1.4; stroke-dasharray: 4 3; }
 .pad .led { fill: var(--led); stroke: var(--plastic-edge); stroke-width: 1.5; }
 .pad .led-glow { fill: var(--led); opacity: .35; filter: blur(4px); }
 .pad .part-label { font: 600 12px var(--display); fill: var(--muted); text-anchor: middle; pointer-events: none; }
 .pad .part-label.small { font-size: 11px; }
+.pad .part-label.tiny { font-size: 7.5px; }
 .pad .part { cursor: pointer; outline: none; }
 .pad .part:hover .plastic, .pad .part:hover .shell, .pad .part:hover .cap,
 .pad .part:hover .key, .pad .part:hover .well { stroke: var(--accent); }
@@ -248,7 +254,21 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .travel .dead { position: absolute; top: 0; bottom: 0; background: var(--ignored); }
 .travel .dead.start { left: 0; }
 .travel .dead.end { right: 0; }
+.travel .level { position: absolute; left: 0; top: 35%; bottom: 35%; width: 0; background: var(--accent); border-radius: 0 2px 2px 0; }
+.live-readout { color: var(--muted); font-size: .8125rem; font-variant-numeric: tabular-nums; margin: -.5rem 0 1rem; min-height: 1.2em; }
 .travel-scale { display: flex; justify-content: space-between; color: var(--muted); font-size: .8125rem; margin-bottom: .75rem; }
+
+/* -- button guide ------------------------------------------------------------ */
+.guide-pad { display: block; width: 100%; height: auto; margin: .5rem 0 1rem; }
+.guide-pad .leader { fill: none; stroke: var(--muted); stroke-width: .9; stroke-dasharray: 4 3; }
+.guide-pad .anchor { fill: var(--ink); }
+.guide-pad .callout-label { font: 500 14px var(--body); fill: var(--ink); dominant-baseline: central; }
+.table-wrap { overflow-x: auto; margin: .5rem 0 1rem; }
+.table { border-collapse: collapse; width: 100%; max-width: 46rem; font-size: .9375rem; }
+.table th, .table td { text-align: left; vertical-align: top; padding: .5rem .75rem .5rem 0; border-bottom: 1px solid var(--line); }
+.table thead th { font-weight: 600; color: var(--muted); }
+.table thead th:empty { padding: 0; border: 0; }
+.table tbody th { font-weight: 600; white-space: nowrap; padding-right: 1.25rem; }
 
 /* -- lighting ---------------------------------------------------------------- */
 .swatches { display: flex; flex-wrap: wrap; gap: .625rem; margin: .5rem 0 1rem; }
