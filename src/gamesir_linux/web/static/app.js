@@ -167,10 +167,10 @@ function featureToggle(feature, label, help) {
     save("/api/feature", { feature, enabled: on }, (v) => { app.dev.features[feature] = { value: v }; }, mark), readonly);
 }
 
-function slider({ label, help, value, min = 0, max = 100, unit = "", onInput, onCommit }) {
+function slider({ label, help, value, min = 0, max = 100, step = 1, unit = "", onInput, onCommit }) {
   const out = h("output", {}, `${value}${unit}`);
   const mark = savedMark();
-  const input = h("input", { type: "range", min, max: Math.max(max, value), step: 1, value, "aria-label": label });
+  const input = h("input", { type: "range", min, max: Math.max(max, value), step, value, "aria-label": label });
   input.addEventListener("input", () => { out.textContent = `${input.value}${unit}`; onInput && onInput(+input.value); });
   input.addEventListener("change", () => onCommit(+input.value, mark));
   return row(label, help, h("div", { class: "slider" }, input, out, mark), { stack: true });
@@ -613,7 +613,7 @@ function panelVibration() {
   const rows = h("div", { class: "rows" });
   for (const [field, label, motor] of [["left_grip", "Left grip", "left"], ["right_grip", "Right grip", "right"]]) {
     const item = slider({
-      label, value: v[field], unit: "%",
+      label, value: v[field], unit: "%", step: 25,         // the controller stores multiples of 25
       onCommit: (n, mark) => save("/api/vibration", { [field]: n }, (got) => { d.vibration = { value: got }; }, mark),
     });
     const test = h("button", { class: "btn small", onclick: async () => {
@@ -627,7 +627,7 @@ function panelVibration() {
   }
   wrap.append(rows,
     h("p", { class: "note" }, "Test runs that motor for a moment at the strength set above."),
-    h("p", { class: "note" }, "The Nova 2 Lite has a motor in each grip and none in the triggers. A real controller reports 75% out of the box; 100% as the maximum hasn't been confirmed yet."));
+    h("p", { class: "note" }, "The Nova 2 Lite has a motor in each grip and none in the triggers. Strength goes in steps of 25%, the only values the controller keeps; out of the box it's 75%."));
   return wrap;
 }
 
