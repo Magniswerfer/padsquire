@@ -60,6 +60,16 @@ def cmd_update(args) -> int:
     return 0
 
 
+def cmd_gui(args) -> int:
+    try:
+        from .web.server import serve
+    except ImportError:
+        print("the GUI needs aiohttp: pip install --user 'gamesir-linux[gui]'", file=sys.stderr)
+        return 1
+    serve(args.firmware_dir, port=args.port, simulate=args.simulate, open_browser=not args.no_browser)
+    return 0
+
+
 def cmd_ufw(args) -> int:
     try:
         f = ufw.load(args.file)
@@ -155,6 +165,13 @@ def main(argv=None) -> int:
     from . import cli_ble, cli_probe
     cli_ble.register(sub)
     cli_probe.register(sub)
+
+    g = sub.add_parser("gui", help="open the graphical settings app in your browser")
+    g.add_argument("--simulate", action="store_true", help="start connected to a simulated controller")
+    g.add_argument("--port", type=int, default=0, help="port on 127.0.0.1 (default: any free port)")
+    g.add_argument("--no-browser", action="store_true", help="print the address instead of opening it")
+    g.add_argument("--firmware-dir", type=Path, default=DEFAULT_FW_DIR)
+    g.set_defaults(func=cmd_gui)
 
     args = p.parse_args(argv)
     return args.func(args)

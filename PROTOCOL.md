@@ -75,6 +75,34 @@ sends `01 01` (basic info) and `08 02 05 00 0F` (input mode query), reading afte
 | `24 01 04 29` host info | byte 3: battery (bit 7 = charging, if like the PC app; unconfirmed) |
 | `01 01` basic info (no checksum) | 19 bytes, or 20 starting `0xC9`: MAC [1:7], hw [7:9], firmware = `hex(b11)+hex(b12)` → `"8201"`, production date [13:17], GCM version [17:19] |
 
+**Commands without a length byte.** Two commands break the `[cmd, sub, len, …]` pattern:
+
+| Command | Frame | Notes |
+|---|---|---|
+| `0x1F` key mapping | `[1F, action, map_id, target, flag, sum]` | `flag` `FF` = disabled, `FE` = macro, `01` = keyboard key, else a 2nd gamepad key |
+| `0x21` quick trigger | `[21, action, L, R, sum]` | `1` = on, `2` = off; query sends `21 00 01 01 23` |
+
+Other commands decoded for the GUI:
+
+| Command | Query | Set | Reply |
+|---|---|---|---|
+| `0x29` profiles | `29 01 05 00 2F` | `29 01 06 01 <slot> sum` | `[4]` slot count, `[5]` current slot |
+| `0x05/0x08` button light | `05 08 06 00 <key> sum` | `05 08 0A 01 <key> R G B <effect> sum` | `[4]` key, `[5:8]` RGB, `[8]` effect |
+
+**Key codes.** The app uses codes where `0x1xx` = gamepad keys and `0x2xx` = keyboard keys; on the
+air a key is its low byte. The lookup tables (`KeyCodeUtil`) are nested branches that decompile
+badly, so they were recovered by *executing their Dalvik bytecode* for every input with a small
+interpreter. Both directions agree exactly (46 entries). Mapping IDs: L4 = 1, R4 = 2, L5 = 3, R5 = 4,
+A/B/X/Y = 11–14. The Nova 2 Lite exposes only L4/R4 as remappable over Bluetooth, to 16 gamepad
+buttons, plus 16 stick directions on firmware ≥ 6900 (`Nova2LiteDevCfg`).
+
+**The Home light** (key `450`, scan `0xC2`) is the Nova 2 Lite's only light, with one effect
+(solid, `1`). Colours travel as RGB (`lightingColorMode` 0); the app converts to and from HSB in the UI.
+
+**Assumptions the GUI makes, to check on hardware:** dead zones are percent of travel (shown
+0–50); vibration levels 0–4 (GameSir Connect maps levels 0–4 to 0/25/50/75/100%); auto-sleep is
+in minutes; whether the Nova 2 Lite answers the profile query at all (the GUI hides profiles if not).
+
 The `0x50`–`0x52` "UUID encryption" commands send the current Unix timestamp and date.
 They look like registration bookkeeping, not an authentication gate. Verify on hardware.
 

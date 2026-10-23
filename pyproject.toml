@@ -13,6 +13,7 @@ dependencies = []
 
 [project.optional-dependencies]
 ble = ["bleak>=0.22"]
+gui = ["aiohttp>=3.9", "bleak>=0.22"]
 test = ["pytest>=8"]
 
 [project.scripts]
@@ -20,6 +21,9 @@ gamesir-linux = "gamesir_linux.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"gamesir_linux.web" = ["static/*", "static/fonts/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

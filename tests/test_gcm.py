@@ -82,3 +82,58 @@ def test_battery_bits():
     b = gcm.Battery(0x80 | 76)
     assert (b.level, b.charging) == (76, True)
     assert (gcm.Battery(55).level, gcm.Battery(55).charging) == (55, False)
+
+
+# -- second batch: mapping, quick trigger, profiles, lighting ----------------------
+from gamesir_linux.gcm import Key
+
+
+def test_mapping_frames():
+    # m(0, id=1, ...) -> [0x1F, 0, 1, 0, 0, sum]: no length byte in this command.
+    assert gcm.mapping_query(Key.L4).hex(" ") == "1f 00 01 00 00 20"
+    # p(L4 -> A): scan = 436 & 0xFF = 0xB4, flag 0
+    assert gcm.mapping_set(Key.L4, Key.A).hex(" ") == "1f 01 01 b4 00 d5"
+    # p(R4 -> 255) disables: scan 0, flag 0xFF
+    assert gcm.mapping_set(Key.R4, None).hex(" ") == "1f 01 02 00 ff 21"
+    assert gcm.mapping_reset(Key.R4).hex(" ") == "1f 02 02 00 00 23"
+
+
+def test_mapping_parse_kinds():
+    q = gcm.mapping_query(Key.L4)
+    seal = gcm.seal
+    assert gcm.mapping_parse(q, seal(bytes([0x1F, 0, 1, 0xB4, 0, 0]))) == gcm.Mapping(Key.L4, "key", (Key.A,))
+    assert gcm.mapping_parse(q, seal(bytes([0x1F, 0, 1, 0xB4, 0xB5, 0]))).targets == (Key.A, Key.B)
+    assert gcm.mapping_parse(q, seal(bytes([0x1F, 0, 1, 0, 0xFF, 0]))).kind == "disabled"
+    assert gcm.mapping_parse(q, seal(bytes([0x1F, 0, 1, 0, 0xFE, 0]))).kind == "macro"
+    kb = gcm.mapping_parse(q, seal(bytes([0x1F, 0, 1, 0x04, 0x01, 0])))
+    assert kb.kind == "keyboard" and kb.targets == (0x204,)
+    with pytest.raises(ProtocolError):
+        gcm.mapping_parse(q, seal(bytes([0x1F, 0, 99, 0, 0, 0])))
+
+
+def test_scan_codes_match_recovered_table():
+    # Values produced by running KeyCodeUtil.getGcmScanCodeByHidKeyCode's bytecode.
+    assert [gcm.scan_code(k) for k in (Key.HOME, Key.A, Key.L4, Key.LS_LEFT)] == [0xC2, 0xB4, 0xCB, 0xEF]
+
+
+def test_trigger_quick_frames():
+    assert gcm.trigger_quick_query().hex(" ") == "21 00 01 01 23"
+    assert gcm.trigger_quick_set(True, False).hex(" ") == "21 01 01 02 25"
+    q = gcm.trigger_quick_query()
+    assert gcm.trigger_quick_parse(q, gcm.seal(bytes([0x21, 0, 1, 2, 0]))) == (True, False)
+
+
+def test_slot_frames():
+    assert gcm.slot_query().hex(" ") == "29 01 05 00 2f"
+    assert gcm.slot_switch(2).hex(" ") == "29 01 06 01 02 33"
+    q = gcm.slot_query()
+    assert gcm.slot_query_parse(q, gcm.seal(bytes([0x29, 1, 7, 0, 3, 1, 0]))) == (3, 1)
+
+
+def test_light_frames():
+    assert gcm.light_query().hex(" ") == "05 08 06 00 c2 d5"
+    f = gcm.light_set((255, 0, 128))
+    assert f.hex(" ") == "05 08 0a 01 c2 ff 00 80 01 " + f"{sum(f[:-1]) & 0xFF:02x}"
+    assert len(f) == f[2] == 10
+    light = gcm.light_parse(gcm.light_query(), gcm.seal(f[:3] + b"\x00" + f[4:]))
+    assert light.rgb == (255, 0, 128) and light.effect == gcm.EFFECT_SOLID and light.key == Key.HOME

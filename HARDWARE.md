@@ -57,6 +57,10 @@ gamesir-linux ble deadzone left-stick-inner 3      # change it (read back automa
 If `scan` finds nothing, pair once with `bluetoothctl` and retry. If `info` times out but the
 probe's verdict says `notify:865f`, set `NOTIFY_REPLIES = True` in `src/gamesir_linux/ble.py`.
 
+Or do the same in the settings app: `gamesir-linux gui`, then **Find controllers**. Worth checking
+while you're there: does the Profiles page show profiles, and do the dead-zone and vibration
+values the controller reports look sensible (percent-like, and 0–4)?
+
 ## 4. Do settings survive switching to the dongle?
 
 1. Over Bluetooth, set something you can feel, e.g. `gamesir-linux ble feature swap-sticks on`.

@@ -242,3 +242,186 @@ def host_info_parse(request: bytes, reply: bytes) -> Battery:
 def restore_all() -> bytes:
     """Restore every setting to factory defaults (getCommonCMD(0x15, 1, null))."""
     return seal(bytes([CMD_RESTORE, 0x01, 4, 0]))
+
+
+# -- keys ------------------------------------------------------------------------
+# The app's key codes: 0x1xx = gamepad keys, 0x2xx = keyboard keys. On the air a
+# key is sent as its low byte. Tables recovered by executing KeyCodeUtil's bytecode.
+
+class Key(IntEnum):
+    UP = 432
+    DOWN = 433
+    LEFT = 434
+    RIGHT = 435
+    A = 436
+    B = 437
+    X = 439
+    Y = 440
+    LB = 442
+    RB = 443
+    SELECT = 444
+    START = 445
+    LT = 446
+    RT = 447
+    L3 = 448
+    R3 = 449
+    HOME = 450
+    L4 = 459
+    R4 = 461
+    CAPTURE = 468
+    LS_LEFT = 495
+    LS_UP_LEFT = 496
+    LS_UP = 497
+    LS_UP_RIGHT = 498
+    LS_RIGHT = 499
+    LS_DOWN_RIGHT = 500
+    LS_DOWN = 501
+    LS_DOWN_LEFT = 502
+    RS_LEFT = 503
+    RS_UP_LEFT = 504
+    RS_UP = 505
+    RS_UP_RIGHT = 506
+    RS_RIGHT = 507
+    RS_DOWN_RIGHT = 508
+    RS_DOWN = 509
+    RS_DOWN_LEFT = 510
+
+
+def scan_code(key: int) -> int:
+    return key & 0xFF
+
+
+def key_from_scan(scan: int, kind: int = 1) -> int:
+    """getHidKeyCodeByGcmScanCode: kind 1 = gamepad, 2 = keyboard."""
+    return 0 if scan == 0 else (kind << 8) | scan
+
+
+# Remappable source keys -> GCM mapping id (getSupportMappingKeyIdByHidKeyCode).
+MAPPING_ID = {Key.L4: 1, Key.R4: 2, 462: 3, 463: 4, Key.A: 11, Key.B: 12, Key.X: 13, Key.Y: 14}
+KEY_BY_MAPPING_ID = {v: k for k, v in MAPPING_ID.items()}
+
+# What the Nova 2 Lite exposes over Bluetooth (Nova2LiteDevCfg + DevConfig).
+NOVA_REMAPPABLE = [Key.L4, Key.R4]
+NOVA_TARGETS = [Key.A, Key.B, Key.X, Key.Y, Key.UP, Key.DOWN, Key.LEFT, Key.RIGHT, Key.LB, Key.RB,
+                Key.LT, Key.RT, Key.L3, Key.R3, Key.SELECT, Key.START]
+NOVA_STICK_TARGETS = list(range(Key.LS_LEFT, Key.RS_DOWN_LEFT + 1))   # firmware >= 6900
+STICK_TARGETS_MIN_FIRMWARE = 6900
+
+CMD_KEY_MAPPING = 0x1F
+
+
+@dataclass
+class Mapping:
+    source: int                 # Key
+    kind: str                   # "key", "disabled", "macro", "keyboard"
+    targets: tuple[int, ...] = ()
+
+
+def mapping_query(source: int) -> bytes:
+    """[0x1F, 0, id, 0, 0, sum]. Note: this command has no length byte."""
+    return seal(bytes([CMD_KEY_MAPPING, 0, MAPPING_ID[source], 0, 0, 0]))
+
+
+def mapping_set(source: int, target: int | None) -> bytes:
+    """Map `source` to `target` (a Key), or disable it with target=None."""
+    if target is None:
+        scan, flag = 0, 0xFF
+    else:
+        scan, flag = scan_code(target), 0
+    return seal(bytes([CMD_KEY_MAPPING, 1, MAPPING_ID[source], scan, flag, 0]))
+
+
+def mapping_reset(source: int) -> bytes:
+    return seal(bytes([CMD_KEY_MAPPING, 2, MAPPING_ID[source], 0, 0, 0]))
+
+
+def mapping_parse(request: bytes, reply: bytes) -> Mapping:
+    r = verify(request, reply, min_len=6)
+    source = KEY_BY_MAPPING_ID.get(r[2])
+    if source is None:
+        raise ProtocolError(f"unknown mapping id {r[2]}")
+    flag = r[4]
+    if flag == 0xFF:
+        return Mapping(source, "disabled")
+    if flag == 0xFE:
+        return Mapping(source, "macro")
+    if flag == 0x01:
+        return Mapping(source, "keyboard", (key_from_scan(r[3], 2),))
+    targets = tuple(k for k in (key_from_scan(r[3]), key_from_scan(flag)) if k)
+    return Mapping(source, "key", targets)
+
+
+# -- trigger quick mode (0x21) ------------------------------------------------------
+# "Quick trigger": the trigger reports fully pressed early. No length byte.
+CMD_TRIGGER_QUICK = 0x21
+
+
+def trigger_quick_query() -> bytes:
+    return seal(bytes([CMD_TRIGGER_QUICK, 0, 1, 1, 0]))
+
+
+def trigger_quick_set(left: bool, right: bool) -> bytes:
+    return seal(bytes([CMD_TRIGGER_QUICK, 1, 1 if left else 2, 1 if right else 2, 0]))
+
+
+def trigger_quick_parse(request: bytes, reply: bytes) -> tuple[bool, bool]:
+    r = verify(request, reply, min_len=5)
+    return r[2] == 1, r[3] == 1
+
+
+# -- config slots / profiles (0x29) -------------------------------------------------
+CMD_SLOT = 0x29
+
+
+def slot_query() -> bytes:
+    return seal(bytes([CMD_SLOT, 1, 5, 0, 0]))
+
+
+def slot_switch(slot: int) -> bytes:
+    if not 0 <= slot <= 0xFF:
+        raise ValueError("slot out of range")
+    return seal(bytes([CMD_SLOT, 1, 6, 1, slot, 0]))
+
+
+def slot_query_parse(request: bytes, reply: bytes) -> tuple[int, int]:
+    """(total slots, current slot)"""
+    r = verify(request, reply, min_len=7)
+    return r[4], r[5]
+
+
+def slot_switch_parse(request: bytes, reply: bytes) -> int:
+    return verify(request, reply, min_len=6)[4]
+
+
+# -- button LED, lighting V3 (0x05 / 0x08) -----------------------------------------
+# The Nova 2 Lite has one: the Home button. Colours travel as RGB bytes.
+CMD_LIGHTING = 0x05
+LIGHTING_BUTTON = 0x08
+EFFECT_SOLID = 1
+
+
+@dataclass
+class ButtonLight:
+    key: int
+    rgb: tuple[int, int, int]
+    effect: int
+    rate: int | None = None
+
+
+def light_query(key: int = Key.HOME) -> bytes:
+    return seal(bytes([CMD_LIGHTING, LIGHTING_BUTTON, 6, 0, scan_code(key), 0]))
+
+
+def light_set(rgb: tuple[int, int, int], key: int = Key.HOME, effect: int = EFFECT_SOLID) -> bytes:
+    if any(not 0 <= c <= 255 for c in rgb):
+        raise ValueError("colour components must be 0-255")
+    return seal(bytes([CMD_LIGHTING, LIGHTING_BUTTON, 10, 1, scan_code(key), *rgb, effect, 0]))
+
+
+def light_reset(key: int = Key.HOME) -> bytes:
+    return seal(bytes([CMD_LIGHTING, LIGHTING_BUTTON, 6, 2, scan_code(key), 0]))
+
+
+def light_parse(request: bytes, reply: bytes) -> ButtonLight:
+    r = verify(request, reply, min_len=10)
+    return ButtonLight(key_from_scan(r[4]), (r[5], r[6], r[7]), r[8], r[9] if len(r) == 11 else None)

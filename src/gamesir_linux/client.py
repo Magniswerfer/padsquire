@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Callable, Protocol
 
 from . import gcm
-from .gcm import Battery, BasicInfo, DeadZone, Feature, ProtocolError, Vibration
+from .gcm import Battery, BasicInfo, ButtonLight, DeadZone, Feature, Mapping, ProtocolError, Vibration
 
 
 class Transport(Protocol):
@@ -88,6 +88,58 @@ class NovaClient:
         await self._set(gcm.auto_sleep_set(minutes))
         if (now := await self.auto_sleep()) != minutes:
             raise NotApplied(f"auto sleep: asked for {minutes}, controller reports {now}")
+
+    # -- button mapping -----------------------------------------------------
+
+    async def mapping(self, source: int) -> Mapping:
+        q = gcm.mapping_query(source)
+        return gcm.mapping_parse(q, await self._ask(q))
+
+    async def set_mapping(self, source: int, target: int | None) -> None:
+        """Map a back button to `target`, or disable it (None)."""
+        await self._set(gcm.mapping_set(source, target))
+        now = await self.mapping(source)
+        ok = now.kind == "disabled" if target is None else (now.kind == "key" and now.targets[:1] == (target,))
+        if not ok:
+            raise NotApplied(f"{getattr(source, 'name', source)}: controller reports {now}")
+
+    async def reset_mapping(self, source: int) -> Mapping:
+        await self._set(gcm.mapping_reset(source))
+        return await self.mapping(source)
+
+    # -- triggers -----------------------------------------------------------
+
+    async def trigger_quick(self) -> tuple[bool, bool]:
+        q = gcm.trigger_quick_query()
+        return gcm.trigger_quick_parse(q, await self._ask(q))
+
+    async def set_trigger_quick(self, left: bool, right: bool) -> None:
+        await self._set(gcm.trigger_quick_set(left, right))
+        if (now := await self.trigger_quick()) != (left, right):
+            raise NotApplied(f"quick trigger: asked for {(left, right)}, controller reports {now}")
+
+    # -- profiles -----------------------------------------------------------
+
+    async def slots(self) -> tuple[int, int]:
+        """(number of profiles, current profile)."""
+        q = gcm.slot_query()
+        return gcm.slot_query_parse(q, await self._ask(q))
+
+    async def switch_slot(self, slot: int) -> None:
+        await self._set(gcm.slot_switch(slot))
+        if (now := (await self.slots())[1]) != slot:
+            raise NotApplied(f"profile: asked for {slot}, controller reports {now}")
+
+    # -- lighting -----------------------------------------------------------
+
+    async def light(self) -> ButtonLight:
+        q = gcm.light_query()
+        return gcm.light_parse(q, await self._ask(q))
+
+    async def set_light(self, rgb: tuple[int, int, int]) -> None:
+        await self._set(gcm.light_set(rgb))
+        if (now := await self.light()).rgb != tuple(rgb):
+            raise NotApplied(f"Home light: asked for {rgb}, controller reports {now.rgb}")
 
     # -- restore ------------------------------------------------------------
 

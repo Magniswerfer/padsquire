@@ -64,3 +64,28 @@ def test_corrupt_reply_raises():
     sim.corrupt_next = True
     with pytest.raises(ProtocolError):
         run(NovaClient(sim).dead_zone(DeadZone.LEFT_STICK_INNER))
+
+
+def test_second_batch_roundtrip():
+    from gamesir_linux.gcm import Key
+    sim = SimulatedNova()
+    nova = NovaClient(sim)
+
+    async def go():
+        await nova.set_mapping(Key.L4, Key.A)
+        await nova.set_mapping(Key.R4, None)
+        await nova.set_trigger_quick(True, False)
+        await nova.switch_slot(2)
+        await nova.set_light((10, 20, 30))
+        return (await nova.mapping(Key.L4), await nova.mapping(Key.R4), await nova.trigger_quick(),
+                await nova.slots(), (await nova.light()).rgb)
+
+    l4, r4, quick, slots, rgb = run(go())
+    assert l4.kind == "key" and l4.targets == (Key.A,)
+    assert r4.kind == "disabled"
+    assert quick == (True, False) and slots == (3, 2) and rgb == (10, 20, 30)
+
+
+def test_invalid_slot_is_reported():
+    with pytest.raises(NotApplied):
+        run(NovaClient(SimulatedNova()).switch_slot(7))
