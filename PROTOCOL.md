@@ -213,6 +213,13 @@ combinations, and **refuses** (answers with 0 targets) stick directions and NC f
 tried. This is separate from the Android app's back-button command `0x1F`, which the settings app
 keeps for Bluetooth.
 
+**Feature toggles by cable or receiver (8201, 2026-10-23):** a set reads back unchanged for
+low battery warning (`0x02`), swap sticks (`0x03`), invert sticks X/Y (`0x05`), play while charging
+(`0x12`), swap LT/LB (`0x15`) and swap RT/RB (`0x16`); the others change normally. Bluetooth not
+yet tried. **Vibration:** the test report `04 L 08 R 08 00 08 00 08` drives the two grip motors;
+the Nova 2 Lite has no trigger motors (the DLL's 4-motor form moves nothing, and trigger
+strengths stay 0).
+
 **Open: gamepad output sometimes stops after a write** (seen twice through the 2.4 GHz receiver, 2026-10-23): after the settings app read all settings or sent a remap, the Xbox interface sent no more input until the controller was restarted; GameSir's own channel still carried the button state, and the remap itself was stored. The same commands sent directly, six times, never did it, and the same app action did not do it later either. Both times it was within about a minute of a controller restart. Not yet tried by cable.
 
 ### 3. USB firmware update: JieLi UBOOT1.00 (decoded from the DLLs, not yet run)

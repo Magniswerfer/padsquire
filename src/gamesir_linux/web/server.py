@@ -33,6 +33,10 @@ ERRORS = (NotApplied, ProtocolError, ble.BleError, hid.HidError, ValueError, Key
 # Reads that get no reply over the USB cable (firmware 7701). Asking costs 11 x 200 ms each,
 # so the state read skips them and the GUI shows them as unavailable.
 USB_UNSUPPORTED = {"auto_sleep", "slots"}
+# Feature toggles the controller (8201) reads but refuses to change by cable or receiver: a set
+# reads back unchanged. Confirmed 2026-10-23 through the receiver. Bluetooth not yet tried.
+USB_READONLY_FEATURES = {Feature.LOW_BATTERY_WARNING, Feature.SWAP_STICKS, Feature.INVERT_STICKS_XY,
+                         Feature.PLAY_WHILE_CHARGING, Feature.SWAP_LT_LB, Feature.SWAP_RT_RB}
 
 
 def _key_name(code: int):
@@ -279,6 +283,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
             "stick_targets": [Key(k).name for k in gcm.NOVA_STICK_TARGETS],
             "remappable": [k.name for k in gcm.NOVA_REMAPPABLE],
             "remap_sources": [k.name for k in gcm.NOVA_REMAP_SOURCES],
+            "usb_readonly_features": [f.name for f in USB_READONLY_FEATURES],
             "remap_targets": [k.name for k in gcm.NOVA_REMAP_TARGETS],
         })
 
@@ -421,6 +426,17 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
         new = Vibration(**{**asdict(current), **fields})
         await nova.set_vibration(new)
         return ok(await nova.vibration())
+
+    @routes.post("/api/vibration/test")
+    @guarded
+    async def vibration_test(request):
+        d = await body(request)
+        motor, strength = d.get("motor"), _byte(d.get("strength", 75), "strength")
+        if motor not in ("left", "right") or strength > 100:
+            return fail("motor must be left or right, strength 0-100")
+        nova = need_client()
+        await nova.test_vibration(strength if motor == "left" else 0, strength if motor == "right" else 0)
+        return ok(None)
 
     @routes.post("/api/auto-sleep")
     @guarded

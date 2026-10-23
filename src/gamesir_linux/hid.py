@@ -140,6 +140,15 @@ class HidTransport:
         finally:
             self._exchange(gcm.state_report_set(gcm.StateReport.OFF), echo)
 
+    def _send(self, frame: bytes) -> None:
+        log.debug("send %s", frame.hex(" "))
+        os.write(self.fd, b"\x00" + frame + bytes(REPORT_SIZE - len(frame)))
+
+    async def send(self, frame: bytes) -> None:
+        """One report that gets no reply (the vibration test)."""
+        async with self._lock:
+            await asyncio.to_thread(self._send, frame)
+
     async def state_report(self) -> bytes:
         """One 0xF4 state report: switched on for the moment it takes, then off again."""
         async with self._lock:

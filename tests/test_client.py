@@ -105,3 +105,12 @@ def test_remap_every_key_on_the_simulator():
             await nova.set_remap(Key.L4, [Key.LS_UP])
         assert await nova.set_remap(Key.A, []) == ()
     asyncio.run(go())
+
+
+def test_vibration_test_sends_the_grip_report_and_stops():
+    from gamesir_linux import gcm
+    sim = SimulatedNova()
+    asyncio.run(NovaClient(sim).test_vibration(80, 0, seconds=0))
+    assert sim.log[-2:] == [bytes.fromhex("045008000800080008"), gcm.rumble(0, 0)]
+    with pytest.raises(ValueError):
+        gcm.rumble(101, 0)

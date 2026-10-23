@@ -149,19 +149,22 @@ function unavailable(entry) {
   return h("span", { class: "unavailable" }, `Not available: ${errOf(entry)}`);
 }
 
-function toggle(label, help, entry, onChange) {
+function toggle(label, help, entry, onChange, readonly = false) {
   if (errOf(entry)) return row(label, help, unavailable(entry));
   const mark = savedMark();
   const id = `t-${Math.random().toString(36).slice(2)}`;
-  const input = h("input", { type: "checkbox", role: "switch", "aria-labelledby": id, checked: !!val(entry) });
+  const input = h("input", { type: "checkbox", role: "switch", "aria-labelledby": id, checked: !!val(entry), disabled: readonly });
   input.addEventListener("change", () => onChange(input.checked, mark));
   return row(label, help, [mark, h("label", { class: "switch" }, input, h("span"))], { id });
 }
 
 function featureToggle(feature, label, help) {
   const entry = app.dev.features[feature];
-  return toggle(label, help, entry, (on, mark) =>
-    save("/api/feature", { feature, enabled: on }, (v) => { app.dev.features[feature] = { value: v }; }, mark));
+  // The controller ignores changes to some toggles by cable or receiver: show them, but say so.
+  const readonly = app.status.mode === "usb" && app.meta.usb_readonly_features.includes(feature);
+  const note = readonly ? "Can't be changed by cable or the receiver. Bluetooth isn't tested yet." : null;
+  return toggle(label, [help, note].filter(Boolean).join(". "), entry, (on, mark) =>
+    save("/api/feature", { feature, enabled: on }, (v) => { app.dev.features[feature] = { value: v }; }, mark), readonly);
 }
 
 function slider({ label, help, value, min = 0, max = 100, unit = "", onInput, onCommit }) {
@@ -608,13 +611,23 @@ function panelVibration() {
   if (errOf(d.vibration)) { wrap.append(unavailable(d.vibration)); return wrap; }
   const v = val(d.vibration);
   const rows = h("div", { class: "rows" });
-  for (const [field, label] of [["left_grip", "Left grip"], ["right_grip", "Right grip"]]) {
-    rows.append(slider({
+  for (const [field, label, motor] of [["left_grip", "Left grip", "left"], ["right_grip", "Right grip", "right"]]) {
+    const item = slider({
       label, value: v[field], unit: "%",
       onCommit: (n, mark) => save("/api/vibration", { [field]: n }, (got) => { d.vibration = { value: got }; }, mark),
-    }));
+    });
+    const test = h("button", { class: "btn small", onclick: async () => {
+      test.disabled = true;
+      try { await api("/api/vibration/test", { motor, strength: val(d.vibration)[field] || 75 }); }
+      catch (e) { toast(e.message, "error"); }
+      test.disabled = false;
+    } }, "Test");
+    item.querySelector(".row-control").append(test);
+    rows.append(item);
   }
-  wrap.append(rows, h("p", { class: "note" }, "A real controller reports 75% out of the box. 100% as the maximum hasn't been confirmed yet."));
+  wrap.append(rows,
+    h("p", { class: "note" }, "Test runs that motor for a moment at the strength set above."),
+    h("p", { class: "note" }, "The Nova 2 Lite has a motor in each grip and none in the triggers. A real controller reports 75% out of the box; 100% as the maximum hasn't been confirmed yet."));
   return wrap;
 }
 

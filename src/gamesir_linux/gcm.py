@@ -47,6 +47,19 @@ def verify(request: bytes, reply: bytes | None, min_len: int = 2) -> bytes:
     return reply
 
 
+# -- vibration test ---------------------------------------------------------------
+# Connect's test for the T4N2 (proxyT4N2, "vibrate"): one raw report, no checksum and no reply,
+# `04 <left> 08 <right> 08 00 08 00 08`, then the same with zeros to stop (after 100 ms-1 s).
+# Values are percent like the vibration settings. Confirmed on hardware: the first two slots are
+# the grip motors. The Nova 2 Lite has no trigger motors: the DLL's own form (04 between values,
+# slots 3-4 for triggers) moves nothing there, and it refuses trigger vibration strengths.
+
+def rumble(left: int, right: int) -> bytes:
+    if not (0 <= left <= 100 and 0 <= right <= 100):
+        raise ValueError("strength must be 0-100")
+    return bytes([0x04, left, 0x08, right, 0x08, 0x00, 0x08, 0x00, 0x08])
+
+
 # -- gamepad state reports -----------------------------------------------------
 # SAPJoyUniDevice_SetGamepadStateReport: `f3 01 05 <mode> <sum>` turns the 0xF4 reports on the
 # vendor channel off (0) or on (1 original, 2 mapped buttons). Connect sends "mapped" when it

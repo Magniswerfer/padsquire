@@ -7,6 +7,7 @@ then reads the value back and raises if the controller did not take it.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Callable, Protocol
 
 from . import gcm
@@ -51,6 +52,17 @@ class NovaClient:
         if version is None:
             raise ProtocolError("this firmware's state reports carry no version")
         return version
+
+    async def test_vibration(self, left: int, right: int, seconds: float = 0.6) -> None:
+        """Run the grip motors for a moment (strength in percent), then stop them."""
+        send = getattr(self.t, "send", None)
+        if send is None:
+            raise ProtocolError("not available over this connection")
+        await send(gcm.rumble(left, right))
+        try:
+            await asyncio.sleep(seconds)
+        finally:
+            await send(gcm.rumble(0, 0))
 
     async def battery(self) -> Battery:
         q = gcm.host_info_query()

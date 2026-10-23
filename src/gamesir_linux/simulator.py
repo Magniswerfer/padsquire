@@ -32,6 +32,10 @@ class SimulatedNova:
     def reset(self) -> None:
         self.__init__(self.firmware, self.battery)
 
+    async def send(self, frame: bytes) -> None:
+        """Reports without a reply (the vibration test): logged, nothing else."""
+        self.log.append(frame)
+
     async def request(self, frame: bytes, accept: Callable[[bytes], bool] | None = None) -> bytes:
         self.log.append(frame)
         reply = self.handle(frame)
