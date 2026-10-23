@@ -63,7 +63,7 @@ refuses a layout it doesn't understand.
 
 ## If something goes wrong
 
-- **The controller doesn't respond:** hold Home + M for about 10 seconds to turn it off, turn it
+- **The controller doesn't respond:** hold Home for about 5 seconds to turn it off, turn it
   on, and hold Menu + View until the light is green. The receiver: unplug it and plug it back in.
 - **A firmware write failed:** don't restart or unplug. Run the same step again, or write the
   backup back. The device stays in update mode until a write has gone through.

@@ -285,6 +285,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
             "remap_sources": [k.name for k in gcm.NOVA_REMAP_SOURCES],
             "usb_readonly_features": [f.name for f in USB_READONLY_FEATURES],
             "remap_targets": [k.name for k in gcm.NOVA_REMAP_TARGETS],
+            "remap_max_targets": gcm.REMAP_MAX_TARGETS,
         })
 
     @routes.get("/api/status")
@@ -476,6 +477,8 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
         if not isinstance(targets, list) or len(targets) > gcm.REMAP_MAX_TARGETS:
             return fail(f"targets must be a list of up to {gcm.REMAP_MAX_TARGETS} keys")
         targets = [Key[t] for t in targets]
+        if len(set(targets)) != len(targets) or key in targets:
+            return fail("each target can be used once, and not the button itself")
         if any(t not in gcm.NOVA_REMAP_TARGETS for t in targets):
             return fail("one of those targets cannot be used")
         nova = need_client()

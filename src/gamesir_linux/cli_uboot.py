@@ -34,7 +34,7 @@ This switches the controller into its USB download mode, the one GameSir Connect
 firmware. It sends one command over the cable (f2 00 04 f6, as GameSir's own DLL does); nothing is
 erased or written. The controller should come back as a USB disk named BR23 UBOOT1.00.
 
-To leave the mode: `gamesir-linux uboot restart`. If that fails, hold Home + M for about 10 seconds.
+To leave the mode: `gamesir-linux uboot restart`. If that fails, hold Home for about 5 seconds.
 
 Run again with --confirm to go ahead."""
 

@@ -210,7 +210,8 @@ Key codes are our `gcm.Key` values' low bytes; the DLL's table (`FUN_10019fa0`) 
 `BA`, RB `BB`, View `BC`, Menu `BD`, LT `BE`, RT `BF`, L3 `C0`, R3 `C1`, L4 `CB`, R4 `CD`, Capture
 `D4`, stick directions `EF`–`FE`, "NC" `D2`). Connect lets the T4N2 remap 19 keys (`CanMappingKeys`)
 to 17 buttons or NC (`MappingList`). On 8201 the controller stores button targets alone or in
-combinations, and **refuses** (answers with 0 targets) stick directions and NC for every key
+combinations of up to three (confirmed in the settings app 2026-10-23: A as B + X + LB, `f1 01 09 b4 03 b5 b7 ba`,
+read back in the same order and pressed together), and **refuses** (answers with 0 targets) stick directions and NC for every key
 tried. This is separate from the Android app's back-button command `0x1F`, which the settings app
 keeps for Bluetooth.
 

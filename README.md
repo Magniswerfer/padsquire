@@ -12,7 +12,7 @@ Unofficial: built by reverse-engineering GameSir Connect (Windows) and the GameS
   drawn as you drag, with the live stick or trigger position on top. On the Buttons page, the
   buttons you press light up as the computer receives them.
 - **Every setting GameSir Connect has for this controller.** That covers dead zones, stick
-  options, button remapping (19 buttons, each to any other), vibration strength with a test per
+  options, button remapping (19 buttons, each to any other or up to three pressed together), vibration strength with a test per
   motor, the Home light and quick triggers.
 - **Firmware updates**, for the controller and its 2.4 GHz receiver. The app installs GameSir's
   own firmware exactly as GameSir Connect does, after a full backup of the device. See
@@ -158,7 +158,6 @@ controller, and include a fake chip in update mode for the firmware writer.
 
 - Test Bluetooth on hardware, including the six settings refused by cable.
 - Find the cause of the occasional stop after a change.
-- Remap one button to several pressed together (the controller supports it; the app doesn't yet).
 - Controller firmware updates through the 2.4 GHz receiver (JieLi's over-the-air updater, which
   GameSir Connect doesn't use for this controller): research.
 - Other GameSir controllers.
