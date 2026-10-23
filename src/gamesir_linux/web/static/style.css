@@ -345,3 +345,10 @@ input[type="color"] { width: 3rem; height: 2.5rem; border: 1px solid var(--line)
 .chips { display: flex; flex-wrap: wrap; gap: .375rem; margin-top: .5rem; }
 .chip { padding: .25rem .625rem; border: 1px solid var(--line); border-radius: 999px; font-size: .875rem; color: var(--muted); }
 .chip.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+
+/* two columns of rows on wide screens */
+@media (min-width: 64rem) {
+  .rows.two { grid-template-columns: 1fr 1fr; column-gap: 2.5rem; }
+}
+.signal { font: 400 .875rem var(--body); color: var(--ok); margin-left: .5rem; }
+.signal.off { color: var(--danger); }

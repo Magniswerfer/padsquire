@@ -73,7 +73,7 @@ KEY_LABELS = {
     Key.A: "A", Key.B: "B", Key.X: "X", Key.Y: "Y", Key.UP: "D-pad up", Key.DOWN: "D-pad down",
     Key.LEFT: "D-pad left", Key.RIGHT: "D-pad right", Key.LB: "LB", Key.RB: "RB", Key.LT: "LT",
     Key.RT: "RT", Key.L3: "Left stick click", Key.R3: "Right stick click", Key.SELECT: "View",
-    Key.START: "Menu", Key.HOME: "Home", Key.L4: "Left back button", Key.R4: "Right back button",
+    Key.START: "Menu", Key.HOME: "Home", Key.L4: "Left back button (L4)", Key.R4: "Right back button (R4)",
     Key.CAPTURE: "Capture",
 }
 for _k in gcm.NOVA_STICK_TARGETS:

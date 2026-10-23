@@ -318,7 +318,7 @@ function panelButtons() {
   const wrap = h("div", {},
     h("h1", {}, "Buttons"),
     h("p", { class: "lede" }, "Choose what each button does. A remapped button sends the button you pick instead of its own; the change is stored on the controller."));
-  const rows = h("div", { class: "rows" });
+  const rows = h("div", { class: "rows two" });
   for (const key of app.meta.remap_sources) {
     const entry = d.remaps[key];
     if (errOf(entry)) { rows.append(row(labels[key], null, unavailable(entry))); continue; }
@@ -341,10 +341,18 @@ function panelButtons() {
     // What the computer receives right now: a remapped button lights up as its new button.
     const shown = ["A", "B", "X", "Y", "LB", "RB", "LT", "RT", "UP", "DOWN", "LEFT", "RIGHT", "SELECT", "START", "L3", "R3", "HOME"];
     const chips = Object.fromEntries(shown.map((k) => [k, h("span", { class: "chip" }, labels[k] || k)]));
-    wrap.append(h("h2", {}, "Pressed now"),
+    const signal = h("span", { class: "signal" }, "Connecting…");
+    let last = 0;
+    wrap.append(h("h2", {}, "Pressed now ", signal),
       h("p", { class: "note" }, "Press a button to see what the computer receives. L4, R4 and Capture aren't reported in this mode, so they only show up through what they're mapped to."),
       h("div", { class: "chips", "aria-live": "off" }, Object.values(chips)));
+    liveWatch(() => {
+      const ok = Date.now() - last < 2500;
+      signal.textContent = ok ? "receiving" : "no live signal";
+      signal.classList.toggle("off", !ok);
+    });
     app.live = (st) => {
+      last = Date.now();
       const down = new Set(st.pressed || []);
       for (const [k, el] of Object.entries(chips)) el.classList.toggle("on", down.has(k));
     };
@@ -543,13 +551,22 @@ function liveNote(text) {
 }
 
 let liveAbort = null;
+let liveTimer = null;
 
 function stopLive() {
   if (liveAbort) { liveAbort.abort(); liveAbort = null; }
+  clearInterval(liveTimer);
+  liveTimer = null;
+}
+
+// Runs `check` every second while the live view is open (stopped by stopLive).
+function liveWatch(check) {
+  clearInterval(liveTimer);
+  liveTimer = setInterval(check, 1000);
 }
 
 async function startLive(onState) {
-  stopLive();
+  if (liveAbort) { liveAbort.abort(); liveAbort = null; }   // replace the stream, keep the watch
   if (app.status.mode !== "usb") return;
   const ctl = new AbortController();
   liveAbort = ctl;

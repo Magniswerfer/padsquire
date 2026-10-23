@@ -339,9 +339,9 @@ def key_from_scan(scan: int, kind: int = 1) -> int:
 
 CMD_REMAP = 0xF1
 REMAP_MAX_TARGETS = 3
-NOVA_REMAP_SOURCES = [Key.A, Key.B, Key.X, Key.Y, Key.LB, Key.LT, Key.L3, Key.RB, Key.RT, Key.R3,
-                      Key.UP, Key.DOWN, Key.LEFT, Key.RIGHT, Key.L4, Key.R4, Key.SELECT, Key.START,
-                      Key.CAPTURE]
+NOVA_REMAP_SOURCES = [Key.A, Key.B, Key.X, Key.Y, Key.LB, Key.RB, Key.LT, Key.RT,
+                      Key.UP, Key.DOWN, Key.LEFT, Key.RIGHT, Key.L4, Key.R4, Key.L3, Key.R3,
+                      Key.SELECT, Key.START, Key.CAPTURE]
 NOVA_REMAP_TARGETS = [Key.A, Key.B, Key.X, Key.Y, Key.UP, Key.DOWN, Key.LEFT, Key.RIGHT, Key.LB,
                       Key.RB, Key.LT, Key.RT, Key.L3, Key.R3, Key.SELECT, Key.START, Key.CAPTURE]
 
