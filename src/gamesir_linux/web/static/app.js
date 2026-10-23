@@ -184,7 +184,9 @@ function renderChrome() {
   const st = $("#status");
   st.replaceChildren();
   if (app.status.connected) {
-    const via = { simulated: "Simulated controller", usb: "Connected by cable" }[app.status.mode] || "Connected over Bluetooth";
+    const via = app.status.mode === "simulated" ? "Simulated controller"
+      : app.status.mode === "usb" ? (app.status.via === "dongle" ? "Connected through the 2.4 GHz receiver" : "Connected by cable")
+      : "Connected over Bluetooth";
     st.append(h("span", { class: "conn on" }, via));
     const bat = app.dev && val(app.dev.battery);
     if (bat) {
@@ -222,7 +224,9 @@ function sectionHint(id) {
   if (!app.dev) return null;
   const d = app.dev;
   let text = null;
-  if (id === "controller" && val(d.info)) text = `firmware ${val(d.info).firmware_version}`;
+  if (id === "controller" && val(d.info)) {
+    text = app.status.via === "dongle" ? "through the receiver" : `firmware ${val(d.info).firmware_version}`;
+  }
   if (id === "profiles" && val(d.slots)) text = `${val(d.slots)[1] + 1} of ${val(d.slots)[0]}`;
   if (id === "power" && val(d.auto_sleep) !== undefined) text = `sleep ${val(d.auto_sleep)} min`;
   return text ? h("span", { class: "hint" }, text) : null;
@@ -244,9 +248,10 @@ function wireMap() {
 function panelConnect() {
   const wrap = h("div", {},
     h("h1", {}, "Connect your controller"),
-    h("p", { class: "lede" }, "Settings are read from the controller and written back to it, by cable or over Bluetooth. Nothing is stored on this computer."),
+    h("p", { class: "lede" }, "Settings are read from the controller and written back to it, by cable, through the 2.4 GHz receiver or over Bluetooth. Nothing is stored on this computer."),
     h("ol", { class: "steps" },
       h("li", {}, "By cable: plug the controller in and hold Menu and View for 2 seconds until the light turns green (PC mode)."),
+      h("li", {}, "Or through the 2.4 GHz receiver: plug the receiver in, turn the controller on, and hold Menu and View for 2 seconds until the light turns green."),
       h("li", {}, "Or over Bluetooth: turn the controller on in Android mode by holding Home and A for 2 seconds until the light turns yellow."),
       h("li", {}, "Find it below and connect.")),
   );
@@ -258,10 +263,10 @@ function panelConnect() {
   if (app.found) {
     if (app.found.length === 0) {
       wrap.append(h("p", { class: "note" },
-        "No Nova 2 Lite found. By cable, check the light is green. Over Bluetooth, check it is in Android mode and close to this computer. If it still doesn't appear, pair it once in your system's Bluetooth settings."));
+        "No Nova 2 Lite found. By cable or receiver, check the light is green. Over Bluetooth, check it is in Android mode and close to this computer. If it still doesn't appear, pair it once in your system's Bluetooth settings."));
     } else {
       wrap.append(h("ul", { class: "found" }, app.found.map((d) =>
-        h("li", {}, h("span", {}, d.name, h("span", { class: "addr" }, d.link === "usb" ? `USB cable, ${d.address}` : d.address)),
+        h("li", {}, h("span", {}, d.name, h("span", { class: "addr" }, d.link === "usb" ? `${d.via === "dongle" ? "2.4 GHz receiver" : "USB cable"}, ${d.address}` : d.address)),
           h("button", { class: "btn primary small", onclick: () => connect({ address: d.address, name: d.name, link: d.link }) }, "Connect")))));
     }
   }
@@ -275,14 +280,21 @@ function panelController() {
   const info = val(d.info);
   const bat = val(d.battery);
   const fact = (term, value, small) => h("div", { class: "fact" }, h("dt", {}, term), h("dd", {}, value ?? "Unknown", small ? h("small", {}, small) : null));
+  const dongle = app.status.mode === "usb" && app.status.via === "dongle";
+  const where = app.status.mode !== "usb" ? `Connected to ${app.status.address}`
+    : dongle ? `Connected through the 2.4 GHz receiver (${app.status.address})` : `Connected by cable (${app.status.address})`;
+  // Through the receiver the firmware version in the basic info is the receiver's own.
+  const firmware = dongle
+    ? [fact("Firmware", null, "shown when connected by cable"), fact("Receiver firmware", info && info.firmware_version)]
+    : [fact("Firmware", info && info.firmware_version, info ? regionName(info.firmware_version) : null)];
   return h("div", {},
     h("h1", {}, app.status.name || "Nova 2 Lite"),
     h("p", { class: "lede" }, app.status.mode === "simulated"
       ? "This is the simulator: changes behave like the real controller but go nowhere."
-      : `${app.status.mode === "usb" ? `Connected by cable (${app.status.address})` : `Connected to ${app.status.address}`}. Every value shown here was read back from the controller.`),
+      : `${where}. Every value shown here was read back from the controller.`),
     h("dl", { class: "facts" },
       fact("Battery", bat ? `${bat.level}%` : null, bat && bat.charging ? "charging" : null),
-      fact("Firmware", info && info.firmware_version, info ? regionName(info.firmware_version) : null),
+      ...firmware,
       fact("Hardware", info && info.hardware_version),
       fact("Made", info && info.production_date),
       fact("Bluetooth address", info && info.mac),
@@ -337,7 +349,7 @@ function panelButtons() {
       featureToggle("SWAP_LT_LB", "Swap LB and LT"),
       featureToggle("SWAP_RT_RB", "Swap RB and RT")));
   wrap.append(h("p", { class: "callout" },
-    "The other buttons can only be remapped through the USB cable or the 2.4 GHz dongle. That connection isn't supported on Linux yet."));
+    "Remapping the other buttons isn't supported yet: GameSir's command for it is still being worked out."));
   return wrap;
 }
 
@@ -597,8 +609,14 @@ async function panelFirmware() {
   let fw;
   try { fw = await api("/api/firmware"); } catch (e) { wrap.append(h("p", { class: "note" }, e.message)); return wrap; }
   const device = fw.device_version;
+  const receiver = fw.dongle_version;
+  const shipped = fw.available.find((f) => f.target === "dongle");
+  const receiverNote = receiver && shipped ? (Number(receiver) >= shipped.version ? "up to date" : `${shipped.version} is available`) : null;
   wrap.append(h("dl", { class: "facts" },
-    h("div", { class: "fact" }, h("dt", {}, "On the controller"), h("dd", {}, device || "Not connected", device ? h("small", {}, regionName(device)) : null)),
+    h("div", { class: "fact" }, h("dt", {}, "On the controller"), h("dd", {},
+      device || (receiver ? "Unknown" : "Not connected"),
+      device ? h("small", {}, regionName(device)) : receiver ? h("small", {}, "connect by cable to see it") : null)),
+    receiver ? h("div", { class: "fact" }, h("dt", {}, "On the 2.4 GHz receiver"), h("dd", {}, receiver, receiverNote ? h("small", {}, receiverNote) : null)) : null,
     h("div", { class: "fact" }, h("dt", {}, "Downloaded release"), h("dd", {}, fw.extracted ? `GameSir Connect ${fw.extracted}` : "None yet"))));
 
   if (fw.available.length) {
@@ -892,7 +910,7 @@ function panelGuide() {
     h("h2", {}, "Modes and lights"),
     h("p", { class: "note" }, "On the cable or the 2.4 GHz receiver the controller picks a mode by itself. To change it, hold View and Menu for 2 seconds; it cycles through the three."),
     table(["Mode", "Light", "Use it for"], [
-      ["Xbox", "Green", "PC. This is the mode gamesir-linux configures over the cable."],
+      ["Xbox", "Green", "PC. This is the mode gamesir-linux configures, by cable or through the receiver."],
       ["Switch", "Red", "Nintendo Switch."],
       ["DS4", "Blue", "Android, and anything that expects a PlayStation controller."],
     ]),

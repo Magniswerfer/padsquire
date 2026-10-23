@@ -72,7 +72,7 @@ async def a_scan(args) -> int:
     if args.link == "usb" and not args.simulate:
         found = hid.find()
         for d in found:
-            print(f"{d.path}  {d.name or 'GameSir'}  ({d.link})")
+            print(f"{d.path}  GameSir Nova 2 Lite  ({d.link})")
         if not found:
             print("nothing found (is the cable in, and the LED green?)", file=sys.stderr)
         return 0 if found else 1

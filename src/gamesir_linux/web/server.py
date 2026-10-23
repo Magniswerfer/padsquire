@@ -88,6 +88,7 @@ class Session:
     def __init__(self):
         self.client: NovaClient | None = None
         self.mode: str | None = None          # "ble" | "usb" | "simulated"
+        self.via: str | None = None           # for "usb": "cable" or "dongle" (the 2.4 GHz receiver)
         self.address: str | None = None
         self.name: str | None = None
         self._ctx = None
@@ -106,9 +107,10 @@ class Session:
         await self.disconnect()
         await self._open(ble.connect(address), "ble", address, name)
 
-    async def connect_usb(self, path: str, name: str | None = None):
+    async def connect_usb(self, path: str, name: str | None = None, via: str = "cable"):
         await self.disconnect()
         await self._open(hid.connect(path), "usb", path, name)
+        self.via = via
 
     async def _open(self, ctx, mode: str, address: str, name: str | None):
         transport = await ctx.__aenter__()
@@ -122,10 +124,17 @@ class Session:
             except Exception:
                 pass
         self._ctx = None
-        self.client = self.mode = self.address = self.name = None
+        self.client = self.mode = self.address = self.name = self.via = None
+
+    @property
+    def through_dongle(self) -> bool:
+        """Over the receiver, basic info is the receiver's (firmware) mixed with the controller's
+        (MAC, battery); the controller's own firmware version is not in it."""
+        return self.mode == "usb" and self.via == "dongle"
 
     def status(self) -> dict:
-        return {"connected": self.connected, "mode": self.mode, "address": self.address, "name": self.name}
+        return {"connected": self.connected, "mode": self.mode, "address": self.address, "name": self.name,
+                "via": self.via}
 
 
 async def _try(coro):
@@ -269,7 +278,9 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     @routes.post("/api/scan")
     @guarded
     async def do_scan(_):
-        usb = [{"address": d.path, "name": d.name or "GameSir Nova 2 Lite", "link": "usb"} for d in find_usb()]
+        # By ID, as Steam and the kernel's xpad do: the USB name is "2.4G XBOX 360 For Windows".
+        usb = [{"address": d.path, "name": "GameSir Nova 2 Lite", "link": "usb",
+                "via": "dongle" if d.pid == 0x1098 else "cable"} for d in find_usb()]
         try:
             found = await scan()
         except ble.BleError:
@@ -293,7 +304,8 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
                 match = next((d for d in find_usb() if d.path == address), None)
                 if match is None:
                     return fail("that USB controller is no longer connected; search again")
-                await session.connect_usb(match.path, data.get("name") or match.name)
+                await session.connect_usb(match.path, "GameSir Nova 2 Lite",
+                                          "dongle" if match.pid == 0x1098 else "cable")
             else:
                 await session.connect_ble(address, data.get("name"))
         return ok(session.status())
@@ -449,13 +461,17 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     @routes.get("/api/firmware")
     @guarded
     async def firmware(_):
-        version = None
+        version = dongle = None
         if session.connected:
             try:
-                version = (await session.client.info()).firmware_version
+                info = (await session.client.info()).firmware_version
+                if session.through_dongle:
+                    dongle = info
+                else:
+                    version = info
             except ERRORS:
                 pass
-        return ok(_firmware_status(fw_dir, version))
+        return ok({**_firmware_status(fw_dir, version), "dongle_version": dongle})
 
     @routes.post("/api/firmware/check")
     async def firmware_check(_):

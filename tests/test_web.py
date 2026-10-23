@@ -126,14 +126,16 @@ def test_usb_controllers_are_listed_and_only_found_paths_open(tmp_path):
     async def no_bluetooth():
         raise ble.BleError("Bluetooth is unavailable")
 
-    found = [hid.HidDevice("/dev/hidraw99", 0x100F, "2.4G XBOX 360 For Windows")]
+    found = [hid.HidDevice("/dev/hidraw99", 0x100F, "2.4G XBOX 360 For Windows"),
+             hid.HidDevice("/dev/hidraw98", 0x1098, "2.4G XBOX 360 For Windows")]
 
     async def go(c):
         await login(c)
         h = {**API, "Content-Type": "application/json"}
         r = await c.post("/api/scan", data="{}", headers=h)
         assert (await r.json())["data"] == [
-            {"address": "/dev/hidraw99", "name": "2.4G XBOX 360 For Windows", "link": "usb"}]
+            {"address": "/dev/hidraw99", "name": "GameSir Nova 2 Lite", "link": "usb", "via": "cable"},
+            {"address": "/dev/hidraw98", "name": "GameSir Nova 2 Lite", "link": "usb", "via": "dongle"}]
         r = await c.post("/api/connect", data=json.dumps({"address": "/dev/sda", "link": "usb"}), headers=h)
         assert r.status == 400 and "no longer connected" in (await r.json())["error"]
     run(go, tmp_path, scanner=no_bluetooth, usb_finder=lambda: found)
