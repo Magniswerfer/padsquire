@@ -70,7 +70,7 @@ Open:
 
 ## Next steps (as of 2026-10-24)
 
-Published: v0.1.0 is on PyPI and GitHub Releases (trusted publishing, `pypi` environment), the repo
+Published: v0.1.1 (the newest; v0.1.0 first) is on PyPI and GitHub Releases (trusted publishing, `pypi` environment), the repo
 is public, and `https://padsquire.com/install.sh` redirects to the newest release's `install.sh`
 (the website lives in `Magniswerfer/padsquire-website`; edit it only from its own repo). A new
 release: bump `version` in `pyproject.toml`, then push a matching `v*` tag.
