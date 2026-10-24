@@ -37,7 +37,7 @@ Tested on one Nova 2 Lite (firmware 7701 and 8201) and its receiver (firmware 28
 You need Linux and Python 3.11 or newer (most distributions have it). Run:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Magniswerfer/padsquire/main/install.sh | sh
+curl -fsSL https://github.com/Magniswerfer/padsquire/releases/latest/download/install.sh | sh
 ```
 
 `curl` downloads the [installer](install.sh) and `sh` runs it. You can also download it, read it
@@ -58,7 +58,7 @@ Brave, Edge or Vivaldi; otherwise in a browser tab) and stops by itself when you
 before you run it.
 
 - **Update:** run the same command again.
-- **Remove:** `curl -fsSL https://raw.githubusercontent.com/Magniswerfer/padsquire/main/install.sh | sh -s -- --uninstall`.
+- **Remove:** `curl -fsSL https://github.com/Magniswerfer/padsquire/releases/latest/download/install.sh | sh -s -- --uninstall`.
   Your firmware downloads and flash backups stay in `~/.local/share/padsquire`.
 - **With pipx** instead: `pipx install 'padsquire[gui]'`, then `padsquire menu` for the app-menu
   entry ([pipx](https://pipx.pypa.io/)).

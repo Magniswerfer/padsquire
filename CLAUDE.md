@@ -75,9 +75,12 @@ For the owner, before the installer works for others:
 2. PyPI: add a pending trusted publisher (project `padsquire`, owner `Magniswerfer`, repo
    `padsquire`, workflow `release.yml`, environment `pypi`), and create a `pypi` environment in the
    repo's GitHub settings. Then `git tag v0.1.0 && git push origin v0.1.0` publishes it.
-3. Try the real thing: `curl -fsSL https://raw.githubusercontent.com/Magniswerfer/padsquire/main/install.sh | sh`,
+3. Try the real thing: `curl -fsSL https://github.com/Magniswerfer/padsquire/releases/latest/download/install.sh | sh`,
    then open PadSquire from the app menu.
-4. Point the website (`Magniswerfer/padsquire-website`) at that install command.
+4. Website (`Magniswerfer/padsquire-website`, edited only from its own repo): a `public/_redirects`
+   line `/install.sh  https://github.com/Magniswerfer/padsquire/releases/latest/download/install.sh  302`,
+   then show `curl -fsSL https://<site>/install.sh | sh`. Once the domain is known, switch the
+   README and the `install.sh` header to that URL.
 
 Then: Bluetooth testing (the checklist in HARDWARE.md).
 

@@ -49,10 +49,12 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v5
       - uses: actions/download-artifact@v5
         with:
           name: dist
           path: dist/
-      - run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --generate-notes
+      # install.sh goes on every release, so .../releases/latest/download/install.sh is the newest.
+      - run: gh release create "$GITHUB_REF_NAME" dist/* install.sh --repo "$GITHUB_REPOSITORY" --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}

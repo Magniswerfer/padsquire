@@ -3,7 +3,7 @@
 #
 # PadSquire installer: Linux tools for GameSir controllers.
 #
-#   curl -fsSL https://raw.githubusercontent.com/Magniswerfer/padsquire/main/install.sh | sh
+#   curl -fsSL https://github.com/Magniswerfer/padsquire/releases/latest/download/install.sh | sh
 #
 # Or download it, read it, then run it:  sh install.sh
 # To remove PadSquire:  sh install.sh --uninstall   (or: curl ... | sh -s -- --uninstall)
