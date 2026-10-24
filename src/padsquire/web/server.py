@@ -619,17 +619,54 @@ def _instance_file() -> Path | None:
     return Path(runtime) / "padsquire" / "gui.json" if runtime else None
 
 
-def _running_instance() -> str | None:
-    """The address of a settings app this user already has running, if any."""
+def _running_instance() -> dict | None:
+    """The settings app this user already has running, if any: its pid, port, url and version
+    (no version: 0.1.2 or older)."""
     import socket
     f = _instance_file()
     try:
         info = json.loads(f.read_text()) if f else None
         os.kill(info["pid"], 0)
         with socket.create_connection(("127.0.0.1", info["port"]), timeout=1):
-            return info["url"]
+            return info
     except (OSError, ValueError, KeyError, TypeError):
         return None
+
+
+def _busy(info: dict) -> bool:
+    """Whether a running settings app is in the middle of a firmware step, or has a device in update
+    mode. Asked through its own API; if it can't be asked, it counts as busy."""
+    import http.cookiejar
+    import urllib.request
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+    try:
+        opener.open(info["url"], timeout=3).read()          # the token in its url sets the session cookie
+        req = urllib.request.Request(f"http://127.0.0.1:{info['port']}/api/update", headers={API_HEADER: "1"})
+        data = json.loads(opener.open(req, timeout=10).read())["data"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return True
+    job = data.get("job") or {}
+    return job.get("state") == "running" or data.get("mode") == "download"
+
+
+def _stop_older(info: dict) -> bool:
+    """Stop a settings app of another version (left running across an update), unless it is busy
+    with firmware. True once it has stopped."""
+    import signal
+    import time
+    if _busy(info):
+        return False
+    try:
+        os.kill(info["pid"], signal.SIGTERM)                 # run_app's own clean shutdown
+    except OSError:
+        return True
+    for _ in range(50):
+        time.sleep(0.2)
+        try:
+            os.kill(info["pid"], 0)
+        except OSError:
+            return True
+    return False
 
 
 def serve(fw_dir: Path, *, host: str = "127.0.0.1", port: int = 0, simulate: bool = False,
@@ -643,11 +680,19 @@ def serve(fw_dir: Path, *, host: str = "127.0.0.1", port: int = 0, simulate: boo
     if host not in ("127.0.0.1", "localhost", "::1"):
         raise SystemExit("refusing to listen on a non-loopback address")
     single = not simulate and port == 0          # one app per user; a fixed port or a simulation is separate
-    if single and (url := _running_instance()):
-        print(f"PadSquire is already running at:\n  {url}", flush=True)
-        if open_browser:
-            desktop.open_app(url, tab)
-        return
+    if single and (info := _running_instance()):
+        older = info.get("version") or "0.1.2 or older"
+        if info.get("version") != __version__ and _stop_older(info):
+            print(f"Stopped PadSquire {older}, which was still running, to start {__version__}.", flush=True)
+        else:
+            if info.get("version") != __version__:
+                print(f"PadSquire {older} is still running and busy with a firmware step or a device in\n"
+                      f"update mode, so it stays open. Close it when that's done, then start PadSquire again.",
+                      flush=True)
+            print(f"PadSquire is already running at:\n  {info['url']}", flush=True)
+            if open_browser:
+                desktop.open_app(info["url"], tab)
+            return
     token = secrets.token_urlsafe(24)
     sock = socket.socket(socket.AF_INET6 if host == "::1" else socket.AF_INET)
     # Restart on the same port at once, even while an old page's connection is still closing.
@@ -670,7 +715,7 @@ def serve(fw_dir: Path, *, host: str = "127.0.0.1", port: int = 0, simulate: boo
             instance.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             fd = os.open(instance, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)   # holds the token
             with os.fdopen(fd, "w") as f:
-                json.dump({"pid": os.getpid(), "port": actual, "url": url}, f)
+                json.dump({"pid": os.getpid(), "port": actual, "url": url, "version": __version__}, f)
         if not keep_running:
             _app["watch"] = asyncio.create_task(watch(_app))
 

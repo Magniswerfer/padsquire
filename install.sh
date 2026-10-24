@@ -26,7 +26,17 @@
 set -eu
 
 REPO="https://github.com/Magniswerfer/padsquire"
-SOURCE_ARCHIVE="$REPO/archive/refs/heads/main.tar.gz"
+# The version this installer installs. Each release writes its own number here (release.yml), so
+# the installer from a release installs exactly that release, even in the minutes after it comes
+# out, when pip and PyPI can still hand out the one before. Empty: the newest on PyPI.
+VERSION=""
+if [ -n "$VERSION" ]; then
+    WANT="padsquire[gui]==$VERSION"
+    SOURCE_ARCHIVE="$REPO/archive/refs/tags/v$VERSION.tar.gz"
+else
+    WANT="padsquire[gui]"
+    SOURCE_ARCHIVE="$REPO/archive/refs/heads/main.tar.gz"
+fi
 SOURCE="${PADSQUIRE_SOURCE:-}"      # optional: a pip requirement or path to install instead
 DATA="${XDG_DATA_HOME:-$HOME/.local/share}/padsquire"
 VENV="$DATA/venv"
@@ -80,10 +90,11 @@ install_app() {
     if [ -n "$SOURCE" ]; then
         "$VENV/bin/python" -m pip install --quiet --upgrade "$SOURCE" || fail "pip couldn't install $SOURCE."
         say "   Installed from $SOURCE."
-    elif "$VENV/bin/python" -m pip install --quiet --upgrade "padsquire[gui]" 2>/dev/null; then
+    # --no-cache-dir: pip keeps PyPI's list of versions for a few minutes, which can hide a new one
+    elif "$VENV/bin/python" -m pip install --quiet --upgrade --no-cache-dir "$WANT" 2>/dev/null; then
         say "   Installed from PyPI."
     else
-        say "   Not on PyPI yet: installing the newest version from GitHub instead."
+        say "   Not on PyPI yet: installing it from GitHub instead."
         "$VENV/bin/python" -m pip install --quiet --upgrade "padsquire[gui] @ $SOURCE_ARCHIVE" ||
             fail "pip couldn't install PadSquire (see the message above)."
     fi

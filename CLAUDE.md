@@ -10,7 +10,7 @@ controller (firmware 7701 and 8201) and its receiver (2800); Bluetooth is not ye
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -e '.[gui,test]'   # no system pip on this box; 7zip for update/extract
-pytest                                   # 194 tests; PADSQUIRE_INSTALLER=<setup.exe> adds a real-installer test,
+pytest                                   # 196 tests; PADSQUIRE_INSTALLER=<setup.exe> adds a real-installer test,
                                          # PADSQUIRE_BACKUP=<dump.bin> PADSQUIRE_UFW=<.ufw> a real layout check
 padsquire probe --guided             # read-only report of the controller in every mode -> JSON
 padsquire ble scan | info | deadzone | feature | vibration | sleep | restore
@@ -70,7 +70,7 @@ Open:
 
 ## Next steps (as of 2026-10-24)
 
-Published: v0.1.2 (the newest; v0.1.0 first) is on PyPI and GitHub Releases (trusted publishing, `pypi` environment), the repo
+Published: v0.1.3 (the newest; v0.1.0 first) is on PyPI and GitHub Releases (trusted publishing, `pypi` environment), the repo
 is public, and `https://padsquire.com/install.sh` redirects to the newest release's `install.sh`
 (the website lives in `Magniswerfer/padsquire-website`; edit it only from its own repo). A new
 release: bump `version` in `pyproject.toml`, then push a matching `v*` tag.

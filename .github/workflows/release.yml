@@ -54,7 +54,12 @@ jobs:
         with:
           name: dist
           path: dist/
-      # install.sh goes on every release, so .../releases/latest/download/install.sh is the newest.
+      # install.sh goes on every release, so .../releases/latest/download/install.sh is the newest,
+      # and installs exactly this version (VERSION="" becomes VERSION="0.1.3").
+      - name: install.sh installs this release
+        run: |
+          sed -i "s/^VERSION=\"\"$/VERSION=\"${GITHUB_REF_NAME#v}\"/" install.sh
+          grep -q "^VERSION=\"${GITHUB_REF_NAME#v}\"$" install.sh
       - run: gh release create "$GITHUB_REF_NAME" dist/* install.sh --repo "$GITHUB_REPOSITORY" --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}
