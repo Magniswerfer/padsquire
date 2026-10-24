@@ -140,23 +140,41 @@ const savedMark = () => h("span", { class: "saved", "aria-live": "polite" });
 // ---------------------------------------------------------------------------
 // building blocks
 
+const uid = (prefix) => `${prefix}-${Math.random().toString(36).slice(2)}`;
+
+// an icon from ds/icons.svg
+function icon(name) {
+  const svg = s("svg", { class: "icon", "aria-hidden": "true" });
+  svg.append(s("use", { href: `/static/ds/icons.svg#${name}` }));
+  return svg;
+}
+
+// a notice: kind is "", "ok", "warn" or "danger"; children are its text, paragraphs or buttons
+// the mark on a step that's done, in place of its number
+const stepDone = () => h("span", { class: "step-done" }, icon("check"));
+
+function notice(kind, ...children) {
+  const name = { ok: "check", warn: "alert", danger: "alert" }[kind] || "info";
+  return h("div", { class: `notice${kind ? ` ${kind}` : ""}` }, icon(name), h("div", { class: "notice-body" }, ...children));
+}
+
 function row(label, help, control, extra = {}) {
-  return h("div", { class: `row${extra.stack ? " stack" : ""}` },
-    h("div", {}, h("span", { class: "row-label", id: extra.id }, label), help ? h("span", { class: "row-help" }, help) : null),
-    h("div", { class: "row-control" }, control));
+  return h("div", { class: `setting${extra.stack ? " stack" : ""}` },
+    h("div", {}, h("span", { class: "label", id: extra.id }, label), help ? h("span", { class: "hint" }, help) : null),
+    h("div", { class: "setting-control" }, control));
 }
 
 function unavailable(entry) {
-  return h("span", { class: "unavailable" }, `Not available: ${errOf(entry)}`);
+  return h("span", { class: "chip warn unavailable" }, `Not available: ${errOf(entry)}`);
 }
 
 function toggle(label, help, entry, onChange, readonly = false) {
   if (errOf(entry)) return row(label, help, unavailable(entry));
   const mark = savedMark();
-  const id = `t-${Math.random().toString(36).slice(2)}`;
-  const input = h("input", { type: "checkbox", role: "switch", "aria-labelledby": id, checked: !!val(entry), disabled: readonly });
+  const id = uid("t");
+  const input = h("input", { class: "switch", type: "checkbox", role: "switch", "aria-labelledby": id, checked: !!val(entry), disabled: readonly });
   input.addEventListener("change", () => onChange(input.checked, mark));
-  return row(label, help, [mark, h("label", { class: "switch" }, input, h("span"))], { id });
+  return row(label, help, [mark, input], { id });
 }
 
 function featureToggle(feature, label, help) {
@@ -168,21 +186,30 @@ function featureToggle(feature, label, help) {
     save("/api/feature", { feature, enabled: on }, (v) => { app.dev.features[feature] = { value: v }; }, mark), readonly);
 }
 
+// --fill paints the range's track up to the thumb (WebKit and Blink need it; Firefox has its own)
+function fill(input) {
+  const span = (+input.max - +input.min) || 1;
+  input.style.setProperty("--fill", `${(input.value - input.min) / span * 100}%`);
+}
+
 function slider({ label, help, value, min = 0, max = 100, step = 1, unit = "", onInput, onCommit }) {
-  const out = h("output", {}, `${value}${unit}`);
+  const id = uid("r");
+  const out = h("output", { class: "value", for: id }, `${value}${unit}`);
   const mark = savedMark();
-  const input = h("input", { type: "range", min, max: Math.max(max, value), step, value, "aria-label": label });
-  input.addEventListener("input", () => { out.textContent = `${input.value}${unit}`; onInput && onInput(+input.value); });
+  const input = h("input", { class: "range", type: "range", id, min, max: Math.max(max, value), step, value, "aria-label": label });
+  fill(input);
+  input.addEventListener("input", () => { fill(input); out.textContent = `${input.value}${unit}`; onInput && onInput(+input.value); });
   input.addEventListener("change", () => onCommit(+input.value, mark));
-  return row(label, help, h("div", { class: "slider" }, input, out, mark), { stack: true });
+  return row(label, help, h("div", { class: "range-row" }, input, out, mark), { stack: true });
 }
 
 function segmented(name, options, current, onChange) {
   const group = h("div", { class: "segmented", role: "radiogroup" });
   for (const [value, text] of options) {
-    const input = h("input", { type: "radio", name, value, checked: value === current });
+    const id = uid(name);
+    const input = h("input", { type: "radio", name, id, value, checked: value === current });
     input.addEventListener("change", () => onChange(value));
-    group.append(h("label", {}, input, h("span", {}, text)));
+    group.append(input, h("label", { for: id }, text));
   }
   return group;
 }
@@ -197,37 +224,50 @@ function renderChrome() {
     const via = app.status.mode === "simulated" ? "Simulated controller"
       : app.status.mode === "usb" ? (app.status.via === "dongle" ? "Connected through the 2.4 GHz receiver" : "Connected by cable")
       : "Connected over Bluetooth";
-    st.append(h("span", { class: "conn on" }, via));
+    st.append(h("span", { class: "chip ok" }, icon("check"), via));
     const bat = app.dev && val(app.dev.battery);
     if (bat) {
       st.append(h("span", { class: "battery", title: bat.charging ? "Charging" : "Battery" },
-        h("span", { class: "battery-cell", "aria-hidden": "true" }, h("span", { style: `width:${bat.level}%` })),
-        `${bat.level}%${bat.charging ? ", charging" : ""}`));
+        batteryIcon(bat.level), `${bat.level}%${bat.charging ? ", charging" : ""}`));
     }
-    st.append(h("button", { class: "btn small", onclick: disconnect }, "Disconnect"));
+    st.append(h("button", { class: "button small", onclick: disconnect }, "Disconnect"));
   } else {
-    st.append(h("span", { class: "conn" }, "No controller connected"));
+    st.append(h("span", { class: "chip" }, icon("plug"), "No controller connected"));
   }
 
   const nav = $("#nav");
   nav.replaceChildren();
   for (const sec of SECTIONS) {
-    const usable = app.status.connected || sec.offline;
-    nav.append(h("li", {}, h("button", {
+    const usable = app.status.connected || sec.offline || sec.id === "controller";
+    nav.append(h("li", {}, h("a", {
+      href: usable ? `#${sec.id}` : null,
       "aria-current": app.section === sec.id ? "page" : null,
-      disabled: !usable && sec.id !== "controller",
-      onclick: () => go(sec.id),
+      "aria-disabled": usable ? null : "true",
     }, sec.label, sectionHint(sec.id))));
   }
 
-  const pad = $("#pad");
-  pad.classList.toggle("offline", !app.status.connected);
-  for (const part of pad.querySelectorAll(".part")) {
-    part.classList.toggle("active", app.status.connected && part.dataset.section === app.section);
-    part.setAttribute("aria-disabled", app.status.connected ? "false" : "true");
-  }
+  $("#pad").classList.toggle("offline", !app.status.connected);
+  // The Home light colour is the user's own: it colours the preview and the model's Home light.
   const light = app.dev && val(app.dev.light);
-  document.documentElement.style.setProperty("--led", light ? `rgb(${light.rgb.join(",")})` : "#ffffff");
+  const colour = light ? hex(light.rgb) : null;
+  if (colour) document.documentElement.style.setProperty("--home-light", colour);
+  else document.documentElement.style.removeProperty("--home-light");
+  if (model.el && model.light !== colour) {
+    model.light = colour;
+    model.el.look = { light: { color: colour || "accent" } };
+  }
+}
+
+// A battery drawn to scale: the fill is the charge, inside the outline with an even gap.
+// Low (15% and under, when the Home light flashes red) is shown in the warning colour.
+function batteryIcon(level) {
+  const svg = s("svg", { class: `battery-icon${level <= 15 ? " low" : ""}`, viewBox: "0 0 26 14", "aria-hidden": "true" });
+  const inner = 17.5 * Math.max(0, Math.min(100, level)) / 100;
+  svg.append(
+    s("rect", { class: "case", x: 0.75, y: 0.75, width: 21.5, height: 12.5, rx: 3 }),
+    s("rect", { class: "tip", x: 23, y: 4.5, width: 2.25, height: 5, rx: 1 }),
+    s("rect", { class: "charge", x: 2.75, y: 2.75, width: inner, height: 8.5, rx: 1.5 }));
+  return svg;
 }
 
 function sectionHint(id) {
@@ -240,17 +280,45 @@ function sectionHint(id) {
   }
   if (id === "profiles" && val(d.slots)) text = `${val(d.slots)[1] + 1} of ${val(d.slots)[0]}`;
   if (id === "power" && val(d.auto_sleep) !== undefined) text = `sleep ${val(d.auto_sleep)} min`;
-  return text ? h("span", { class: "hint" }, text) : null;
+  return text ? h("small", {}, text) : null;
 }
 
-function wireMap() {
-  for (const part of $("#pad").querySelectorAll(".part")) {
-    const open = () => { if (app.status.connected) go(part.dataset.section); };
-    part.addEventListener("click", open);
-    part.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
-    });
-  }
+// ---------------------------------------------------------------------------
+// the 3D controller (pad-model.js), moved by the live input the server reads
+
+const model = { el: null, light: undefined, held: new Set() };
+
+// live input names (as gcm.Key) to the model's parts
+const MODEL_BUTTONS = {
+  A: "button_a", B: "button_b", X: "button_x", Y: "button_y", LB: "bumper_left", RB: "bumper_right",
+  SELECT: "button_view", START: "button_menu", HOME: "button_home", L3: "stick_left", R3: "stick_right",
+};
+
+function moveModel(st) {
+  const el = model.el;
+  if (!el) return;
+  const down = new Set((st.pressed || []).filter((k) => k in MODEL_BUTTONS));
+  for (const k of down) if (!model.held.has(k)) el.press(MODEL_BUTTONS[k]);
+  for (const k of model.held) if (!down.has(k)) el.release(MODEL_BUTTONS[k]);
+  model.held = down;
+  // sticks: x right, y towards the player, as the kernel reports them
+  el.tilt("stick_left", st.lx || 0, st.ly || 0);
+  el.tilt("stick_right", st.rx || 0, st.ry || 0);
+  const p = new Set(st.pressed || []);
+  el.tilt("dpad", p.has("RIGHT") - p.has("LEFT"), p.has("DOWN") - p.has("UP"));
+  el.pull("trigger_left", st.lt || 0);
+  el.pull("trigger_right", st.rt || 0);
+}
+
+function releaseModel() {
+  moveModel({ pressed: [] });
+}
+
+async function startModel() {
+  await customElements.whenDefined("pad-model");
+  const el = await $("#pad").ready;
+  model.el = el;
+  renderChrome();          // gives it the Home light colour
 }
 
 // ---------------------------------------------------------------------------
@@ -268,10 +336,10 @@ function panelConnect() {
       h("li", {}, "Or over Bluetooth: turn the controller on in Android mode by holding Home and A for 2 seconds until the light turns yellow."),
       h("li", {}, "Find it below and connect.")),
   );
-  const findBtn = h("button", { class: "btn primary", onclick: scan, disabled: app.scanning },
+  const findBtn = h("button", { class: "button primary", onclick: scan, disabled: app.scanning },
     app.scanning ? "Searching…" : "Find controllers");
-  wrap.append(h("div", { class: "btn-row" }, findBtn,
-    h("button", { class: "btn", onclick: () => connect({ simulate: true }) }, "Use the simulator")));
+  wrap.append(h("div", { class: "button-row" }, findBtn,
+    h("button", { class: "button", onclick: () => connect({ simulate: true }) }, "Use the simulator")));
 
   if (app.found) {
     if (app.found.length === 0) {
@@ -280,10 +348,10 @@ function panelConnect() {
     } else {
       wrap.append(h("ul", { class: "found" }, app.found.map((d) =>
         h("li", {}, h("span", {}, d.name, h("span", { class: "addr" }, d.link === "usb" ? `${d.via === "dongle" ? "2.4 GHz receiver" : "USB cable"}, ${d.address}` : d.address)),
-          h("button", { class: "btn primary small", onclick: () => connect({ address: d.address, name: d.name, link: d.link }) }, "Connect")))));
+          h("button", { class: "button primary small", onclick: () => connect({ address: d.address, name: d.name, link: d.link }) }, "Connect")))));
     }
   }
-  wrap.append(h("p", { class: "callout" },
+  wrap.append(notice("",
     "The simulator behaves like a controller, so you can try every setting without one."));
   return wrap;
 }
@@ -292,7 +360,7 @@ function panelController() {
   const d = app.dev;
   const info = val(d.info);
   const bat = val(d.battery);
-  const fact = (term, value, small) => h("div", { class: "fact" }, h("dt", {}, term), h("dd", {}, value ?? "Unknown", small ? h("small", {}, small) : null));
+  const fact = (term, value, small) => h("div", { class: "fact well" }, h("dt", {}, term), h("dd", {}, value ?? "Unknown", small ? h("small", {}, small) : null));
   const dongle = app.status.mode === "usb" && app.status.via === "dongle";
   const where = app.status.mode !== "usb" ? `Connected to ${app.status.address}`
     : dongle ? `Connected through the 2.4 GHz receiver (${app.status.address})` : `Connected by cable (${app.status.address})`;
@@ -313,8 +381,8 @@ function panelController() {
       fact("Made", info && info.production_date),
       fact("Bluetooth address", info && info.mac),
       fact("Protocol", info && `GCM ${info.gcm_version}`)),
-    h("div", { class: "btn-row" },
-      h("button", { class: "btn", onclick: () => reload(true) }, "Read settings again")),
+    h("div", { class: "button-row" },
+      h("button", { class: "button", onclick: () => reload(true) }, "Read settings again")),
   );
 }
 
@@ -323,84 +391,149 @@ function regionName(fw) {
   return { "0": "China build", "1": "international build" }[fw.slice(-1)] || null;
 }
 
-// One button's remap: up to three targets, pressed together. The first menu also offers the
-// button's own function; each further menu can be removed again.
-function remapRow(key, targets) {
-  const d = app.dev, labels = app.meta.keys, max = app.meta.remap_max_targets;
-  const help = h("span", { class: "row-help" });
-  const picks = h("div", { class: "remap-pick" });
-  const mark = savedMark();
-  let chosen = [...targets];
-  const commit = (next) => {
-    next = next.filter((t, i) => t && next.indexOf(t) === i);
-    chosen = next;
-    draw();
-    save("/api/remap", { key, targets: next }, (v) => { d.remaps[key] = { value: v }; chosen = [...v]; draw(); }, mark);
-  };
-  const menu = (i) => {
-    const others = app.meta.remap_targets.filter((t) => t !== key && (t === chosen[i] || !chosen.includes(t)));
-    const first = i === 0
-      ? h("option", { value: "" }, ["L4", "R4"].includes(key) ? "Nothing (default)" : "Its own function")
-      : h("option", { value: "" }, "Remove this button");
-    const select = h("select", { "aria-label": i === 0 ? labels[key] : `${labels[key]}, button ${i + 1}` },
-      first, h("optgroup", { label: i === 0 ? "Act as" : "Together with" }, others.map((t) => h("option", { value: t }, labels[t]))));
-    select.value = chosen[i] || "";
-    select.addEventListener("change", () => {
-      const next = [...chosen];
-      if (i === 0 && !select.value) return commit([]);       // own function again: drop the rest too
-      next[i] = select.value;
-      commit(next);
-    });
-    return select;
-  };
-  const draw = () => {
-    help.textContent = chosen.length ? `Now acts as ${chosen.map((t) => labels[t]).join(" + ")}` : "";
-    const add = chosen.length && chosen.length < max
-      ? h("button", { class: "btn small link", type: "button", onclick: () => { picks.replaceChildren(...[...picks.children].slice(0, -1), menu(chosen.length)); } }, "Add a button pressed together")
-      : null;
-    picks.replaceChildren(...[...chosen.map((_, i) => menu(i)), chosen.length ? null : menu(0), add].filter(Boolean));
-  };
-  draw();
-  return h("div", { class: "row" },
-    h("div", {}, h("span", { class: "row-label" }, labels[key]), help),
-    h("div", { class: "row-control" }, mark, picks));
-}
+// gcm.Key names to the face figure's parts
+const KEY_PARTS = {
+  A: "a", B: "b", X: "x", Y: "y", LB: "lb", RB: "rb", LT: "lt", RT: "rt", UP: "up", DOWN: "down",
+  LEFT: "left", RIGHT: "right", L4: "l4", R4: "r4", L3: "ls", R3: "rs", SELECT: "view", START: "menu",
+  CAPTURE: "share", HOME: "home",
+};
 
-function panelButtons() {
+// The Buttons page: pick a button on the controller, change what it does beside it. The same
+// drawing shows what the computer receives while you press buttons (by cable or receiver).
+async function panelButtons() {
   const d = app.dev;
   if (!d.remaps) return panelBackButtons();
-  const labels = app.meta.keys;
+  const labels = app.meta.keys, max = app.meta.remap_max_targets, sources = app.meta.remap_sources;
+  const targetsOf = (k) => val(d.remaps[k]) || [];
+  const acts = (k) => targetsOf(k).map((t) => labels[t]).join(" + ");
   const wrap = h("div", {},
     h("h1", {}, "Buttons"),
-    h("p", { class: "lede" }, "Choose what each button does. A remapped button sends the button you pick instead of its own; the change is stored on the controller."));
-  const rows = h("div", { class: "rows two" });
-  for (const key of app.meta.remap_sources) {
-    const entry = d.remaps[key];
-    if (errOf(entry)) { rows.append(row(labels[key], null, unavailable(entry))); continue; }
-    rows.append(remapRow(key, val(entry)));
+    h("p", { class: "lede" }, "Choose a button on the controller to change what it does. A remapped button sends the buttons you pick instead of its own; the change is stored on the controller."));
+
+  let figure;
+  try { figure = await faceFigure(); } catch (e) { wrap.append(h("p", { class: "note" }, e.message)); return wrap; }
+  figure.setAttribute("role", "group");
+  figure.setAttribute("aria-label", "The controller's buttons");
+  const part = (k) => figure.querySelector(`[data-part="${KEY_PARTS[k]}"]`);
+  let selected = sources.find((k) => targetsOf(k).length) || "A";
+
+  const editor = h("div", { class: "remap-editor" });
+  const changed = h("div", { class: "remap-changed" });
+
+  const paint = () => {
+    for (const k of sources) {
+      const p = part(k);
+      if (!p) continue;
+      const err = errOf(d.remaps[k]);
+      p.toggleAttribute("data-remapped", targetsOf(k).length > 0);
+      p.toggleAttribute("data-selected", k === selected);
+      p.setAttribute("aria-pressed", k === selected ? "true" : "false");
+      p.setAttribute("aria-label", `${labels[k]}: ${err ? "not available" : targetsOf(k).length ? `acts as ${acts(k)}` : "its own function"}`);
+    }
+    const list = sources.filter((k) => targetsOf(k).length);
+    changed.replaceChildren(...[
+      h("h2", {}, "Changed"),
+      list.length
+        ? h("ul", { class: "changed-list" }, list.map((k) => h("li", {},
+            h("button", { class: "button link", type: "button", onclick: () => select(k) }, labels[k]),
+            h("span", {}, `acts as ${acts(k)}`))))
+        : h("p", { class: "note" }, "Every button does its own job."),
+      list.length ? h("div", { class: "button-row" }, h("button", { class: "button", onclick: resetRemaps }, "Reset all buttons")) : null,
+    ].filter(Boolean));
+  };
+
+  // One button's remap: up to three targets, pressed together. The first menu also offers the
+  // button's own function; each further menu can be removed again.
+  const drawEditor = () => {
+    const key = selected, entry = d.remaps[key];
+    // the button being changed: chosen here or on the drawing (easier with a keyboard, or on a phone)
+    const picker = h("select", { class: "input", id: "remap-button", onchange: (e) => select(e.target.value) },
+      sources.map((k) => h("option", { value: k, selected: k === key }, targetsOf(k).length ? `${labels[k]} (changed)` : labels[k])));
+    const head = h("div", { class: "field" }, h("label", { class: "label", for: "remap-button" }, "Button"), picker);
+    if (errOf(entry)) { editor.replaceChildren(head, unavailable(entry)); return; }
+    const status = h("p", { class: "hint" });
+    const picks = h("div", { class: "remap-pick" });
+    const actions = h("div", { class: "button-row" });
+    const mark = savedMark();
+    let chosen = [...targetsOf(key)];
+    const commit = (next) => {
+      next = next.filter((t, i) => t && next.indexOf(t) === i);
+      chosen = next;
+      draw();
+      save("/api/remap", { key, targets: next }, (v) => {
+        d.remaps[key] = { value: v }; chosen = [...v]; draw(); paint();
+        picker.selectedOptions[0].textContent = v.length ? `${labels[key]} (changed)` : labels[key];
+      }, mark);
+    };
+    const menu = (i) => {
+      const others = app.meta.remap_targets.filter((t) => t !== key && (t === chosen[i] || !chosen.includes(t)));
+      const first = i === 0
+        ? h("option", { value: "" }, ["L4", "R4"].includes(key) ? "Nothing (default)" : "Its own function")
+        : h("option", { value: "" }, "Remove this button");
+      const select = h("select", { class: "input", "aria-label": i === 0 ? `${labels[key]} acts as` : `${labels[key]}, button ${i + 1}` },
+        first, h("optgroup", { label: i === 0 ? "Act as" : "Together with" }, others.map((t) => h("option", { value: t }, labels[t]))));
+      select.value = chosen[i] || "";
+      select.addEventListener("change", () => {
+        if (i === 0 && !select.value) return commit([]);       // own function again: drop the rest too
+        const next = [...chosen];
+        next[i] = select.value;
+        commit(next);
+      });
+      return select;
+    };
+    const draw = () => {
+      status.textContent = chosen.length ? `Acts as ${chosen.map((t) => labels[t]).join(" + ")}` : "Does its own job";
+      picks.replaceChildren(...(chosen.length ? chosen.map((_, i) => menu(i)) : [menu(0)]));
+      actions.replaceChildren(...[
+        chosen.length && chosen.length < max
+          ? h("button", { class: "button small", type: "button", onclick: () => { picks.append(menu(chosen.length)); } }, "Add a button pressed together")
+          : null,
+        chosen.length ? h("button", { class: "button small quiet", type: "button", onclick: () => commit([]) }, "Back to its own function") : null,
+      ].filter(Boolean));
+    };
+    draw();
+    editor.replaceChildren(
+      head,
+      h("div", { class: "remap-head" }, status, mark),
+      h("div", { class: "field" }, h("span", { class: "label" }, "Acts as"), picks),
+      actions);
+  };
+
+  const select = (k) => { selected = k; paint(); drawEditor(); };
+  for (const k of sources) {
+    const p = part(k);
+    if (!p) continue;
+    p.setAttribute("tabindex", "0");
+    p.setAttribute("role", "button");
+    p.classList.add("pickable");
+    p.addEventListener("click", () => select(k));
+    p.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(k); }
+    });
   }
-  wrap.append(rows,
-    h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: resetRemaps }, "Reset all buttons")));
+  paint();
+  drawEditor();
+
+  const map = h("figure", { class: "button-map well" }, figure);
   if (app.status.mode === "usb") {
     // What the computer receives right now: a remapped button lights up as its new button.
-    const shown = ["A", "B", "X", "Y", "LB", "RB", "LT", "RT", "UP", "DOWN", "LEFT", "RIGHT", "SELECT", "START", "L3", "R3", "HOME"];
-    const chips = Object.fromEntries(shown.map((k) => [k, h("span", { class: "chip" }, labels[k] || k)]));
-    const signal = h("span", { class: "signal" }, "Connecting…");
+    const signal = h("span", { class: "chip" }, "Connecting…");
     let last = 0;
-    wrap.append(h("h2", {}, "Pressed now ", signal),
-      h("p", { class: "note" }, "Press a button to see what the computer receives. L4, R4 and Capture aren't reported in this mode, so they only show up through what they're mapped to."),
-      h("div", { class: "chips", "aria-live": "off" }, Object.values(chips)));
+    map.append(h("figcaption", {}, signal,
+      h("span", {}, "Press a button: what the computer receives lights up. L4, R4 and Capture aren't reported in this mode.")));
     liveWatch(() => {
       const ok = Date.now() - last < 2500;
-      signal.textContent = ok ? "receiving" : "no live signal";
-      signal.classList.toggle("off", !ok);
+      signal.textContent = ok ? "Receiving" : "No live signal";
+      signal.classList.toggle("ok", ok);
+      signal.classList.toggle("danger", !ok);
     });
     app.live = (st) => {
       last = Date.now();
-      const down = new Set(st.pressed || []);
-      for (const [k, el] of Object.entries(chips)) el.classList.toggle("on", down.has(k));
+      const down = new Set((st.pressed || []).map((k) => KEY_PARTS[k]));
+      for (const p of figure.querySelectorAll("[data-part]")) p.toggleAttribute("data-pressed", down.has(p.dataset.part));
     };
   }
+  wrap.append(h("div", { class: "remap" }, map, editor), changed);
   wrap.append(h("h2", {}, "Layout"),
     h("div", { class: "rows" },
       featureToggle("DPAD_DIAGONAL_LOCK", "Lock D-pad diagonals", "Only up, down, left and right register"),
@@ -415,11 +548,11 @@ function panelButtons() {
 function restartBox() {
   const receiver = app.status.mode === "usb" && app.status.via === "dongle";
   const sg = !(app.setup || []).some((c) => c.id === "sg" && !c.ok);
-  const box = h("div", { class: "callout" },
+  const box = notice("",
     h("p", {}, h("strong", {}, "If the controller stops responding after a change. "),
       "This happens now and then, mostly through the receiver; the change itself is kept. A restart fixes it."),
     app.status.mode === "usb" && sg
-      ? h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: restartDevice }, receiver ? "Restart the receiver" : "Restart the controller"))
+      ? h("div", { class: "button-row" }, h("button", { class: "button", onclick: restartDevice }, receiver ? "Restart the receiver" : "Restart the controller"))
       : app.status.mode === "usb" ? h("p", {}, "The restart button needs a one-time setup: ", h("a", { href: "#setup" }, "see Setup and help"), ".") : null,
     h("p", { class: "note" }, receiver
       ? "If restarting the receiver doesn't help, turn the controller off and on: hold Home for about 5 seconds, turn it on, and hold Menu and View until the light is green."
@@ -474,7 +607,7 @@ function panelBackButtons() {
     if (errOf(entry)) { rows.append(row(labels[source], null, unavailable(entry))); continue; }
     const m = val(entry);
     const current = m.kind === "disabled" ? "" : (m.kind === "key" ? (m.targets[0] ?? "") : `__${m.kind}`);
-    const select = h("select", { "aria-label": labels[source] },
+    const select = h("select", { class: "input", "aria-label": labels[source] },
       h("option", { value: "" }, "Do nothing"),
       h("optgroup", { label: "Buttons" }, app.meta.targets.map((k) => h("option", { value: k }, labels[k]))),
       d.capabilities.stick_targets
@@ -487,7 +620,7 @@ function panelBackButtons() {
     const mark = savedMark();
     select.addEventListener("change", () =>
       save("/api/mapping", { source, target: select.value || null }, (v) => { d.mappings[source] = { value: v }; }, mark));
-    const reset = h("button", { class: "btn small", onclick: () =>
+    const reset = h("button", { class: "button small", onclick: () =>
       save("/api/mapping", { source, reset: true }, (v) => { d.mappings[source] = { value: v }; render(); }, mark) }, "Reset");
     rows.append(row(labels[source], source === "L4" ? "Under the left grip" : "Under the right grip", [mark, select, reset]));
   }
@@ -500,45 +633,42 @@ function panelBackButtons() {
       featureToggle("DPAD_DIAGONAL_LOCK", "Lock D-pad diagonals", "Only up, down, left and right register"),
       featureToggle("SWAP_LT_LB", "Swap LB and LT"),
       featureToggle("SWAP_RT_RB", "Swap RB and RT")));
-  wrap.append(h("p", { class: "callout" },
+  wrap.append(notice("",
     "Every other button can be remapped by cable or through the 2.4 GHz receiver."));
   return wrap;
 }
 
-// stick response curve: how far the stick is pushed (across) against what the computer gets (up).
-// Assumes the usual scaling: output rises evenly from the inner dead zone to full at the outer one.
-// `anti` is drawn only where the controller applies it (not by cable or receiver, firmware 8201).
-function responseCurve(antiApplied) {
-  const X0 = 30, Y0 = 136, W = 160, H = 124;              // plot area: (X0, Y0) is travel 0, output 0
-  const px = (t) => X0 + W * t / 100, py = (o) => Y0 - H * o / 100;
-  const svg = s("svg", { class: "curve", viewBox: "0 0 200 168", role: "img" });
-  const low = s("rect", { class: "ignored", y: py(100), height: H });
-  const high = s("rect", { class: "ignored", y: py(100), height: H });
-  const axes = s("path", { class: "axis", d: `M${X0} ${py(100)} V${Y0} H${X0 + W}` });
-  const line = s("polyline", { class: "line" });
-  const dot = s("circle", { class: "dot", r: 4, cx: px(0), cy: py(0) });
-  const label = (x, y, text, extra = {}) => { const t = s("text", { x, y, ...extra }); t.textContent = text; return t; };
-  svg.append(low, high, axes, line, dot,
-    label(X0 + W / 2, 160, "Stick pushed", { "text-anchor": "middle" }),
-    label(14, py(50), "Output", { "text-anchor": "middle", transform: `rotate(-90 14 ${py(50)})` }),
-    label(X0 - 4, py(100) + 4, "100", { "text-anchor": "end", class: "tick" }),
-    label(X0 - 4, Y0 + 4, "0", { "text-anchor": "end", class: "tick" }));
+// The dead-zone circle (.stick-view in ds/components.css): the shaded inner disc and outer ring
+// are ignored. The dot is what the computer gets now; the ring is where the stick must be for
+// it, worked out backwards from that output (the live values come after the dead zones). That
+// assumes the usual scaling: output rises evenly from the inner dead zone to full at the outer
+// one. `anti` counts only where the controller applies it (not by cable or receiver, firmware 8201).
+function stickView(antiApplied) {
+  const svg = s("svg", { class: "stick-view", viewBox: "-110 -110 220 220", role: "img" });
+  const outer = s("circle", { class: "sv-outer", r: 100 });
+  const reach = s("circle", { class: "sv-reach", r: 100 });
+  const inner = s("circle", { class: "sv-inner", r: 0 });
+  const raw = s("circle", { class: "sv-raw", r: 9 });
+  const out = s("circle", { class: "sv-out", r: 6 });
+  svg.append(outer, reach, inner, s("circle", { class: "sv-rim", r: 100 }),
+    s("line", { class: "sv-axis", x1: -100, x2: 100, y1: 0, y2: 0 }),
+    s("line", { class: "sv-axis", x1: 0, x2: 0, y1: -100, y2: 100 }), raw, out);
   let z = { inner: 0, outer: 0, anti: 0 };
   const update = (values) => {
     z = { ...values, anti: antiApplied ? values.anti : 0 };
-    const full = 100 - z.outer;
-    low.setAttribute("x", px(0)); low.setAttribute("width", px(z.inner) - px(0));
-    high.setAttribute("x", px(full)); high.setAttribute("width", px(100) - px(full));
-    line.setAttribute("points", [[0, 0], [z.inner, 0], [z.inner, z.anti], [full, 100], [100, 100]]
-      .map(([t, o]) => `${px(t)},${py(o)}`).join(" "));
+    reach.setAttribute("r", 100 - z.outer);
+    inner.setAttribute("r", z.inner);
     svg.setAttribute("aria-label", `Inner dead zone ${values.inner}%, outer dead zone ${values.outer}%, anti-dead zone ${values.anti}%`);
   };
-  // live output, 0..1: placed on the curve, at the least stick travel that gives it
-  const show = (m) => {
-    const o = 100 * Math.min(m, 1), full = 100 - z.outer;
+  // live output, -1..1 on each axis
+  const show = (x, y) => {
+    const m = Math.min(1, Math.hypot(x, y));
+    const o = 100 * m, full = 100 - z.outer;
     const t = o <= 0 ? 0 : o >= 100 ? full : o <= z.anti ? z.inner
       : z.inner + (o - z.anti) / (100 - z.anti) * (full - z.inner);
-    dot.setAttribute("cx", px(t)); dot.setAttribute("cy", py(o));
+    const [ux, uy] = m > 0 ? [x / Math.hypot(x, y), y / Math.hypot(x, y)] : [0, 0];
+    out.setAttribute("cx", ux * o); out.setAttribute("cy", uy * o);
+    raw.setAttribute("cx", ux * t); raw.setAttribute("cy", uy * t);
     return Math.round(o);
   };
   return { svg, update, show };
@@ -557,12 +687,13 @@ function panelSticks() {
     const zones = { inner: `${prefix}_STICK_INNER`, outer: `${prefix}_STICK_OUTER`, anti: `${prefix}_STICK_ANTI` };
     const entries = Object.fromEntries(Object.entries(zones).map(([k, z]) => [k, d.dead_zones[z]]));
     const values = Object.fromEntries(Object.entries(entries).map(([k, e]) => [k, val(e) ?? 0]));
-    const pic = responseCurve(antiApplied);
+    const pic = stickView(antiApplied);
     pic.update(values);
     const readout = h("p", { class: "live-readout", "aria-live": "off" });
-    live.push((st) => { readout.textContent = `Output ${pic.show(Math.hypot(st[axes[0]], st[axes[1]]))}%`; });
+    live.push((st) => { readout.textContent = `Output ${pic.show(st[axes[0]], st[axes[1]])}%`; });
     const col = h("div", {}, h("h2", {}, side), pic.svg, readout,
-      h("div", { class: "legend" }, h("span", {}, h("i"), "Stick travel that is ignored"), h("span", {}, h("i", { class: "a" }), "What the computer gets")));
+      h("div", { class: "legend" }, h("span", {}, h("i"), "Ignored"), h("span", {}, h("i", { class: "raw" }), "The stick"),
+        h("span", {}, h("i", { class: "out" }), "What the computer gets")));
     const rows = h("div", { class: "rows" });
     const spec = [
       ["inner", "Inner dead zone", "Movement near the centre is ignored"],
@@ -586,7 +717,7 @@ function panelSticks() {
   wrap.append(pair, h("h2", {}, "Both sticks"), h("div", { class: "rows" },
     featureToggle("SWAP_STICKS", "Swap left and right stick"),
     featureToggle("SWAP_LEFT_STICK_DPAD", "Swap left stick and D-pad")));
-  wrap.append(h("p", { class: "note" }, liveNote("The line shows what the computer gets for each amount of stick travel, and the dot shows each stick now. ") +
+  wrap.append(h("p", { class: "note" }, liveNote("The shaded parts of each circle are ignored. The dot shows what the computer gets from the stick now, and the ring where the stick is for that. ") +
     "The outer dead zone stops at 25%: above that the controller's firmware gets full tilt wrong, and the stick jumps to the opposite side."));
   app.live = (st) => live.forEach((f) => f(st));
   return wrap;
@@ -617,7 +748,7 @@ function panelTriggers() {
       readout.textContent = `Pressed ${Math.round(100 * st[axis])}%`;
     });
     const col = h("div", {}, h("h2", {}, side),
-      h("div", { class: "travel", role: "img", "aria-label": `${side}: first ${values.start}% and last ${values.end}% of travel ignored` }, startEl, endEl, levelEl),
+      h("div", { class: "travel well", role: "img", "aria-label": `${side}: first ${values.start}% and last ${values.end}% of travel ignored` }, startEl, endEl, levelEl),
       h("div", { class: "travel-scale" }, h("span", {}, "Released"), h("span", {}, "Fully pressed")), readout);
     const rows = h("div", { class: "rows" });
     for (const [key, label, help] of [["start", "Start dead zone", "Ignored at the beginning of the pull"], ["end", "End dead zone", "Full press is reached this much before the end of the pull"]]) {
@@ -655,21 +786,26 @@ function liveNote(text) {
 let liveAbort = null;
 let liveTimer = null;
 
-function stopLive() {
-  if (liveAbort) { liveAbort.abort(); liveAbort = null; }
+function stopWatch() {
   clearInterval(liveTimer);
   liveTimer = null;
 }
 
-// Runs `check` every second while the live view is open (stopped by stopLive).
+// Runs `check` every second while the page is open (stopped by stopWatch on the next render).
 function liveWatch(check) {
   clearInterval(liveTimer);
   liveTimer = setInterval(check, 1000);
 }
 
-async function startLive(onState) {
-  if (liveAbort) { liveAbort.abort(); liveAbort = null; }   // replace the stream, keep the watch
-  if (app.status.mode !== "usb") return;
+// One stream while connected by cable or receiver, for the model on every page and for the
+// page's own readouts (app.live) where it has them. It stops when the connection goes.
+function ensureLive() {
+  const wanted = app.status.connected && app.status.mode === "usb";
+  if (!wanted && liveAbort) { liveAbort.abort(); liveAbort = null; releaseModel(); }
+  if (wanted && !liveAbort) startLive();
+}
+
+async function startLive() {
   const ctl = new AbortController();
   liveAbort = ctl;
   try {
@@ -687,11 +823,17 @@ async function startLive(onState) {
       while ((nl = buf.indexOf("\n")) >= 0) {
         const line = buf.slice(0, nl);
         buf = buf.slice(nl + 1);
-        if (line) onState(JSON.parse(line));
+        if (!line) continue;
+        const st = JSON.parse(line);
+        moveModel(st);
+        if (app.live) app.live(st);
       }
     }
   } catch {
-    // aborted on navigation, or the controller went away
+    // aborted, or the controller went away
+  } finally {
+    // a stream that ended by itself is started again on the next render
+    if (liveAbort === ctl) { liveAbort = null; releaseModel(); }
   }
 }
 
@@ -706,13 +848,13 @@ function panelVibration() {
       label, value: v[field], unit: "%", step: 25,         // the controller stores multiples of 25
       onCommit: (n, mark) => save("/api/vibration", { [field]: n }, (got) => { d.vibration = { value: got }; }, mark),
     });
-    const test = h("button", { class: "btn small", onclick: async () => {
+    const test = h("button", { class: "button small", onclick: async () => {
       test.disabled = true;
       try { await api("/api/vibration/test", { motor, strength: val(d.vibration)[field] || 75 }); }
       catch (e) { toast(e.message, "error"); }
       test.disabled = false;
     } }, "Test");
-    item.querySelector(".row-control").append(test);
+    item.querySelector(".setting-control").append(test);
     rows.append(item);
   }
   wrap.append(rows,
@@ -741,10 +883,10 @@ function panelLighting() {
       "aria-pressed": hex(rgb) === cur ? "true" : "false", onclick: () => set(rgb) }))));
   const picker = h("input", { type: "color", value: cur, "aria-label": "Custom colour" });
   picker.addEventListener("change", () => set(rgbOf(picker.value)));
-  wrap.append(h("div", { class: "colour-now" },
-    h("span", { class: "chip", style: `background:${cur}` }),
-    h("div", {}, h("div", { class: "row-label" }, (COLOURS.find(([, rgb]) => hex(rgb) === cur) || ["Custom colour"])[0]),
-      h("span", { class: "row-help" }, cur.toUpperCase()))));
+  wrap.append(h("div", { class: "colour-now well" },
+    h("span", { class: "colour-dot" }),
+    h("div", {}, h("div", { class: "label" }, (COLOURS.find(([, rgb]) => hex(rgb) === cur) || ["Custom colour"])[0]),
+      h("span", { class: "hint" }, cur.toUpperCase()))));
   wrap.append(h("div", { class: "rows custom-colour" }, row("Custom colour", "Any colour the light can show", picker)));
   return wrap;
 }
@@ -776,7 +918,7 @@ function panelPower() {
   else {
     const cur = val(d.auto_sleep);
     const opts = SLEEP_MINUTES.includes(cur) ? SLEEP_MINUTES : [...SLEEP_MINUTES, cur].sort((a, b) => a - b);
-    const select = h("select", { "aria-label": "Sleep after" }, opts.map((m) => h("option", { value: m }, `${m} minutes`)));
+    const select = h("select", { class: "input", "aria-label": "Sleep after" }, opts.map((m) => h("option", { value: m }, `${m} minutes`)));
     select.value = String(cur);
     const mark = savedMark();
     select.addEventListener("change", () => save("/api/auto-sleep", { value: +select.value }, (v) => { d.auto_sleep = { value: v }; }, mark));
@@ -787,10 +929,10 @@ function panelPower() {
     featureToggle("PLAY_WHILE_CHARGING", "Play while charging"),
     featureToggle("AUTO_POWER_ON_DOCK", "Turn on when lifted from the dock", "For the charging dock sold separately"));
   wrap.append(rows);
-  wrap.append(h("div", { class: "danger-zone" },
-    h("h2", {}, "Factory settings"),
-    h("p", { class: "note" }, "Resets every setting on the controller, including button mapping and the Home light."),
-    h("button", { class: "btn danger", onclick: restore }, "Restore factory settings")));
+  wrap.append(notice("warn",
+    h("h3", {}, "Factory settings"),
+    h("p", {}, "Resets every setting on the controller, including button mapping and the Home light."),
+    h("div", { class: "button-row" }, h("button", { class: "button", onclick: restore }, "Restore factory settings"))));
   return wrap;
 }
 
@@ -803,11 +945,11 @@ async function panelFirmware() {
   const shipped = fw.available.find((f) => f.target === "dongle");
   const receiverNote = receiver && shipped ? (Number(receiver) >= shipped.version ? "up to date" : `${shipped.version} is available`) : null;
   wrap.append(h("dl", { class: "facts" },
-    h("div", { class: "fact" }, h("dt", {}, "On the controller"), h("dd", {},
+    h("div", { class: "fact well" }, h("dt", {}, "On the controller"), h("dd", {},
       device || (receiver ? "Unknown" : "Not connected"),
       device ? h("small", {}, regionName(device)) : null)),
-    receiver ? h("div", { class: "fact" }, h("dt", {}, "On the 2.4 GHz receiver"), h("dd", {}, receiver, receiverNote ? h("small", {}, receiverNote) : null)) : null,
-    h("div", { class: "fact" }, h("dt", {}, "Downloaded release"), h("dd", {}, fw.extracted ? `GameSir Connect ${fw.extracted}` : "None yet"))));
+    receiver ? h("div", { class: "fact well" }, h("dt", {}, "On the 2.4 GHz receiver"), h("dd", {}, receiver, receiverNote ? h("small", {}, receiverNote) : null)) : null,
+    h("div", { class: "fact well" }, h("dt", {}, "Downloaded release"), h("dd", {}, fw.extracted ? `GameSir Connect ${fw.extracted}` : "None yet"))));
 
   if (fw.available.length) {
     const rows = h("div", { class: "rows" });
@@ -816,13 +958,13 @@ async function panelFirmware() {
       if (f.matches_device_region === false) help += ", not for your controller";
       if (f.newer_than_device) help += ", newer than yours";
       if (f.newer_than_device === false) help += ", not newer than yours";
-      rows.append(row(`${f.target === "dongle" ? "Dongle" : "Controller"} firmware ${f.version}`, help, h("span", { class: "row-help" }, f.file)));
+      rows.append(row(`${f.target === "dongle" ? "Dongle" : "Controller"} firmware ${f.version}`, help, h("span", { class: "hint" }, f.file)));
     }
     wrap.append(h("h2", {}, "Firmware in the downloaded release"), rows);
   }
 
   const status = h("p", { class: "note", "aria-live": "polite" });
-  const check = h("button", { class: "btn", onclick: async () => {
+  const check = h("button", { class: "button", onclick: async () => {
     check.disabled = true; status.textContent = "Checking for new official firmware…";
     try {
       const r = await api("/api/firmware/check", {});
@@ -831,7 +973,7 @@ async function panelFirmware() {
     } catch (e) { status.textContent = e.message; }
     check.disabled = false;
   } }, "Check for updates");
-  const dl = h("button", { class: "btn primary", onclick: async () => {
+  const dl = h("button", { class: "button primary", onclick: async () => {
     dl.disabled = true; status.textContent = "Downloading GameSir Connect and extracting its firmware. This takes a minute…";
     try {
       const r = await api("/api/firmware/download", {});
@@ -839,7 +981,7 @@ async function panelFirmware() {
       render();
     } catch (e) { status.textContent = e.message; dl.disabled = false; }
   } }, fw.extracted ? "Download latest firmware" : "Download firmware");
-  wrap.append(h("div", { class: "btn-row" }, check, dl), status);
+  wrap.append(h("div", { class: "button-row" }, check, dl), status);
 
   upd.fw = fw;
   upd.box = h("div", { class: "update", "aria-live": "polite" }, h("p", { class: "busy" }, "Looking for the controller…"));
@@ -937,9 +1079,9 @@ function updateView() {
   const where = inUpdate ? `${thing === "receiver" ? "Receiver" : "Controller"} in update mode`
     : d.mode === "normal" ? "Normal mode" : "Not found";
   out.push(h("dl", { class: "facts" },
-    h("div", { class: "fact" }, h("dt", {}, "Device"), h("dd", {}, where,
+    h("div", { class: "fact well" }, h("dt", {}, "Device"), h("dd", {}, where,
       inUpdate && d.identity ? h("small", {}, `${d.identity.chip}, ${d.identity.flash_size / 1024} KB flash`) : null)),
-    h("div", { class: "fact" }, h("dt", {}, "Firmware on it"), h("dd", {}, (inUpdate && d.installed_version) || "Unknown"))));
+    h("div", { class: "fact well" }, h("dt", {}, "Firmware on it"), h("dd", {}, (inUpdate && d.installed_version) || "Unknown"))));
 
   // 1. update mode
   const steps = h("ol", { class: "steps" });
@@ -951,22 +1093,22 @@ function updateView() {
   } else if (d.mode === "normal") {
     const enter = (target, title, text) => runStep("/api/update/enter", { confirm: true, target }, title, text, "Switch");
     first = h("div", {}, h("p", { class: "note" }, "Nothing is written in this step."),
-      h("div", { class: "btn-row" },
-        d.cable ? h("button", { class: "btn primary", disabled: running, onclick: () => enter("controller", "Switch the controller to update mode?",
+      h("div", { class: "button-row" },
+        d.cable ? h("button", { class: "button primary", disabled: running, onclick: () => enter("controller", "Switch the controller to update mode?",
           "The controller stops working as a gamepad until you restart it from this page. Nothing is written yet.") }, "Switch the controller to update mode") : null,
-        d.receiver ? h("button", { class: `btn${d.cable ? "" : " primary"}`, disabled: running, onclick: () => enter("receiver", "Switch the receiver to update mode?",
+        d.receiver ? h("button", { class: `button${d.cable ? "" : " primary"}`, disabled: running, onclick: () => enter("receiver", "Switch the receiver to update mode?",
           "The controller can't connect through the receiver until you restart the receiver from this page. Nothing is written yet.") }, "Switch the receiver to update mode") : null),
       h("p", { class: "note" }, "The controller's firmware is installed by cable; the receiver's through the receiver itself."));
   } else first = h("p", { class: "note" }, "Connect the controller by cable, or plug in the 2.4 GHz receiver with the controller on, and switch it to PC/Xbox mode: hold Menu + View until the Home light is green.");
-  steps.append(h("li", { class: inUpdate ? "done" : "" }, h("h3", {}, "Switch to update mode"), first));
+  steps.append(h("li", { class: inUpdate ? "done" : "" }, inUpdate ? stepDone() : null, h("h3", {}, "Switch to update mode"), first));
 
   // 2. backup
   const mine = d.identity ? d.backups.filter((b) => b.chip_key === d.identity.chip_key && b.jedec_id === d.identity.jedec_id) : d.backups;
   if (upd.backup && !mine.some((b) => b.name === upd.backup)) upd.backup = null;
   if (!upd.backup && mine.length) upd.backup = mine[0].name;
-  const backupStep = h("li", { class: mine.length ? "done" : "" }, h("h3", {}, `Back up the ${thing}`));
+  const backupStep = h("li", { class: mine.length ? "done" : "" }, mine.length ? stepDone() : null, h("h3", {}, `Back up the ${thing}`));
   if (mine.length) {
-    const sel = h("select", { "aria-label": "Backup", disabled: running, onchange: (e) => { upd.backup = e.target.value; pollUpdate(); } },
+    const sel = h("select", { class: "input", "aria-label": "Backup", disabled: running, onchange: (e) => { upd.backup = e.target.value; pollUpdate(); } },
       mine.map((b) => h("option", { value: b.name, selected: b.name === upd.backup }, `${b.created.replace("T", " ").slice(0, 16)}  (${b.name})`)));
     backupStep.append(h("p", { class: "note" }, d.identity ? `Backups of this ${thing}:` : "Backups on this computer:"), sel);
   } else {
@@ -974,7 +1116,7 @@ function updateView() {
       ? "There is no backup of this receiver yet. Every write needs one: it holds the firmware and the pairing with your controller."
       : "There is no backup of this controller yet. Every write needs one: it holds the firmware, settings, Bluetooth address and calibration."));
   }
-  backupStep.append(h("div", { class: "btn-row" }, h("button", { class: `btn${mine.length ? "" : " primary"}`, disabled: running || !inUpdate,
+  backupStep.append(h("div", { class: "button-row" }, h("button", { class: `button${mine.length ? "" : " primary"}`, disabled: running || !inUpdate,
     onclick: () => runStep("/api/update/backup") }, mine.length ? "Make another backup" : "Make a backup")),
     h("p", { class: "note" }, "Backups are saved in ~/.local/share/padsquire/backups. Copy them somewhere safe."));
   steps.append(backupStep);
@@ -986,7 +1128,7 @@ function updateView() {
   const install = h("li", {}, h("h3", {}, "Install firmware"));
   if (!files.length) install.append(h("p", { class: "note" }, "Download firmware above first."));
   else {
-    install.append(h("select", { "aria-label": "Firmware", disabled: running, onchange: (e) => { upd.file = e.target.value; pollUpdate(); } },
+    install.append(h("select", { class: "input", "aria-label": "Firmware", disabled: running, onchange: (e) => { upd.file = e.target.value; pollUpdate(); } },
       files.map((f) => h("option", { value: f.file, selected: f.file === upd.file },
         f.target === "dongle" ? `Receiver firmware ${f.version}` : `Firmware ${f.version}, ${f.region === "china" ? "China" : "International"} build`))));
     const check = upd.checks[checkKey()];
@@ -997,8 +1139,8 @@ function updateView() {
     } else install.append(h("ul", { class: "problems" }, check.errors.map((e) => h("li", {}, e))));
     if (check && check.warnings.length) install.append(h("ul", { class: "warnings" }, check.warnings.map((w) => h("li", {}, w))));
     const f = files.find((x) => x.file === upd.file);
-    install.append(h("div", { class: "btn-row" },
-      h("button", { class: "btn primary", disabled: running || !inUpdate || !(check && check.allowed), onclick: () => runStep("/api/update/install",
+    install.append(h("div", { class: "button-row" },
+      h("button", { class: "button primary", disabled: running || !inUpdate || !(check && check.allowed), onclick: () => runStep("/api/update/install",
         { file: upd.file, backup: upd.backup, confirm: true }, `Install firmware ${f && f.version}?`,
         `The firmware area of the ${thing} is erased and rewritten. Keep it plugged in until it finishes. If anything fails, it stays in update mode and you can run it again or write the backup back.`,
         "Install") }, `Install firmware ${f ? f.version : ""}`)));
@@ -1006,7 +1148,7 @@ function updateView() {
   install.append(h("p", { class: "note" }, thing === "receiver"
       ? "To go back to the firmware in a backup, write the backup back. The pairing stays as it is."
       : "To go back to the firmware in a backup, write the backup back. Settings, Bluetooth address and calibration stay as they are."),
-    h("div", { class: "btn-row" }, h("button", { class: "btn", disabled: running || !inUpdate || !upd.backup, onclick: () => runStep("/api/update/restore",
+    h("div", { class: "button-row" }, h("button", { class: "button", disabled: running || !inUpdate || !upd.backup, onclick: () => runStep("/api/update/restore",
       { backup: upd.backup, confirm: true }, "Write the backup back?",
       `The firmware area of the ${thing} is erased and rewritten with the firmware in the backup. Keep it plugged in until it finishes.`, "Write it back") },
       "Write the backup back")));
@@ -1014,8 +1156,8 @@ function updateView() {
 
   // 4. restart
   steps.append(h("li", {}, h("h3", {}, `Restart the ${thing}`),
-    d.stay ? h("p", { class: "callout danger" }, "The last write did not verify. Don't restart or unplug the controller: run the same step again.") : null,
-    h("div", { class: "btn-row" }, h("button", { class: "btn", disabled: running || !inUpdate || d.stay,
+    d.stay ? notice("danger", "The last write did not verify. Don't restart or unplug the controller: run the same step again.") : null,
+    h("div", { class: "button-row" }, h("button", { class: "button", disabled: running || !inUpdate || d.stay,
       onclick: () => runStep("/api/update/restart") }, `Restart ${thing}`))));
   out.push(steps);
   out.push(h("p", { class: "note" }, h("strong", {}, "Not known yet: "),
@@ -1025,14 +1167,14 @@ function updateView() {
   if (job) {
     const names = { enter: "Switching to update mode", identify: "Identifying the chip", backup: "Backing up",
                     restore: "Writing the backup back", install: "Installing firmware", restart: "Restarting" };
-    const box = h("div", { class: `job ${job.state}` }, h("h3", {}, names[job.kind] || job.kind,
+    const box = h("div", { class: `job well ${job.state}` }, h("h3", {}, names[job.kind] || job.kind,
       job.state === "done" ? ": done" : job.state === "failed" ? ": failed" : "…"));
     if (running) {
       box.append(h("p", { class: "note" }, job.label || "Starting…"),
         h("progress", { max: job.total || 1, value: job.done || 0 }),
         ["restore", "install"].includes(job.kind) ? h("p", { class: "note" }, h("strong", {}, "Keep it plugged in until this finishes.")) : null);
     }
-    if (job.error) box.append(h("p", { class: "callout danger" }, job.error));
+    if (job.error) box.append(notice("danger", job.error));
     if (job.log.length) box.append(h("ol", { class: "log" }, job.log.map((l) => h("li", {}, l))));
     out.push(box);
   }
@@ -1042,63 +1184,156 @@ function updateView() {
 // ---------------------------------------------------------------------------
 // button guide: the controller map labelled like the manual, and how-tos in our own words
 
-// [label, side, label y, anchor x, anchor y], in the map's viewBox coordinates
-const GUIDE_LABELS = [
-  ["LT left trigger", "l", -4, 100, 4],
-  ["LB left bumper", "l", 18, 86, 22],
-  ["Home button and light", "l", 36, 191, 50],
-  ["View button", "l", 56, 158, 62],
-  ["Left stick (press for L3)", "l", 95, 99, 95],
-  ["L4 back button", "l", 133, 95, 141],
-  ["D-pad", "l", 186, 151, 146],
-  ["RT right trigger", "r", -4, 300, 4],
-  ["RB right bumper", "r", 18, 314, 22],
-  ["Menu button", "r", 38, 242, 62],
-  ["Screenshot button", "r", 58, 209, 80],
-  ["A, B, X and Y buttons", "r", 96, 297, 96],
-  ["R4 back button", "r", 133, 305, 141],
-  ["Right stick (press for R3)", "r", 162, 248, 146],
-  ["M button", "r", 192, 210, 171],
+// ---------------------------------------------------------------------------
+// controller figures: the website's outline drawings (img/nova-2-lite-front.svg and -back.svg,
+// traced from the 3D model) with the controls laid over them where they are. Positions are the
+// website's measurements (tools/nova-2-lite/shape.py), in the drawings' own millimetres: x to
+// the right and y down from the middle of the top edge, as you look at the face.
+
+const outlines = {};
+async function outline(view) {
+  if (!outlines[view]) {
+    outlines[view] = (async () => {
+      const res = await fetch(`/static/img/nova-2-lite-${view}.svg`);
+      if (!res.ok) throw new Error(`Couldn't load the controller drawing (HTTP ${res.status}).`);
+      // dropped before parsing: even a parsed-only <style> counts against the page's CSP
+      const text = (await res.text()).replace(/<style[\s\S]*?<\/style>/, "");
+      return new DOMParser().parseFromString(text, "image/svg+xml").querySelector("g.line");
+    })().catch((e) => { delete outlines[view]; throw e; });
+  }
+  return document.importNode(await outlines[view], true);
+}
+
+// The face's controls: a circle [x, y, r] or a rounded rect [x, y, width, height, angle].
+// The shoulders are drawn just above the top edge, where the front view shows only a sliver of
+// them: the bumpers in a solid line, the triggers behind them dashed. L4 and R4 (on the back)
+// are dashed too.
+const FACE = {
+  lt: { rect: [-42.5, -15.5, 19, 5.6, -7], glyph: "LT", size: 3.4, ghost: true },
+  rt: { rect: [42.5, -15.5, 19, 5.6, 7], glyph: "RT", size: 3.4, ghost: true },
+  lb: { rect: [-41, -6.8, 21, 5.6, -7], glyph: "LB", size: 3.4, outlined: true },
+  rb: { rect: [41, -6.8, 21, 5.6, 7], glyph: "RB", size: 3.4, outlined: true },
+  ls: { circle: [-40.3, 21, 8.4], glyph: "L3", size: 4 },
+  rs: { circle: [19.6, 39.8, 8.4], glyph: "R3", size: 4 },
+  y: { circle: [39.8, 12.9, 4.8], glyph: "Y", size: 4.2 },
+  x: { circle: [30, 22.7, 4.8], glyph: "X", size: 4.2 },
+  b: { circle: [49.6, 22.7, 4.8], glyph: "B", size: 4.2 },
+  a: { circle: [39.8, 32.5, 4.8], glyph: "A", size: 4.2 },
+  home: { circle: [0, 7.4, 4.3] },
+  view: { rect: [-14.9, 10.7, 3.9, 7.6, -20], name: [-14.9, 18.8, "View"] },
+  menu: { rect: [14.9, 10.7, 3.9, 7.6, 20], name: [14.9, 18.8, "Menu"] },
+  share: { rect: [0, 17, 8.6, 3.8, 0], name: [0, 23, "Capture"] },
+  m: { rect: [0, 49, 8.6, 3.6, 0], glyph: "M", size: 2.8 },
+  up: { rect: [-19.8, 33.2, 7.5, 7.1, 0], rx: 1.2, arrow: 0 },
+  down: { rect: [-19.8, 47.8, 7.5, 7.1, 0], rx: 1.2, arrow: 180 },
+  left: { rect: [-27.1, 40.5, 7.1, 7.5, 0], rx: 1.2, arrow: 270 },
+  right: { rect: [-12.5, 40.5, 7.1, 7.5, 0], rx: 1.2, arrow: 90 },
+  l4: { rect: [-32, 57.5, 27, 9, -17], glyph: "L4", size: 3.6, ghost: true },
+  r4: { rect: [32, 57.5, 27, 9, 17], glyph: "R4", size: 3.6, ghost: true },
+};
+
+function svgText(x, y, text, cls, size) {
+  const t = s("text", { class: cls, x, y });
+  if (size) t.setAttribute("font-size", size);
+  t.textContent = text;
+  return t;
+}
+
+function facePart(id, spec) {
+  const g = s("g", { class: `part${spec.ghost ? " ghost" : ""}${spec.outlined ? " outlined" : ""}`, "data-part": id });
+  let shape;
+  if (spec.circle) {
+    const [cx, cy, r] = spec.circle;
+    shape = s("circle", { class: "shape", cx, cy, r });
+  } else {
+    const [cx, cy, w, hgt, angle] = spec.rect;
+    shape = s("rect", { class: "shape", x: cx - w / 2, y: cy - hgt / 2, width: w, height: hgt,
+      rx: spec.rx ?? Math.min(w, hgt) / 2, transform: `rotate(${angle} ${cx} ${cy})` });
+  }
+  g.append(shape);
+  const [cx, cy] = spec.circle || spec.rect;
+  if (spec.glyph) g.append(svgText(cx, cy, spec.glyph, "glyph", spec.size));
+  if (spec.arrow !== undefined) {
+    g.append(s("path", { class: "arrow", d: "M0 -1.7 L1.6 1.1 L-1.6 1.1 Z", transform: `translate(${cx} ${cy}) rotate(${spec.arrow})` }));
+  }
+  if (spec.name) g.append(svgText(spec.name[0], spec.name[1], spec.name[2], "part-name"));
+  return g;
+}
+
+// The face with every control drawn and labelled on it.
+async function faceFigure() {
+  const svg = s("svg", { class: "figure face", viewBox: "-79 -22 158 126" });
+  svg.append(await outline("front"));
+  const parts = s("g", { class: "parts" });
+  for (const [id, spec] of Object.entries(FACE)) parts.append(facePart(id, spec));
+  svg.append(parts);
+  return svg;
+}
+
+// Labels with leader lines, like the manual's. Each label: its lines, where it sits, which way
+// it reads, and the leader's points from the label to the part.
+const GUIDE_FRONT = [
+  { lines: ["Left bumper", "LB"], at: [-88, -6], anchor: "end", path: [[-86, -6], [-53, -6], [-47, 0]] },
+  { lines: ["View button"], at: [-88, 6], anchor: "end", path: [[-86, 6], [-19, 6], [-16, 8.5]] },
+  { lines: ["Left stick", "press for L3"], at: [-88, 21], anchor: "end", path: [[-86, 21], [-51.7, 21]] },
+  { lines: ["D-pad"], at: [-88, 40.5], anchor: "end", path: [[-86, 40.5], [-32.2, 40.5]] },
+  { lines: ["Right bumper", "RB"], at: [88, -6], anchor: "start", path: [[86, -6], [53, -6], [47, 0]] },
+  { lines: ["Menu button"], at: [88, 6], anchor: "start", path: [[86, 6], [19, 6], [16, 8.5]] },
+  { lines: ["Face buttons", "A, B, X and Y"], at: [88, 22.7], anchor: "start", path: [[86, 22.7], [54.4, 22.7]] },
+  { lines: ["Right stick", "press for R3"], at: [88, 45], anchor: "start", path: [[86, 45], [33, 45], [30.6, 43]] },
+  { lines: ["Home button", "and its light"], at: [0, -19], anchor: "middle", path: [[0, -10], [0, 3.1]] },
+  { lines: ["Screenshot button"], at: [6, 110], anchor: "start", path: [[4.3, 17.5], [7, 20], [7, 106]] },
+  { lines: ["M button"], at: [-4, 110], anchor: "end", path: [[-2, 50.8], [-2, 106]] },
+];
+// Seen from behind, so the controller's right is on the left.
+const GUIDE_BACK = [
+  { lines: ["Right trigger", "RT"], at: [-88, 4], anchor: "end", path: [[-86, 4], [-51.7, 4]] },
+  { lines: ["Trigger stop", "shortens the pull"], at: [-88, 22], anchor: "end", path: [[-86, 22], [-24.5, 22]] },
+  { lines: ["Back button R4"], at: [-88, 61], anchor: "end", path: [[-86, 61], [-45.8, 61]] },
+  { lines: ["Left trigger", "LT"], at: [88, 4], anchor: "start", path: [[86, 4], [51.7, 4]] },
+  { lines: ["Trigger stop", "shortens the pull"], at: [88, 22], anchor: "start", path: [[86, 22], [24.5, 22]] },
+  { lines: ["Back button L4"], at: [88, 61], anchor: "start", path: [[86, 61], [45.8, 61]] },
+  { lines: ["USB-C port"], at: [0, -16], anchor: "middle", path: [[0, -11], [0, 2.7]] },
+  { lines: ["Charging contacts"], at: [0, 110], anchor: "middle", path: [[0, 62.5], [0, 106]] },
 ];
 
-function guideDrawing() {
-  const svg = $("#pad").cloneNode(true);
-  svg.removeAttribute("id");
-  for (const el of svg.querySelectorAll("title, .part-label")) el.remove();
-  for (const el of [svg, ...svg.querySelectorAll("*")]) {
-    for (const a of ["tabindex", "role", "aria-label", "aria-disabled", "data-section"]) el.removeAttribute(a);
-    el.classList.remove("part", "active", "offline");
-  }
-  svg.setAttribute("class", "pad guide-pad");
-  svg.setAttribute("viewBox", "-205 -16 810 300");
-  svg.setAttribute("role", "img");
-  svg.setAttribute("aria-label", "The Nova 2 Lite from the front, with every button labelled");
-  for (const [label, side, ly, ax, ay] of GUIDE_LABELS) {
-    const left = side === "l";
-    const edge = left ? -10 : 410;
-    // horizontal from the label, then a 45° run into the part, like the manual's leader lines
-    const bend = left ? ax - Math.abs(ay - ly) : ax + Math.abs(ay - ly);
-    svg.append(
-      s("path", { class: "leader", d: `M${edge} ${ly} H${bend} L${ax} ${ay}` }),
-      s("circle", { class: "anchor", cx: ax, cy: ay, r: 1.8 }));
-    const text = s("text", { class: "callout-label", x: left ? edge - 6 : edge + 6, y: ly, "text-anchor": left ? "end" : "start" });
-    text.textContent = label;
-    svg.append(text);
+async function guideFigure(view, labels, description) {
+  const svg = s("svg", { class: "figure guide", viewBox: "-150 -24 300 140", role: "img", "aria-label": description });
+  svg.append(await outline(view));
+  for (const { lines, at: [x, y], anchor, path } of labels) {
+    svg.append(s("polyline", { class: "leader", points: path.map((p) => p.join(",")).join(" ") }));
+    const [ax, ay] = path[path.length - 1];
+    svg.append(s("circle", { class: "anchor", cx: ax, cy: ay, r: 1.1 }));
+    // a label above or below its part stacks its lines away from the leader
+    const up = anchor === "middle" && y < 0;
+    lines.forEach((line, i) => {
+      const t = svgText(x, up ? y + i * 6 : y + i * 6, line, i ? "callout-hint" : "callout-label");
+      t.setAttribute("text-anchor", anchor);
+      svg.append(t);
+    });
   }
   return svg;
 }
 
 function table(head, rows) {
-  return h("div", { class: "table-wrap" }, h("table", { class: "table" },
+  return h("div", { class: "table-scroll" }, h("table", { class: "table" },
     h("thead", {}, h("tr", {}, head.map((c) => h("th", { scope: "col" }, c)))),
     h("tbody", {}, rows.map((r) => h("tr", {}, r.map((c, i) => i === 0 ? h("th", { scope: "row" }, c) : h("td", {}, c)))))));
 }
 
-function panelGuide() {
+async function panelGuide() {
+  let pic;
+  try {
+    pic = h("div", { class: "guide-figures" },
+      h("figure", { class: "well figure-scroll" }, await guideFigure("front", GUIDE_FRONT, "The Nova 2 Lite from the front, with every button labelled"),
+        h("figcaption", {}, "From the front")),
+      h("figure", { class: "well figure-scroll" }, await guideFigure("back", GUIDE_BACK, "The Nova 2 Lite from the back: triggers, trigger stops, back buttons, the USB-C port and the charging contacts"),
+        h("figcaption", {}, "From the back")));
+  } catch (e) { pic = h("p", { class: "note" }, e.message); }
   return h("div", {},
     h("h1", {}, "Button guide"),
     h("p", { class: "lede" }, "Every button on the Nova 2 Lite, the modes and what the Home light means, and the shortcuts built into the controller."),
-    guideDrawing(),
+    pic,
     h("h2", {}, "What the buttons do"),
     table(["Button", "What it does"], [
       ["Home", "Turns the controller on. Hold it for 5 seconds to turn it off. Its light shows the mode and the connection."],
@@ -1160,7 +1395,7 @@ const PANELS = {
 let renderSeq = 0;
 async function render() {
   app.section = sectionFromHash();
-  stopLive();
+  stopWatch();
   stopUpdatePoll();
   app.live = null;
   renderChrome();
@@ -1173,7 +1408,7 @@ async function render() {
   else content = await PANELS[app.section]();
   if (seq !== renderSeq) return;
   panel.replaceChildren(content);
-  if (app.live) startLive(app.live);
+  ensureLive();
 }
 
 // ---------------------------------------------------------------------------
@@ -1252,7 +1487,7 @@ async function watchDevices() {
 // setup and help: what this computer still needs, and what to do when something goes wrong
 
 function copyButton(text) {
-  const btn = h("button", { class: "btn small", onclick: async () => {
+  const btn = h("button", { class: "button small quiet", onclick: async () => {
     try { await navigator.clipboard.writeText(text); btn.textContent = "Copied"; }
     catch { btn.textContent = "Select and copy it"; }
     setTimeout(() => { btn.textContent = "Copy"; }, 1600);
@@ -1261,7 +1496,9 @@ function copyButton(text) {
 }
 
 function command(text) {
-  return h("div", { class: "command" }, h("code", {}, text), copyButton(text));
+  return h("div", { class: "codeblock command" },
+    h("div", { class: "codeblock-bar" }, h("span", {}, "Terminal"), copyButton(text)),
+    h("pre", {}, h("code", {}, text)));
 }
 
 // What this computer still lacks, said on the front page and before firmware steps.
@@ -1275,10 +1512,10 @@ function setupNotice(only) {
   if (!now.length && !later.length) return null;
   const names = (list) => list.map((c) => c.title).join(", ");
   return h("div", {},
-    now.length ? h("p", { class: "callout danger" },
+    now.length ? notice("danger",
       `Before the controller can be used, this computer needs a one-time setup: ${names(now)}. It takes one command; `,
       h("a", { href: "#setup" }, "see Setup and help"), " for it and what it does.") : null,
-    later.length ? h("p", { class: "callout" },
+    later.length ? notice("",
       `Before firmware updates and backups work: ${names(later)}. `,
       h("a", { href: "#setup" }, "See Setup and help"), " for what to run and why.") : null);
 }
@@ -1292,8 +1529,8 @@ async function panelSetup() {
   catch (e) { wrap.append(h("p", { class: "note" }, e.message)); return wrap; }
   const list = h("ol", { class: "steps" });
   for (const c of app.setup) {
-    list.append(h("li", { class: c.ok ? "done" : "" },
-      h("h3", {}, c.title, h("span", { class: "need" }, NEEDS[c.need])),
+    list.append(h("li", { class: c.ok ? "done" : "" }, c.ok ? stepDone() : null,
+      h("h3", {}, c.title, h("span", { class: "chip" }, NEEDS[c.need])),
       h("p", { class: "note" }, c.detail),
       c.command ? command(c.command) : null,
       c.command && c.explain.length ? h("details", { class: "explain" }, h("summary", {}, "What this does"),
@@ -1301,12 +1538,12 @@ async function panelSetup() {
         c.file ? [h("p", {}, `The file, ${c.file.path}:`), h("pre", { class: "file" }, c.file.content)] : null,
         c.docs.length ? h("p", {}, "Documentation: ", c.docs.map((d, i) => [i ? ", " : "",
           h("a", { href: d.url, target: "_blank", rel: "noopener noreferrer" }, d.title)])) : null) : null,
-      c.id === "firmware" && !c.ok ? h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: () => go("firmware") }, "Go to Firmware")) : null));
+      c.id === "firmware" && !c.ok ? h("div", { class: "button-row" }, h("button", { class: "button", onclick: () => go("firmware") }, "Go to Firmware")) : null));
   }
-  wrap.append(list, h("div", { class: "btn-row" }, h("button", { class: "btn", onclick: render }, "Check again")));
+  wrap.append(list, h("div", { class: "button-row" }, h("button", { class: "button", onclick: render }, "Check again")));
 
   const qa = (q, ...a) => h("details", { class: "faq" }, h("summary", {}, q), ...a.map((x) => typeof x === "string" ? h("p", {}, x) : x));
-  wrap.append(h("h2", {}, "If something doesn't work"),
+  wrap.append(h("h2", {}, "If something doesn't work"), h("div", { class: "faqs" },
     qa("The controller isn't found",
       "Check the Home light is green: hold Menu and View for 2 seconds; each press moves to the next mode (green, red, blue). In blue mode it pretends to be a PlayStation controller and can't be configured.",
       "By cable, try another cable or port: some cables only charge. Through the receiver, turn the controller on and wait for it to link before switching to green.",
@@ -1325,7 +1562,7 @@ async function panelSetup() {
       "In ~/.local/share/padsquire/backups, one file per backup with a .json next to it. They hold the firmware and your controller's Bluetooth pairing and calibration: copy them somewhere safe, and don't share them."),
     qa("Starting this app",
       command("padsquire gui"),
-      "It runs on this computer only (127.0.0.1) and opens your browser with a one-time link. Stop it with Ctrl+C in its terminal."));
+      "It runs on this computer only (127.0.0.1) and opens your browser with a one-time link. Stop it with Ctrl+C in its terminal.")));
   return wrap;
 }
 
@@ -1338,8 +1575,30 @@ async function restore() {
 
 // ---------------------------------------------------------------------------
 
+// Light and dark follow the system; choosing one pins it with data-theme on <html>.
+function wireTheme() {
+  for (const input of document.querySelectorAll("#theme input")) {
+    input.addEventListener("change", () => {
+      if (input.value === "auto") delete document.documentElement.dataset.theme;
+      else document.documentElement.dataset.theme = input.value;
+    });
+  }
+}
+
+// The logo is padsquire.com's icon, inlined so its colours follow the theme tokens (as an
+// <img> it would only follow the system's light or dark).
+async function showLogo() {
+  try {
+    const res = await fetch("/static/img/icon.svg");
+    const text = (await res.text()).replace(/<style[\s\S]*?<\/style>/, "");
+    $("#logo").append(document.importNode(new DOMParser().parseFromString(text, "image/svg+xml").documentElement, true));
+  } catch { /* the name alone is enough */ }
+}
+
 async function start() {
-  wireMap();
+  wireTheme();
+  showLogo();
+  startModel();
   window.addEventListener("hashchange", render);
   try {
     [app.meta, app.status] = await Promise.all([api("/api/meta"), api("/api/status")]);

@@ -53,7 +53,10 @@ first, and run it with `sh install.sh`. It needs no root, except for one step it
    one step that asks for your password.
 
 Then open **PadSquire** from your app menu. It opens in its own window (with Chrome, Chromium,
-Brave, Edge or Vivaldi; otherwise in a browser tab) and stops by itself when you close it.
+Brave, Edge or Vivaldi; otherwise in a browser tab) and stops by itself when you close it. The
+window uses its own small browser profile in `~/.cache/padsquire/window` (for a Flatpak browser, as
+on a Steam Deck: `~/.var/app/<browser>/cache/padsquire/window`), so it keeps its size and none of
+your extensions or cookies come along; deleting that folder is safe.
 **Setup and help** in the app tells you anything that's still missing, and explains each command
 before you run it.
 
@@ -184,5 +187,10 @@ same licence. The settings app's "Source code" link does that for you as long as
 
 The protocol notes in [PROTOCOL.md](PROTOCOL.md) are under
 [Creative Commons Attribution-ShareAlike 4.0](LICENSES/CC-BY-SA-4.0.txt), so other projects can
-reuse them. The bundled Barlow fonts keep their own
-[SIL Open Font License](src/padsquire/web/static/fonts/OFL.txt).
+reuse them.
+
+The bundled fonts (Young Serif, Atkinson Hyperlegible Next and Atkinson Hyperlegible Mono) are
+under the [SIL Open Font License](https://openfontlicense.org/); their licences are in
+[`src/padsquire/web/static/ds/fonts/`](src/padsquire/web/static/ds/fonts/).
+[`src/padsquire/web/static/vendor/three.js`](src/padsquire/web/static/vendor/three.js) is
+[three.js](https://threejs.org/), under the MIT licence (its notice is at the end of the file).

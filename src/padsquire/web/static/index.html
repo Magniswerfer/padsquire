@@ -4,114 +4,57 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>PadSquire</title>
-<link rel="icon" href="data:,">
-<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="/static/img/icon.svg" type="image/svg+xml">
+<link rel="icon" href="/static/img/icon-512.png" type="image/png" sizes="512x512">
+<link rel="preload" href="/static/ds/fonts/young-serif-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/ds/fonts/atkinson-hyperlegible-next-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/ds/tokens.css">
+<link rel="stylesheet" href="/static/ds/components.css">
+<link rel="stylesheet" href="/static/app.css">
+<script type="module" src="/static/pad-model.js"></script>
 <script src="/static/app.js" defer></script>
 </head>
 <body>
-<header class="bar">
-  <div class="bar-title">
-    <span class="mark" aria-hidden="true"></span>
-    <span class="product">Nova 2 Lite</span>
-    <span class="tool">PadSquire</span>
-  </div>
-  <div class="bar-status" id="status" aria-live="polite"></div>
+<header class="app-bar">
+  <span class="app-title"><span class="logo" id="logo" aria-hidden="true"></span>PadSquire <span class="app-device">Nova 2 Lite</span></span>
+  <div class="app-status" id="status" aria-live="polite"></div>
 </header>
 
 <main class="layout">
-  <aside class="map" aria-label="Controller">
-    <div class="stage">
-    <svg id="pad" class="pad" viewBox="0 -8 400 298" role="group" aria-label="Controller map: choose a part to configure">
-      <!-- line drawing after the Nova 2 Lite manual. Triggers and bumpers sit behind the shell -->
-      <g class="part" data-section="triggers" tabindex="0" role="button" aria-label="Triggers">
-        <title>Triggers</title>
-        <path class="plastic" d="M84 18 C85 1 95 -6 108 -6 C120 -6 126 1 126 17 Z"/>
-        <path class="plastic" d="M316 18 C315 1 305 -6 292 -6 C280 -6 274 1 274 17 Z"/>
-        <text class="part-label tiny" x="105" y="5">LT</text>
-        <text class="part-label tiny" x="295" y="5">RT</text>
-      </g>
-      <g class="part" data-section="buttons" tabindex="0" role="button" aria-label="Bumpers">
-        <title>Bumpers</title>
-        <path class="plastic" d="M76 27 C78 17 88 13 102 13 C116 13 126 16 128 24 Z"/>
-        <path class="plastic" d="M324 27 C322 17 312 13 298 13 C284 13 274 16 272 24 Z"/>
-      </g>
+  <aside class="side" aria-label="Controller">
+    <pad-model id="pad" src="/static/models/nova-2-lite.glb" role="img" aria-label="Your controller">
+      <img class="pad-drawing" src="/static/img/nova-2-lite-angle.svg" width="640" height="480" alt="">
+    </pad-model>
 
-      <!-- shell: not interactive itself -->
-      <path class="shell" d="M200 20 C250 19 290 19 318 22 C342 25 357 42 367 78 C379 116 390 170 388 215 C386 250 372 268 350 268 C330 268 306 236 286 205 C276 195 240 191 200 191 C160 191 124 195 114 205 C94 236 70 268 50 268 C28 268 14 250 12 215 C10 170 21 116 33 78 C43 42 58 25 82 22 C110 19 150 19 200 20 Z"/>
-      <path class="edge" d="M112 204 C144 180 256 180 288 204"/>
-
-      <!-- the grips hold the rumble motors -->
-      <g class="part grips" data-section="vibration" tabindex="0" role="button" aria-label="Grips: vibration">
-        <title>Grips: vibration</title>
-        <path class="grip" d="M15 170 C11 215 14 250 32 262 C48 272 66 266 84 242 L108 210 C80 196 46 182 15 170 Z"/>
-        <path class="grip" d="M385 170 C389 215 386 250 368 262 C352 272 334 266 316 242 L292 210 C320 196 354 182 385 170 Z"/>
-      </g>
-
-      <!-- back buttons: two paddles on a plate across the back, behind the D-pad and right stick
-           (manual, back view; mirrored, so L4 is on the left as seen from the front) -->
-      <g class="part back" data-section="buttons" tabindex="0" role="button" aria-label="Back buttons">
-        <title>Back buttons (on the back)</title>
-        <path class="underside" d="M178 137 L171 129 L96 129 Q89 129 91 135 L99 157 Q101 161 106 161 L174 161 Q178 161 178 157 Z"/>
-        <path class="underside" d="M222 137 L229 129 L304 129 Q311 129 309 135 L301 157 Q299 161 294 161 L226 161 Q222 161 222 157 Z"/>
-        <text class="part-label small" x="105" y="149">L4</text>
-        <text class="part-label small" x="295" y="149">R4</text>
-      </g>
-
-      <g class="part" data-section="sticks" tabindex="0" role="button" aria-label="Sticks">
-        <title>Sticks</title>
-        <circle class="well" cx="99" cy="95" r="25"/>
-        <circle class="cap" cx="99" cy="95" r="19"/>
-        <circle class="texture" cx="99" cy="95" r="14"/>
-        <circle class="pip" cx="99" cy="95" r="1.2"/>
-        <circle class="well" cx="248" cy="146" r="25"/>
-        <circle class="cap" cx="248" cy="146" r="19"/>
-        <circle class="texture" cx="248" cy="146" r="14"/>
-        <circle class="pip" cx="248" cy="146" r="1.2"/>
-      </g>
-
-      <g class="part" data-section="buttons" tabindex="0" role="button" aria-label="Face buttons and D-pad">
-        <title>Buttons</title>
-        <circle class="well" cx="151" cy="146" r="30"/>
-        <path class="key" d="M144.5 121 h13 a1.5 1.5 0 0 1 1.5 1.5 v17 h17 a1.5 1.5 0 0 1 1.5 1.5 v12 a1.5 1.5 0 0 1 -1.5 1.5 h-17 v17 a1.5 1.5 0 0 1 -1.5 1.5 h-13 a1.5 1.5 0 0 1 -1.5 -1.5 v-17 h-17 a1.5 1.5 0 0 1 -1.5 -1.5 v-12 a1.5 1.5 0 0 1 1.5 -1.5 h17 v-17 a1.5 1.5 0 0 1 1.5 -1.5 z"/>
-        <circle class="key" cx="297" cy="72" r="10"/><text class="glyph" x="297" y="72">Y</text>
-        <circle class="key" cx="272" cy="96" r="10"/><text class="glyph" x="272" y="96">X</text>
-        <circle class="key" cx="322" cy="96" r="10"/><text class="glyph" x="322" y="96">B</text>
-        <circle class="key" cx="297" cy="120" r="10"/><text class="glyph" x="297" y="120">A</text>
-        <rect class="key" x="157" y="53" width="8" height="16" rx="4" transform="rotate(-30 161 61)"/>
-        <rect class="key" x="235" y="53" width="8" height="16" rx="4" transform="rotate(30 239 61)"/>
-        <rect class="key" x="191" y="76" width="18" height="9" rx="4.5"/>
-        <rect class="key" x="190" y="166" width="20" height="10" rx="5"/>
-        <text class="glyph tiny" x="200" y="171">M</text>
-      </g>
-
-      <g class="part" data-section="lighting" tabindex="0" role="button" aria-label="Home light">
-        <title>Home light</title>
-        <circle class="led-glow" cx="200" cy="52" r="18"/>
-        <circle class="led" cx="200" cy="52" r="10.5"/>
-      </g>
-    </svg>
-    </div>
-
-    <nav class="sections" aria-label="Settings">
-      <ul id="nav"></ul>
+    <nav aria-label="Settings">
+      <ul class="navlist" id="nav"></ul>
     </nav>
-    <p class="source">PadSquire, free software under the AGPL.
-      <a href="https://github.com/Magniswerfer/padsquire" target="_blank" rel="noopener">Source code</a></p>
+
+    <div class="side-foot">
+      <div class="segmented" role="radiogroup" aria-label="Theme" id="theme">
+        <input type="radio" name="theme" id="theme-auto" value="auto" checked><label for="theme-auto">System</label>
+        <input type="radio" name="theme" id="theme-light" value="light"><label for="theme-light">Light</label>
+        <input type="radio" name="theme" id="theme-dark" value="dark"><label for="theme-dark">Dark</label>
+      </div>
+      <p class="source">PadSquire, free software under the AGPL.
+        <a href="https://github.com/Magniswerfer/padsquire" target="_blank" rel="noopener">Source code</a></p>
+    </div>
   </aside>
 
-  <section class="panel" id="panel" tabindex="-1" aria-live="polite"></section>
+  <section class="panel sheet" id="panel" tabindex="-1" aria-live="polite"></section>
 </main>
 
 <div class="toasts" id="toasts" role="status" aria-live="assertive"></div>
 
-<dialog id="confirm" class="confirm">
+<dialog id="confirm" class="dialog">
   <form method="dialog">
     <h2 id="confirm-title"></h2>
     <p id="confirm-text"></p>
     <div class="actions">
-      <button value="cancel" class="btn">Cancel</button>
-      <button value="ok" class="btn danger" id="confirm-ok"></button>
+      <button value="cancel" class="button">Cancel</button>
+      <button value="ok" class="button primary" id="confirm-ok"></button>
     </div>
   </form>
 </dialog>

@@ -25,6 +25,7 @@ SOURCE_ARCHIVE="$REPO/archive/refs/heads/main.tar.gz"
 SOURCE="${PADSQUIRE_SOURCE:-}"      # optional: a pip requirement or path to install instead
 DATA="${XDG_DATA_HOME:-$HOME/.local/share}/padsquire"
 VENV="$DATA/venv"
+WINDOW="${XDG_CACHE_HOME:-$HOME/.cache}/padsquire/window"   # the app window's own browser profile
 BIN="$HOME/.local/bin"
 RULES="/etc/udev/rules.d/70-gamesir.rules"
 
@@ -129,6 +130,10 @@ uninstall() {
     [ -x "$VENV/bin/padsquire" ] && "$VENV/bin/padsquire" menu --remove | sed 's/^/   /' || true
     [ -L "$BIN/padsquire" ] && rm -f "$BIN/padsquire" && say "   Removed $BIN/padsquire."
     [ -d "$VENV" ] && rm -rf "$VENV" && say "   Removed $VENV."
+    [ -d "$WINDOW" ] && rm -rf "$WINDOW" && say "   Removed $WINDOW (the app window's browser profile)."
+    for dir in "$HOME"/.var/app/*/cache/padsquire; do     # the same, for a Flatpak browser
+        [ -d "$dir" ] && rm -rf "$dir" && say "   Removed $dir (the app window's browser profile)."
+    done
     if [ -f "$RULES" ]; then
         if ask "   Also remove the udev rule ($RULES, needs your password)? [y/N]" no; then
             sudo rm -f "$RULES" && sudo udevadm control --reload && say "   Removed $RULES."

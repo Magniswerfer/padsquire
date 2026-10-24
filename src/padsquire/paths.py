@@ -28,6 +28,8 @@ DATA_DIR = data_home() / NAME
 FIRMWARE_DIR = DATA_DIR / "firmware"
 BACKUP_DIR = DATA_DIR / "backups"
 LOADER_CACHE = cache_home() / NAME / "loaders"
+# the app window's own browser profile: its size and nothing else worth keeping
+BROWSER_PROFILE = cache_home() / NAME / "window"
 
 
 def _merge(old: Path, new: Path, moved: list[Path], left: list[Path]) -> None:

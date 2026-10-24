@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import webbrowser
+from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
 
@@ -21,10 +22,46 @@ DATA = files("padsquire") / "data"
 RULES_NAME = "70-gamesir.rules"
 ENTRY_NAME = "padsquire.desktop"
 
-# Chromium-based browsers can show a page as its own window, without tabs or address bar.
-APP_WINDOW_BROWSERS = ["chromium-browser", "chromium", "google-chrome-stable", "google-chrome",
-                       "brave-browser", "brave", "microsoft-edge-stable", "microsoft-edge", "vivaldi-stable",
-                       "vivaldi"]
+# Chromium and the browsers built on it can show a page as its own window, without tabs or address
+# bar. Each names that window "<prefix>-127.0.0.1__-Default" (its Wayland app ID and X11 class;
+# seen on Brave, the others follow Chromium's naming), and ignores --class for it. The menu entry
+# repeats that name as StartupWMClass, so a dock or taskbar shows the window as PadSquire.
+APP_WINDOW_BROWSERS = [("chromium-browser", "chromium"), ("chromium", "chromium"),
+                       ("google-chrome-stable", "chrome"), ("google-chrome", "chrome"),
+                       ("brave-browser", "brave"), ("brave", "brave"),
+                       ("microsoft-edge-stable", "msedge"), ("microsoft-edge", "msedge"),
+                       ("vivaldi-stable", "vivaldi"), ("vivaldi", "vivaldi")]
+# The same browsers as Flatpaks (how a Steam Deck installs them), tried when none of the above is
+# on PATH.
+FLATPAK_BROWSERS = [("org.chromium.Chromium", "chromium"), ("com.google.Chrome", "chrome"),
+                    ("com.brave.Browser", "brave"), ("com.microsoft.Edge", "msedge"), ("com.vivaldi.Vivaldi", "vivaldi")]
+
+
+@dataclass(frozen=True)
+class Browser:
+    name: str             # for messages
+    command: list[str]    # what starts it
+    prefix: str           # of the name it gives its app windows
+    profile: Path         # the app window's own profile (a Flatpak can only write in its own folder)
+
+    @property
+    def window_class(self) -> str:
+        return f"{self.prefix}-127.0.0.1__-Default"
+
+
+def app_browser() -> Browser | None:
+    """The browser that opens the settings app in its own window, if there is one."""
+    for name, prefix in APP_WINDOW_BROWSERS:
+        exe = shutil.which(name)
+        if exe:
+            return Browser(name, [exe], prefix, paths.BROWSER_PROFILE)
+    flatpak = shutil.which("flatpak")
+    if flatpak:
+        for app_id, prefix in FLATPAK_BROWSERS:
+            if subprocess.run([flatpak, "info", app_id], capture_output=True, check=False).returncode == 0:
+                return Browser(f"{app_id}, Flatpak", [flatpak, "run", app_id], prefix,
+                               Path.home() / ".var" / "app" / app_id / "cache" / "padsquire" / "window")
+    return None
 
 
 def rules_path() -> Path:
@@ -36,7 +73,8 @@ def rules_text() -> str:
     return (DATA / RULES_NAME).read_text()
 
 
-def _entry(exe: str) -> str:
+def _entry(exe: str, browser: Browser | None) -> str:
+    wm_class = f"StartupWMClass={browser.window_class}\n" if browser else ""
     return f"""[Desktop Entry]
 Type=Application
 Name=PadSquire
@@ -44,7 +82,7 @@ GenericName=Controller settings
 Comment=Settings and firmware updates for GameSir controllers
 Exec={exe} gui
 Icon=padsquire
-Terminal=false
+{wm_class}Terminal=false
 StartupNotify=true
 Categories=Settings;HardwareSettings;Game;
 Keywords=gamesir;nova;controller;gamepad;remap;dead zone;firmware;
@@ -75,7 +113,7 @@ def install_entry() -> list[Path]:
     for f in (entry, icon):
         f.parent.mkdir(parents=True, exist_ok=True)
     icon.write_bytes((DATA / "padsquire.svg").read_bytes())
-    entry.write_text(_entry(_exe()))
+    entry.write_text(_entry(_exe(), app_browser()))
     _refresh(entry.parent)
     return [entry, icon]
 
@@ -96,15 +134,22 @@ def _refresh(applications: Path) -> None:
         subprocess.run(["update-desktop-database", str(applications)], capture_output=True, check=False)
 
 
+WINDOW_SIZE = (1280, 860)      # the first time; a smaller screen (a Steam Deck) gets it clamped
+
+
 def open_app(url: str, tab: bool = False) -> str:
     """Open the settings app: in its own window when a Chromium-based browser is installed,
     otherwise in the default browser. Returns how it was opened."""
-    if not tab:
-        for name in APP_WINDOW_BROWSERS:
-            exe = shutil.which(name)
-            if exe:
-                subprocess.Popen([exe, f"--app={url}"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                 stderr=subprocess.DEVNULL, start_new_session=True)
-                return f"window ({name})"
+    browser = None if tab else app_browser()
+    if browser:
+        # Its own small profile: the window starts at WINDOW_SIZE and then keeps the size you give
+        # it, instead of a size the browser saved for other 127.0.0.1 windows, and none of your
+        # extensions or cookies come along.
+        subprocess.Popen([*browser.command, f"--app={url}", f"--user-data-dir={browser.profile}",
+                          f"--window-size={WINDOW_SIZE[0]},{WINDOW_SIZE[1]}",
+                          "--no-first-run", "--no-default-browser-check"],
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+        return f"window ({browser.name})"
     webbrowser.open(url)
     return "browser tab"

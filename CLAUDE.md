@@ -10,7 +10,7 @@ controller (firmware 7701 and 8201) and its receiver (2800); Bluetooth is not ye
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -e '.[gui,test]'   # no system pip on this box; 7zip for update/extract
-pytest                                   # 193 tests; PADSQUIRE_INSTALLER=<setup.exe> adds a real-installer test,
+pytest                                   # 194 tests; PADSQUIRE_INSTALLER=<setup.exe> adds a real-installer test,
                                          # PADSQUIRE_BACKUP=<dump.bin> PADSQUIRE_UFW=<.ufw> a real layout check
 padsquire probe --guided             # read-only report of the controller in every mode -> JSON
 padsquire ble scan | info | deadzone | feature | vibration | sleep | restore
@@ -29,6 +29,9 @@ padsquire uboot test-write | restore | flash ... --confirm        # writes (need
 - `hid.py`: USB transport, GCM in 64-byte reports on the `0xFF7A` hidraw interface (confirmed).
 - `web/server.py` + `web/static/`: aiohttp GUI (no build step; vanilla JS, strict CSP). Connects
   over BLE or USB; over USB it skips the reads in `USB_UNSUPPORTED` (no reply, 2.2 s timeout each).
+  `app.js` + `app.css` are the app's own; `static/ds/` (design system), `pad-model.js` (3D model),
+  `vendor/three.js`, `models/`, `img/` and `data/padsquire.svg` are copies from the website repo:
+  edit them there, then run `tools/sync-design.sh` (DESIGN.md lives in the website repo).
 - `ufw.py`, `jlcrypt.py`, `installer.py`, `updater.py`, `safety.py`: firmware side.
 - `jlboot.py` + `cli_uboot.py`: JieLi USB download mode over SG_IO (BR23 controller, BD19 receiver),
   read-only (an allowlist refuses erase, flash write and the chip-key write). Needs the `sg` module.

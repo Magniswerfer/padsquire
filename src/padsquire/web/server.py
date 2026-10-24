@@ -265,7 +265,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
         resp.headers["X-Content-Type-Options"] = "nosniff"
         resp.headers["Referrer-Policy"] = "no-referrer"
         resp.headers["Content-Security-Policy"] = (
-            "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; "
+            "default-src 'self'; style-src 'self'; script-src 'self' 'wasm-unsafe-eval'; img-src 'self' data:; "
             "connect-src 'self'; frame-ancestors 'none'")
         return resp
 
