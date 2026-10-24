@@ -69,18 +69,17 @@ Open:
 
 For the owner, before the installer works for others:
 
-1. Rename the GitHub repo to `Magniswerfer/padsquire` and make it public (the installer's GitHub
-   fallback and the README links point there). Locally: `git remote set-url origin
-   https://github.com/Magniswerfer/padsquire`.
+1. Done (2026-10-24): the repo is `Magniswerfer/padsquire` and public.
 2. PyPI: add a pending trusted publisher (project `padsquire`, owner `Magniswerfer`, repo
    `padsquire`, workflow `release.yml`, environment `pypi`), and create a `pypi` environment in the
    repo's GitHub settings. Then `git tag v0.1.0 && git push origin v0.1.0` publishes it.
-3. Try the real thing: `curl -fsSL https://github.com/Magniswerfer/padsquire/releases/latest/download/install.sh | sh`,
-   then open PadSquire from the app menu.
-4. Website (`Magniswerfer/padsquire-website`, edited only from its own repo): a `public/_redirects`
-   line `/install.sh  https://github.com/Magniswerfer/padsquire/releases/latest/download/install.sh  302`,
-   then show `curl -fsSL https://<site>/install.sh | sh`. Once the domain is known, switch the
-   README and the `install.sh` header to that URL.
+3. Website (`Magniswerfer/padsquire-website`, edited only from its own repo, deployed at
+   padsquire.com): a `public/_redirects` line
+   `/install.sh  https://github.com/Magniswerfer/padsquire/releases/latest/download/install.sh  302`,
+   and the install section showing `curl -fsSL https://padsquire.com/install.sh | sh`. The README
+   and the `install.sh` header already use that URL.
+4. Try the real thing: `curl -fsSL https://padsquire.com/install.sh | sh`, then open PadSquire
+   from the app menu.
 
 Then: Bluetooth testing (the checklist in HARDWARE.md).
 
