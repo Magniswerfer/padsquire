@@ -17,6 +17,11 @@
 #      This is the one step that needs your password.
 # Running it again updates PadSquire. Your settings live on the controller; firmware downloads and
 # flash backups in ~/.local/share/padsquire are never touched.
+#
+# No warranty: you use PadSquire at your own risk. Settings can be changed back, but a firmware
+# update can leave a controller or receiver unusable, and PadSquire's authors aren't responsible
+# for a controller that is damaged or stops working. The GNU AGPL (sections 15 and 16 of the
+# LICENSE file) says the same in full.
 
 set -eu
 
@@ -150,6 +155,11 @@ main() {
     [ "$(id -u)" -ne 0 ] || fail "run this as yourself, not as root or with sudo. It asks for your password only for the one step that needs it."
     if [ "${1:-}" = "--uninstall" ]; then uninstall; return; fi
     say "PadSquire: Linux tools for GameSir controllers. Unofficial and open source ($REPO)."
+    say ""
+    say "No warranty: you use PadSquire at your own risk. Settings can be changed back, but a"
+    say "firmware update can leave a controller or receiver unusable. PadSquire makes a full backup"
+    say "before any firmware write, but its authors aren't responsible for a controller that is"
+    say "damaged or stops working. The licence (GNU AGPL, sections 15 and 16) says the same in full."
     install_app
     link_command
     add_menu_entry
