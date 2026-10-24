@@ -65,21 +65,15 @@ Open:
 3. **Recovery if the firmware no longer starts**: TBD (PROTOCOL.md section 3, "Recovery").
 4. Controller firmware updates through the receiver (JieLi's HID over-the-air updater): research.
 
-## Next steps (as of 2026-10-23)
+## Next steps (as of 2026-10-24)
 
-For the owner, before the installer works for others:
+Published: v0.1.0 is on PyPI and GitHub Releases (trusted publishing, `pypi` environment), the repo
+is public, and `https://padsquire.com/install.sh` redirects to the newest release's `install.sh`
+(the website lives in `Magniswerfer/padsquire-website`; edit it only from its own repo). A new
+release: bump `version` in `pyproject.toml`, then push a matching `v*` tag.
 
-1. Done (2026-10-24): the repo is `Magniswerfer/padsquire` and public.
-2. PyPI: add a pending trusted publisher (project `padsquire`, owner `Magniswerfer`, repo
-   `padsquire`, workflow `release.yml`, environment `pypi`), and create a `pypi` environment in the
-   repo's GitHub settings. Then `git tag v0.1.0 && git push origin v0.1.0` publishes it.
-3. Website (`Magniswerfer/padsquire-website`, edited only from its own repo, deployed at
-   padsquire.com): a `public/_redirects` line
-   `/install.sh  https://github.com/Magniswerfer/padsquire/releases/latest/download/install.sh  302`,
-   and the install section showing `curl -fsSL https://padsquire.com/install.sh | sh`. The README
-   and the `install.sh` header already use that URL.
-4. Try the real thing: `curl -fsSL https://padsquire.com/install.sh | sh`, then open PadSquire
-   from the app menu.
+Left for the owner: try the real thing, `curl -fsSL https://padsquire.com/install.sh | sh`, then
+open PadSquire from the app menu.
 
 Then: Bluetooth testing (the checklist in HARDWARE.md).
 
