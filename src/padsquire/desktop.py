@@ -24,8 +24,8 @@ ENTRY_NAME = "padsquire.desktop"
 
 # Chromium and the browsers built on it can show a page as its own window, without tabs or address
 # bar. Each names that window "<prefix>-127.0.0.1__-Default" (its Wayland app ID and X11 class;
-# seen on Brave, the others follow Chromium's naming), and ignores --class for it. The menu entry
-# repeats that name as StartupWMClass, so a dock or taskbar shows the window as PadSquire.
+# seen on Brave, the others follow Chromium's naming), and ignores --class for it. A hidden menu
+# entry of that name (window_entry_file) tells the desktop the window is PadSquire, with its icon.
 APP_WINDOW_BROWSERS = [("chromium-browser", "chromium"), ("chromium", "chromium"),
                        ("google-chrome-stable", "chrome"), ("google-chrome", "chrome"),
                        ("brave-browser", "brave"), ("brave", "brave"),
@@ -73,8 +73,7 @@ def rules_text() -> str:
     return (DATA / RULES_NAME).read_text()
 
 
-def _entry(exe: str, browser: Browser | None) -> str:
-    wm_class = f"StartupWMClass={browser.window_class}\n" if browser else ""
+def _entry(exe: str) -> str:
     return f"""[Desktop Entry]
 Type=Application
 Name=PadSquire
@@ -82,7 +81,7 @@ GenericName=Controller settings
 Comment=Settings and firmware updates for GameSir controllers
 Exec={exe} gui
 Icon=padsquire
-{wm_class}Terminal=false
+Terminal=false
 StartupNotify=true
 Categories=Settings;HardwareSettings;Game;
 Keywords=gamesir;nova;controller;gamepad;remap;dead zone;firmware;
@@ -99,8 +98,32 @@ def _exe() -> str:
     return f"{sys.executable} -m padsquire"
 
 
+# Marks the hidden entry as PadSquire's, so removing it never touches a file someone else wrote.
+WINDOW_ENTRY_MARK = "X-PadSquire-Window=true"
+
+
+def _window_entry(exe: str, browser: Browser) -> str:
+    """The app window's own entry. Desktops find a window's entry by its name first (KDE for the
+    title bar and taskbar, GNOME for the dash); NoDisplay keeps it out of the menu."""
+    return f"""[Desktop Entry]
+Type=Application
+Name=PadSquire
+Comment=The PadSquire settings window ({browser.name})
+Exec={exe} gui
+Icon=padsquire
+StartupWMClass={browser.window_class}
+NoDisplay=true
+Terminal=false
+{WINDOW_ENTRY_MARK}
+"""
+
+
 def entry_file() -> Path:
     return paths.data_home() / "applications" / ENTRY_NAME
+
+
+def window_entry_file(browser: Browser) -> Path:
+    return paths.data_home() / "applications" / f"{browser.window_class}.desktop"
 
 
 def icon_file() -> Path:
@@ -113,13 +136,29 @@ def install_entry() -> list[Path]:
     for f in (entry, icon):
         f.parent.mkdir(parents=True, exist_ok=True)
     icon.write_bytes((DATA / "padsquire.svg").read_bytes())
-    entry.write_text(_entry(_exe(), app_browser()))
+    entry.write_text(_entry(_exe()))
+    written = [entry, icon]
+    _remove_window_entries()           # one for the browser it uses now, not one it used before
+    browser = app_browser()
+    if browser:
+        window = window_entry_file(browser)
+        window.write_text(_window_entry(_exe(), browser))
+        written.append(window)
     _refresh(entry.parent)
-    return [entry, icon]
+    return written
+
+
+def _remove_window_entries() -> list[Path]:
+    removed = []
+    for f in (paths.data_home() / "applications").glob("*-127.0.0.1__-Default.desktop"):
+        if WINDOW_ENTRY_MARK in f.read_text(errors="replace"):
+            f.unlink()
+            removed.append(f)
+    return removed
 
 
 def remove_entry() -> list[Path]:
-    removed = []
+    removed = _remove_window_entries()
     for f in (entry_file(), icon_file()):
         if f.exists():
             f.unlink()
@@ -132,6 +171,11 @@ def _refresh(applications: Path) -> None:
     """Most desktops notice new entries by themselves; this makes the rest catch up."""
     if shutil.which("update-desktop-database") and applications.is_dir():
         subprocess.run(["update-desktop-database", str(applications)], capture_output=True, check=False)
+    # KDE Plasma keeps an icon it couldn't find as missing until told to look again (the signal its
+    # icon settings send). Nothing listens for it on other desktops.
+    if shutil.which("dbus-send"):
+        subprocess.run(["dbus-send", "--session", "--type=signal", "/KIconLoader",
+                        "org.kde.KIconLoader.iconChanged", "int32:0"], capture_output=True, check=False)
 
 
 WINDOW_SIZE = (1280, 860)      # the first time; a smaller screen (a Steam Deck) gets it clamped
