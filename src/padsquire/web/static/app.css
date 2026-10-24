@@ -131,6 +131,8 @@ pad-model.offline { opacity: .55; filter: grayscale(1); }
 .travel-scale { display: flex; justify-content: space-between; color: var(--ink-faint); font-size: var(--text-xs); }
 .travel-scale + .live-readout { text-align: left; }
 
+.sim-link { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--ink-soft); font-size: var(--text-sm); }
+
 /* stick check: one box per test, a result per stick */
 .stick-check { display: grid; gap: var(--space-3); margin-top: var(--space-6); }
 .stick-check h2 { margin-bottom: 0; }
@@ -147,6 +149,30 @@ pad-model.offline { opacity: .55; filter: grayscale(1); }
 .rv-fill.short { fill: var(--warn-wash); stroke: var(--warn-wash); }
 .rv-edge { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round; }
 .rv-edge.short { stroke: var(--warn); }
+
+/* profiles */
+.profile-list { list-style: none; display: grid; gap: var(--space-3); max-width: 46rem; margin: 0; padding: 0; }
+.profile { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3);
+  padding: var(--space-4); border: var(--hairline) solid var(--line); border-radius: var(--radius-md); background: var(--paper-raised); }
+.profile.active { border-color: var(--accent-line); }
+.profile-head { display: grid; gap: var(--space-1); min-width: 0; }
+.profile-head h3 { margin: 0; overflow-wrap: anywhere; }
+.profile-head .note { margin: 0; }
+.profile-head .chip { margin-right: var(--space-2); }
+.profile-more { position: relative; }
+.profile-more summary { list-style: none; cursor: pointer; }
+.profile-more summary::-webkit-details-marker { display: none; }
+.profile-menu { position: absolute; right: 0; z-index: 5; display: grid; gap: var(--space-2); min-width: 15rem; margin-top: var(--space-2);
+  padding: var(--space-3); border: var(--hairline) solid var(--line); border-radius: var(--radius-md); background: var(--paper-raised); box-shadow: var(--shadow-pop); }
+.profile-menu .button { justify-content: flex-start; }
+@media (max-width: 40rem) {
+  .profile .button-row { width: 100%; }
+  .profile-more { flex: 1 1 100%; }
+  .profile-menu { position: static; min-width: 0; box-shadow: none; }
+}
+.profile-new, .profile-rename { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); max-width: 46rem; }
+.profile-new .input { flex: 1 1 14rem; }
+.profile-rename .input { flex: 1 1 12rem; }
 
 /* settings files */
 .settings-file { display: grid; gap: var(--space-3); margin-top: var(--space-6); }

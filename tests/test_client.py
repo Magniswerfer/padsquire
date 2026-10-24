@@ -5,7 +5,7 @@ import pytest
 
 from padsquire.client import NotApplied, NovaClient
 from padsquire.gcm import DeadZone, Feature, ProtocolError, Vibration
-from padsquire.simulator import SimulatedNova
+from padsquire.simulator import SimulatedNova, simulated
 
 
 def run(coro):
@@ -28,12 +28,12 @@ def test_settings_roundtrip():
         await nova.set_dead_zone(DeadZone.RIGHT_TRIGGER_FRONT, 12)
         await nova.set_feature(Feature.SWAP_STICKS, True)
         await nova.set_auto_sleep(30)
-        v = Vibration(0, 0, False, False, 7, 7, True, True)
+        v = Vibration(0, 0, False, False, 75, 0, True, True)
         await nova.set_vibration(v)
         return (await nova.dead_zone(DeadZone.RIGHT_TRIGGER_FRONT), await nova.feature(Feature.SWAP_STICKS),
                 await nova.auto_sleep(), await nova.vibration())
 
-    assert run(go()) == (12, True, 30, Vibration(0, 0, False, False, 7, 7, True, True))
+    assert run(go()) == (12, True, 30, Vibration(0, 0, False, False, 75, 0, True, True))
     assert sim.dead_zones[DeadZone.LEFT_STICK_INNER] == 5  # untouched
 
 
@@ -95,7 +95,7 @@ def test_invalid_slot_is_reported():
 def test_remap_every_key_on_the_simulator():
     from padsquire.client import NotApplied, NovaClient
     from padsquire.gcm import Key
-    from padsquire.simulator import SimulatedNova
+    from padsquire.simulator import SimulatedNova, simulated
     nova = NovaClient(SimulatedNova())
 
     async def go():
@@ -110,7 +110,7 @@ def test_remap_every_key_on_the_simulator():
 
 def test_vibration_test_sends_the_grip_report_and_stops():
     from padsquire import gcm
-    sim = SimulatedNova()
+    sim = simulated("cable")
     asyncio.run(NovaClient(sim).test_vibration(80, 0, seconds=0))
     assert sim.log[-2:] == [bytes.fromhex("045008000800080008"), gcm.rumble(0, 0)]
     with pytest.raises(ValueError):

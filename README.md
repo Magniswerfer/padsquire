@@ -18,6 +18,9 @@ controller talks over USB and Bluetooth.
 - **A stick check** that GameSir's apps don't have. It measures how far each stick drifts when
   left alone and whether it reaches full tilt in every direction, then suggests the inner and
   outer dead zones for your controller, to apply with one click.
+- **Profiles**, as many as you like, kept on your computer: save the controller's settings under
+  a name and switch with one click. Only what differs is written, and the controller keeps it on
+  any device.
 - **Settings files.** Save every setting to a file and load it back later or on another Nova 2
   Lite. Loading shows what changes before anything is written.
 - **Firmware updates**, for the controller and its 2.4 GHz receiver. The app installs GameSir's
@@ -34,6 +37,7 @@ controller talks over USB and Bluetooth.
 | Live sticks, triggers and buttons | yes | yes | no |
 | Stick check | yes | yes | no |
 | Save and load settings files | yes | yes | built, not tested |
+| Profiles | yes | yes | built, not tested |
 | Controller firmware update | yes | no (use the cable) | no |
 | Receiver firmware update | | yes | |
 
@@ -148,7 +152,9 @@ padsquire uboot --help                          # update mode: backup, restore, 
 ```
 
 `usb` works by cable and through the receiver; `ble` does the same over Bluetooth, and
-`--simulate` tries any command without a controller. `padsquire --help` lists everything. For
+`--simulate` tries any command without a controller. `padsquire gui --simulate receiver` (or
+`cable`, `bluetooth`) opens the settings app on a simulated controller that behaves like the real
+one on that connection. `padsquire --help` lists everything. For
 automatic weekly firmware checks there is a systemd timer in `contrib/systemd/`.
 
 ## How it works

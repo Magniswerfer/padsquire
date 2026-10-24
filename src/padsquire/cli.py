@@ -207,7 +207,8 @@ def main(argv=None) -> int:
     cli_uboot.register(sub)
 
     g = sub.add_parser("gui", help="open the graphical settings app in your browser")
-    g.add_argument("--simulate", action="store_true", help="start connected to a simulated controller")
+    g.add_argument("--simulate", nargs="?", const="cable", choices=["cable", "receiver", "bluetooth"],
+                   help="start connected to a simulated controller, behaving as on that connection (default: cable)")
     g.add_argument("--port", type=int, default=0, help="port on 127.0.0.1 (default: any free port)")
     g.add_argument("--no-browser", action="store_true",
                    help="print the address instead of opening it (keeps running until Ctrl+C)")

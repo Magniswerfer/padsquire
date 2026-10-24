@@ -12,7 +12,7 @@ import sys
 from . import ble, hid
 from .client import NotApplied, NovaClient
 from .gcm import DeadZone, Feature, ProtocolError, Vibration
-from .simulator import SimulatedNova
+from .simulator import simulated
 
 
 def _names(enum) -> dict[str, object]:
@@ -34,7 +34,7 @@ def _byte(text: str) -> int:
 @contextlib.asynccontextmanager
 async def _open(args):
     if args.simulate:
-        yield NovaClient(SimulatedNova())
+        yield NovaClient(simulated("cable" if args.link == "usb" else "bluetooth"))
         return
     if args.link == "usb":
         async with hid.connect(_usb_path(args)) as transport:

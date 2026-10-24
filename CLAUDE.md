@@ -10,12 +10,12 @@ controller (firmware 7701 and 8201) and its receiver (2800); Bluetooth is not ye
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -e '.[gui,test]'   # no system pip on this box; 7zip for update/extract
-pytest                                   # 238 tests; PADSQUIRE_INSTALLER=<setup.exe> adds a real-installer test,
+pytest                                   # 283 tests; PADSQUIRE_INSTALLER=<setup.exe> adds a real-installer test,
                                          # PADSQUIRE_BACKUP=<dump.bin> PADSQUIRE_UFW=<.ufw> a real layout check
 padsquire probe --guided             # read-only report of the controller in every mode -> JSON
 padsquire ble scan | info | deadzone | feature | vibration | sleep | restore
 padsquire usb ...                    # same actions over the cable (green LED mode), via hid.py
-padsquire gui [--simulate] [--tab]     # settings app on 127.0.0.1, own window; stops when closed
+padsquire gui [--simulate [cable|receiver|bluetooth]] [--tab]   # settings app on 127.0.0.1, own window; stops when closed
 padsquire menu [--remove] | udev-rules # app-menu entry; print the packaged udev rules
 padsquire update | extract | ufw | plan
 padsquire uboot find | enter --confirm | info | backup | restart   # download mode
@@ -25,7 +25,9 @@ padsquire uboot test-write | restore | flash ... --confirm        # writes (need
 ## Layout
 
 - `gcm.py`: GCM protocol frames (pure functions). `client.py`: NovaClient, write then read back.
-- `ble.py`: bleak transport (write 0x865F, wait 60 ms, read 0x865F). `simulator.py`: fake device.
+- `ble.py`: bleak transport (write 0x865F, wait 60 ms, read 0x865F). `simulator.py`: fake device, one class per
+  connection (`simulated(link)`), each answering as PROTOCOL.md records for it; keep it in step
+  when a finding changes, and add a test to `tests/test_simulator.py`.
 - `hid.py`: USB transport, GCM in 64-byte reports on the `0xFF7A` hidraw interface (confirmed).
 - `web/server.py` + `web/static/`: aiohttp GUI (no build step; vanilla JS, strict CSP). Connects
   over BLE or USB; over USB it skips the reads in `USB_UNSUPPORTED` (no reply, 2.2 s timeout each).
@@ -52,6 +54,9 @@ padsquire uboot test-write | restore | flash ... --confirm        # writes (need
   zones it measures set to 0 for the test and put back (`zeroed`), and suggested dead zones.
 - `settingsfile.py`: save and load settings files (JSON, `padsquire-settings` version 1): checks
   the whole file, lists what differs, writes each change with read-back; the Controller page.
+- `profiles.py`: profiles kept on the computer (`paths.PROFILES_DIR`), each a settings file with a
+  name; switching loads it like a settings file. The Profiles page; the controller's own slots
+  (`0x29`, Bluetooth only, untested) are a section of it.
 - `probe.py`: read-only hardware probe. `PROTOCOL.md`: all protocol notes (CC BY-SA 4.0).
 
 ## Status and open questions
