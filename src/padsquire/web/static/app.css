@@ -131,6 +131,35 @@ pad-model.offline { opacity: .55; filter: grayscale(1); }
 .travel-scale { display: flex; justify-content: space-between; color: var(--ink-faint); font-size: var(--text-xs); }
 .travel-scale + .live-readout { text-align: left; }
 
+/* stick check: one box per test, a result per stick */
+.stick-check { display: grid; gap: var(--space-3); margin-top: var(--space-6); }
+.stick-check h2 { margin-bottom: 0; }
+.check { padding: var(--space-4); }
+.check h3 { margin: 0; }
+.check-result { display: grid; gap: var(--space-2); justify-items: start; padding-top: var(--space-3); border-top: var(--hairline) solid var(--line); }
+.check-result h4 { margin: 0; font-size: var(--text-sm); }
+.check-result p { margin: 0; font-size: var(--text-sm); max-width: var(--measure); }
+.check-result.warn h4 { color: var(--warn); }
+.check-result.ok h4 { color: var(--ok); }
+.reach-view { justify-self: center; width: min(100%, 10rem); }
+.rv-full { fill: none; stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 3 3; }
+.rv-fill { fill: var(--accent-wash); stroke: var(--accent-wash); stroke-width: .5; }
+.rv-fill.short { fill: var(--warn-wash); stroke: var(--warn-wash); }
+.rv-edge { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round; }
+.rv-edge.short { stroke: var(--warn); }
+
+/* settings files */
+.settings-file { display: grid; gap: var(--space-3); margin-top: var(--space-6); }
+.settings-file h2 { margin-bottom: 0; }
+.file-load { display: grid; gap: var(--space-3); max-width: 46rem; padding: var(--space-4); }
+.file-load h3 { margin: 0; overflow-wrap: anywhere; }
+.file-load p { margin: 0; }
+.change-list { list-style: none; margin: 0; padding: 0; border-top: var(--hairline) solid var(--line); font-size: var(--text-sm); }
+.change-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1) var(--space-4); padding: var(--space-2) 0; border-bottom: var(--hairline) solid var(--line); }
+.change-list .label { font-weight: var(--weight-bold); }
+.change-list .hint { grid-column: 1 / -1; color: var(--ink-faint); }
+@media (max-width: 30rem) { .change-list li { grid-template-columns: 1fr; } }
+
 /* -- controller figures: the outline drawings with the controls laid over them -------- */
 .figure { display: block; width: 100%; height: auto; overflow: visible; }
 .figure .line { fill: none; stroke: var(--drawing-ink); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }

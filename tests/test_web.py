@@ -256,3 +256,74 @@ def test_bye_needs_the_cookie_but_no_header(tmp_path):
         await c.get("/api/status", headers=API)
         assert c.server.app[PRESENCE].bye_at is None
     run(go, tmp_path)
+
+
+def test_settings_file_export_preview_and_load(tmp_path):
+    async def go(c):
+        await login(c)
+        post = lambda path, body: c.post(path, data=json.dumps(body), headers={**API, "Content-Type": "application/json"})
+        await post("/api/connect", {"simulate": True})
+        await post("/api/dead-zone", {"zone": "LEFT_STICK_INNER", "value": 9})
+        await post("/api/remap", {"key": "CAPTURE", "targets": ["B"]})
+        doc = (await (await c.get("/api/settings/export", headers=API)).json())["data"]
+        assert doc["format"] == "padsquire-settings" and doc["controller"]["firmware"] == "8201"
+        assert doc["settings"]["remaps"]["CAPTURE"] == ["B"]
+
+        await post("/api/restore", {"confirm": True})
+        preview = (await (await post("/api/settings/import", {"file": doc})).json())["data"]
+        names = {ch["name"]: ch for ch in preview["changes"]}
+        assert set(names) == {"LEFT_STICK_INNER", "CAPTURE"} and names["LEFT_STICK_INNER"]["from"] == 5
+        assert "write" not in names["CAPTURE"] and names["CAPTURE"]["why_not"] is None
+        state = (await (await c.get("/api/state", headers=API)).json())["data"]
+        assert state["dead_zones"]["LEFT_STICK_INNER"] == {"value": 5}               # a preview writes nothing
+
+        done = (await (await post("/api/settings/import", {"file": doc, "apply": True})).json())["data"]
+        assert len(done["applied"]) == 2 and not done["failed"]
+        assert done["state"]["dead_zones"]["LEFT_STICK_INNER"] == {"value": 9}
+        assert done["state"]["remaps"]["CAPTURE"] == {"value": ["B"]}
+
+        r = await post("/api/settings/import", {"file": {"format": "nope"}, "apply": True})
+        assert r.status == 400 and "isn't a PadSquire settings file" in (await r.json())["error"]
+    run(go, tmp_path)
+
+
+class _StillSticks:
+    def __init__(self, session):
+        self.closed = False
+
+    def pump(self):
+        pass
+
+    def state(self):
+        return {"lx": 0.03, "ly": 0.0, "rx": 0.0, "ry": 0.0, "lt": 0.0, "rt": 0.0, "pressed": []}
+
+    def close(self):
+        self.closed = True
+
+
+def test_stick_check(tmp_path):
+    async def go(c):
+        await login(c)
+        post = lambda path, body: c.post(path, data=json.dumps(body), headers={**API, "Content-Type": "application/json"})
+        await post("/api/connect", {"simulate": True})
+        r = await post("/api/stick-check", {"test": "drift", "seconds": 0.05})
+        data = (await r.json())["data"]
+        assert data["left"]["peak"] == 3.0 and data["left"]["suggested_inner"] == 5 and data["left"]["current"] == 5
+        state = (await (await c.get("/api/state", headers=API)).json())["data"]
+        assert state["dead_zones"]["LEFT_STICK_INNER"] == {"value": 5}                # put back
+        r = await post("/api/stick-check", {"test": "reach", "seconds": 0.05})
+        assert (await r.json())["data"]["left"]["complete"] is False                   # never turned
+        for bad in ({"test": "drift", "seconds": 60}, {"test": "drift", "seconds": True}):
+            assert (await post("/api/stick-check", bad)).status == 400
+        assert (await post("/api/stick-check", {"test": "spin", "seconds": 0.05})).status == 422
+    run(go, tmp_path, live_open=_StillSticks)
+
+
+def test_stick_check_needs_live_input(tmp_path):
+    async def go(c):
+        await login(c)
+        post = lambda path, body: c.post(path, data=json.dumps(body), headers={**API, "Content-Type": "application/json"})
+        await post("/api/connect", {"simulate": True})
+        r = await post("/api/stick-check", {"test": "drift", "seconds": 1})
+        assert r.status == 409 and "by cable" in (await r.json())["error"]
+    run(go, tmp_path)

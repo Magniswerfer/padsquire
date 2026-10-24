@@ -10,7 +10,7 @@ controller (firmware 7701 and 8201) and its receiver (2800); Bluetooth is not ye
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -e '.[gui,test]'   # no system pip on this box; 7zip for update/extract
-pytest                                   # 196 tests; PADSQUIRE_INSTALLER=<setup.exe> adds a real-installer test,
+pytest                                   # 238 tests; PADSQUIRE_INSTALLER=<setup.exe> adds a real-installer test,
                                          # PADSQUIRE_BACKUP=<dump.bin> PADSQUIRE_UFW=<.ufw> a real layout check
 padsquire probe --guided             # read-only report of the controller in every mode -> JSON
 padsquire ble scan | info | deadzone | feature | vibration | sleep | restore
@@ -48,6 +48,10 @@ padsquire uboot test-write | restore | flash ... --confirm        # writes (need
   curl installer (own venv in ~/.local/share/padsquire/venv). Releases: push a `v*` tag (PyPI).
 - `paths.py`: data and cache folders; moves the folders of the old project name once at startup.
 - `liveinput.py`: sticks, triggers and buttons from the xpad evdev node.
+- `stickcheck.py`: the Sticks page's check: drift and reach from the live input, with the dead
+  zones it measures set to 0 for the test and put back (`zeroed`), and suggested dead zones.
+- `settingsfile.py`: save and load settings files (JSON, `padsquire-settings` version 1): checks
+  the whole file, lists what differs, writes each change with read-back; the Controller page.
 - `probe.py`: read-only hardware probe. `PROTOCOL.md`: all protocol notes (CC BY-SA 4.0).
 
 ## Status and open questions

@@ -101,6 +101,8 @@ const app = {
   connecting: false,
   userDisconnected: false,
   polls: 0,
+  stickCheck: {},         // the last stick check results, per test
+  fileLoad: null,         // a settings file being loaded: its name, contents, preview and result
 };
 
 const val = (entry) => (entry && "value" in entry ? entry.value : undefined);
@@ -383,7 +385,127 @@ function panelController() {
       fact("Protocol", info && `GCM ${info.gcm_version}`)),
     h("div", { class: "button-row" },
       h("button", { class: "button", onclick: () => reload(true) }, "Read settings again")),
+    settingsFile(),
   );
+}
+
+// ---------------------------------------------------------------------------
+// settings files: every setting saved to a file, and loaded back after a preview of what changes
+
+function settingsFile() {
+  const input = h("input", { type: "file", accept: ".json,application/json", class: "visually-hidden", tabindex: "-1",
+    "aria-hidden": "true", onchange: () => { if (input.files[0]) previewFile(input.files[0]); input.value = ""; } });
+  const wrap = h("div", { class: "settings-file" }, h("h2", {}, "Save or load settings"),
+    h("p", { class: "note" }, "Keep every setting in a file, to put back later, share with someone, or copy to another Nova 2 Lite. Loading a file shows what it changes before anything is written."),
+    h("div", { class: "button-row" },
+      h("button", { class: "button", onclick: saveFile }, "Save to a file"),
+      h("button", { class: "button", onclick: () => input.click() }, "Load from a file"), input));
+  if (app.fileLoad) wrap.append(fileLoadView());
+  return wrap;
+}
+
+async function saveFile() {
+  let doc;
+  try { doc = await api("/api/settings/export"); } catch (e) { toast(e.message, "error"); return; }
+  const name = `nova-2-lite-settings-${new Date().toISOString().slice(0, 10)}.json`;
+  const text = JSON.stringify(doc, null, 2) + "\n";
+  if (window.showSaveFilePicker) {
+    // Chromium (and so the app window): a save dialog, to choose where it goes
+    try {
+      const handle = await window.showSaveFilePicker({ suggestedName: name,
+        types: [{ description: "PadSquire settings", accept: { "application/json": [".json"] } }] });
+      const out = await handle.createWritable();
+      await out.write(text);
+      await out.close();
+      toast(`Settings saved as ${handle.name}`);
+    } catch (e) { if (e.name !== "AbortError") toast(`Couldn't save the file: ${e.message}`, "error"); }
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+  const a = h("a", { href: url, download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  toast(`Settings saved as ${name} in your downloads`);
+}
+
+async function previewFile(file) {
+  let doc;
+  try { doc = JSON.parse(await file.text()); }
+  catch { toast(`${file.name} isn't a settings file (not valid JSON).`, "error"); return; }
+  try {
+    const preview = await api("/api/settings/import", { file: doc });
+    app.fileLoad = { name: file.name, doc, preview, result: null };
+  } catch (e) { toast(e.message, "error"); return; }
+  render();
+}
+
+async function applyFile() {
+  const f = app.fileLoad;
+  try {
+    const result = await api("/api/settings/import", { file: f.doc, apply: true });
+    app.dev = result.state;
+    f.result = result;
+    const n = result.applied.length;
+    toast(result.failed.length ? `${n} setting${n === 1 ? "" : "s"} loaded, ${result.failed.length} failed` : `${n} setting${n === 1 ? "" : "s"} loaded`,
+      result.failed.length ? "error" : "info");
+  } catch (e) { toast(e.message, "error"); }
+  render();
+}
+
+// A setting's value in words, as the pages show it.
+function settingValue(section, v) {
+  const labels = app.meta.keys;
+  if (v === null || v === undefined) return "not read";
+  if (typeof v === "boolean") return v ? "on" : "off";
+  if (section === "dead_zones") return `${v}%`;
+  if (section === "auto_sleep") return `${v} minutes`;
+  if (section === "light") return hex(v).toUpperCase();
+  if (section === "trigger_quick") return `left ${v[0] ? "on" : "off"}, right ${v[1] ? "on" : "off"}`;
+  if (section === "vibration") return `left ${v.left_grip}%, right ${v.right_grip}%`;
+  if (section === "remaps") return v.length ? v.map((k) => labels[k] || k).join(" + ") : "its own function";
+  if (section === "mappings") return v[0] === "key" ? labels[v[1]] || v[1] : v[0] === "disabled" ? "nothing" : `a ${v[0]}`;
+  return JSON.stringify(v);
+}
+
+function changeList(list, extra) {
+  return h("ul", { class: "change-list" }, list.map((c) => h("li", {},
+    h("span", { class: "label" }, ["remaps", "mappings"].includes(c.section) ? `What ${app.meta.keys[c.name] || c.name} does` : c.label),
+    h("span", {}, `${settingValue(c.section, c.from)} → ${settingValue(c.section, c.to)}`),
+    extra ? extra(c) : null)));
+}
+
+function fileLoadView() {
+  const f = app.fileLoad;
+  const close = h("button", { class: "button small quiet", onclick: () => { app.fileLoad = null; render(); } }, f.result ? "Close" : "Cancel");
+  const box = h("div", { class: "file-load well" }, h("h3", {}, f.name));
+  const saved = f.doc.saved ? f.doc.saved.slice(0, 16).replace("T", " ") : null;
+  const from = f.doc.controller && f.doc.controller.firmware;
+  if (saved || from) box.append(h("p", { class: "note" }, [saved ? `Saved ${saved}` : null, from ? `from firmware ${from}` : null].filter(Boolean).join(", ") + "."));
+  if (f.result) {
+    const r = f.result;
+    box.append(h("p", {}, `${r.applied.length} setting${r.applied.length === 1 ? "" : "s"} loaded, each read back from the controller.`));
+    if (r.failed.length) box.append(notice("danger", h("p", {}, "These didn't take:"),
+      changeList(r.failed, (c) => h("span", { class: "hint" }, c.error))));
+    if (r.skipped.length) box.append(notice("", h("p", {}, "Left as they are:"),
+      changeList(r.skipped, (c) => h("span", { class: "hint" }, c.why))));
+    box.append(h("div", { class: "button-row" }, close));
+    return box;
+  }
+  const changes = f.preview.changes;
+  const can = changes.filter((c) => !c.why_not), cannot = changes.filter((c) => c.why_not);
+  if (!changes.length) {
+    box.append(notice("ok", "The controller already has these settings. Nothing to change."), h("div", { class: "button-row" }, close));
+    return box;
+  }
+  if (can.length) box.append(h("p", {}, `Loading this file changes ${can.length} setting${can.length === 1 ? "" : "s"}:`), changeList(can));
+  if (cannot.length) box.append(h("p", { class: "note" }, "These can't be changed over this connection, so they stay as they are:"),
+    changeList(cannot, (c) => h("span", { class: "hint" }, c.why_not)));
+  box.append(h("div", { class: "button-row" },
+    can.length ? h("button", { class: "button primary", onclick: applyFile }, `Load ${can.length} setting${can.length === 1 ? "" : "s"}`) : null,
+    close));
+  return box;
 }
 
 function regionName(fw) {
@@ -719,8 +841,139 @@ function panelSticks() {
     featureToggle("SWAP_LEFT_STICK_DPAD", "Swap left stick and D-pad")));
   wrap.append(h("p", { class: "note" }, liveNote("The shaded parts of each circle are ignored. The dot shows what the computer gets from the stick now, and the ring where the stick is for that. ") +
     "The outer dead zone stops at 25%: above that the controller's firmware gets full tilt wrong, and the stick jumps to the opposite side."));
+  wrap.append(stickCheck());
   app.live = (st) => live.forEach((f) => f(st));
   return wrap;
+}
+
+// ---------------------------------------------------------------------------
+// stick check: drift and reach measured from the live input, with the dead zones they suggest
+
+const STICK_TESTS = {
+  drift: { seconds: 5, title: "Drift", button: "Check for drift",
+    how: "Put the controller down and don't touch the sticks while it measures.",
+    running: "Measuring drift. Don't touch the sticks…" },
+  reach: { seconds: 8, title: "Reach", button: "Check reach",
+    how: "Turn both sticks slowly around their edge, 2 or 3 times, while it measures.",
+    running: "Turn both sticks slowly around their edge…" },
+};
+
+function stickCheck() {
+  const wrap = h("div", { class: "stick-check" }, h("h2", {}, "Check your sticks"),
+    h("p", { class: "note" }, "Measures how far each stick wanders when left alone, and whether it reaches full tilt in every direction, then suggests dead zones for this controller."));
+  if (app.status.mode !== "usb") {
+    wrap.append(notice("", "The check needs the cable or the 2.4 GHz receiver: it reads what the computer receives from the sticks."));
+    return wrap;
+  }
+  const pair = h("div", { class: "pair" });
+  for (const test of Object.keys(STICK_TESTS)) pair.append(stickTest(test));
+  wrap.append(pair, h("p", { class: "note" },
+    "For the few seconds of a check, the dead zones it measures are set to 0, so they don't hide anything, then put back as they were."));
+  return wrap;
+}
+
+function stickTest(test) {
+  const t = STICK_TESTS[test];
+  const box = h("div", { class: "check well" }, h("h3", {}, t.title), h("p", { class: "note" }, t.how));
+  const result = app.stickCheck[test];
+  const status = h("p", { class: "note", "aria-live": "polite" });
+  const btn = h("button", { class: "button", onclick: async () => {
+    btn.disabled = true;
+    let left = t.seconds;
+    status.replaceChildren(h("span", { class: "busy" }, `${t.running} ${left} s`));
+    const timer = setInterval(() => {
+      left = Math.max(0, left - 1);
+      status.replaceChildren(h("span", { class: "busy" }, left ? `${t.running} ${left} s` : "Putting the dead zones back…"));
+    }, 1000);
+    try {
+      app.stickCheck[test] = await api("/api/stick-check", { test, seconds: t.seconds });
+    } catch (e) { toast(e.message, "error"); }
+    clearInterval(timer);
+    if (app.section === "sticks") render();
+  } }, result ? "Check again" : `${t.button} (${t.seconds} seconds)`);
+  box.append(h("div", { class: "button-row" }, btn), status);
+  if (result) {
+    for (const [side, name] of [["left", "Left stick"], ["right", "Right stick"]]) {
+      box.append(test === "drift" ? driftResult(name, result[side]) : reachResult(name, result[side]));
+    }
+  }
+  return box;
+}
+
+// a "use N%" button that writes the suggestion like the slider would
+function useButton(zone, value) {
+  return h("button", { class: "button small", onclick: () =>
+    save("/api/dead-zone", { zone, value }, (got) => { app.dev.dead_zones[zone] = { value: got }; render(); toast(`Set to ${got}%`); }, null) },
+  `Use ${value}%`);
+}
+
+function driftResult(name, r) {
+  const now = val(app.dev.dead_zones[r.zone]) ?? r.current;
+  const want = r.suggested_inner;
+  let text, action = null, kind = "ok";
+  if (r.peak < 0.5) text = `Stays in the centre: no drift.`;
+  else text = `Wanders up to ${r.peak}% from the centre.`;
+  if (now < want) {
+    kind = "warn";
+    text += ` The inner dead zone, ${now}%, is smaller, so the stick may move by itself in games. ${want}% hides it.`;
+    action = useButton(r.zone, want);
+  } else if (now > want + 3) {
+    text += ` The inner dead zone, ${now}%, hides more than it needs to. ${want}% would give finer control near the centre.`;
+    action = useButton(r.zone, want);
+  } else text += ` The inner dead zone, ${now}%, is right for it.`;
+  return h("div", { class: `check-result ${kind}` }, h("h4", {}, name), h("p", {}, text), action);
+}
+
+function reachResult(name, r) {
+  const now = val(app.dev.dead_zones[r.zone]) ?? r.current;
+  const out = h("div", { class: "check-result" }, h("h4", {}, name));
+  out.append(reachView(r));
+  if (!r.complete) {
+    out.classList.add("warn");
+    out.append(h("p", {}, "Not enough of the edge was covered. Turn the stick all the way round, slowly, then check again."));
+    return out;
+  }
+  const want = r.suggested_outer;
+  if (!r.short) {
+    out.classList.add("ok");
+    out.append(h("p", {}, `Reaches full tilt in every direction.${now ? ` The outer dead zone, ${now}%, isn't needed for that; 0% uses the stick's whole travel.` : ""}`));
+    if (now) out.append(useButton(r.zone, 0));
+    return out;
+  }
+  let text = `Falls short of full tilt in ${r.short} of ${r.sectors.length} directions, reaching ${r.weakest}% at worst. `;
+  if (now >= want) {
+    out.classList.add("ok");
+    text += `The outer dead zone, ${now}%, makes up for it.`;
+  } else {
+    out.classList.add("warn");
+    text += r.outer_too_small
+      ? `An outer dead zone of ${want}%, the most the firmware handles, makes up for most of it.`
+      : `An outer dead zone of ${want}% makes every direction reach full tilt.`;
+  }
+  out.append(h("p", {}, text));
+  if (now < want) out.append(useButton(r.zone, want));
+  return out;
+}
+
+// How far the stick got in each slice around it, on the dead-zone circle's scale.
+function reachView(r) {
+  const svg = s("svg", { class: "stick-view reach-view", viewBox: "-110 -110 220 220", role: "img",
+    "aria-label": r.weakest === null ? "Not measured" : `Reaches at least ${r.weakest}% in every direction measured` });
+  svg.append(s("circle", { class: "sv-reach", r: 100 }), s("circle", { class: "sv-rim", r: 100 }),
+    s("circle", { class: "rv-full", r: 97 }),
+    s("line", { class: "sv-axis", x1: -100, x2: 100, y1: 0, y2: 0 }),
+    s("line", { class: "sv-axis", x1: 0, x2: 0, y1: -100, y2: 100 }));
+  const n = r.sectors.length;
+  r.sectors.forEach((reach, i) => {
+    if (reach === null) return;
+    const rad = 100 * Math.min(reach, 1.1);
+    const a0 = (i / n) * 2 * Math.PI, a1 = ((i + 1) / n) * 2 * Math.PI;
+    const arc = `${rad * Math.cos(a0)} ${rad * Math.sin(a0)} A${rad} ${rad} 0 0 1 ${rad * Math.cos(a1)} ${rad * Math.sin(a1)}`;
+    const kind = reach < 0.97 ? "short" : "ok";
+    // the slice filled, and only its outer edge drawn
+    svg.append(s("path", { class: `rv-fill ${kind}`, d: `M0 0 L${arc} Z` }), s("path", { class: `rv-edge ${kind}`, d: `M${arc}` }));
+  });
+  return svg;
 }
 
 function panelTriggers() {
@@ -1438,7 +1691,7 @@ async function connect(target) {
     app.userDisconnected = false;
   } catch (e) { toast(e.message, "error"); return; }
   finally { app.connecting = false; }
-  app.dev = null; render();
+  app.dev = null; app.stickCheck = {}; app.fileLoad = null; render();
   await reload(false);
 }
 
@@ -1551,6 +1804,14 @@ async function panelSetup() {
     qa("The live view or the controller stops responding",
       "This has been seen right after a change, mostly through the receiver. Use Restart on the Buttons page: by cable it restarts the controller, through the receiver it restarts the receiver. Nothing is changed or erased, and settings are kept.",
       "If that doesn't help, turn the controller off and on: hold Home for about 5 seconds, turn it on, and switch to green."),
+    qa("A stick moves by itself, or doesn't reach full tilt",
+      "Use Check your sticks on the Sticks page, by cable or through the receiver. It measures how far each stick wanders when left alone and how far it gets in every direction, and suggests an inner and an outer dead zone to cover it.",
+      "During a check the dead zones it measures are set to 0 for a few seconds, then put back. If PadSquire was closed in the middle of one, look at the dead zones on the Sticks page and set them again.",
+      "If a stick still falls short at the largest outer dead zone (25%), calibrate it: see Calibration in the Button guide."),
+    qa("Saving and loading settings",
+      "Save to a file on the Controller page keeps every setting the controller reported in a small text file (JSON). Load from a file lists what would change and writes nothing until you choose Load.",
+      "Some settings only change over some connections: a few toggles and sleep time not by cable or receiver, remapping of every button not over Bluetooth. Those stay as they are and the list says why.",
+      "Each setting is written and read back on its own, so if one fails the others still load. The file holds no Bluetooth address or pairing, so it's safe to share."),
     qa("Bluetooth doesn't find it",
       "Put the controller in Android mode: hold Home and A for 2 seconds until the light flashes yellow. Pair it once in your system's Bluetooth settings, then use Find controllers here."),
     qa("Switching to update mode doesn't work",

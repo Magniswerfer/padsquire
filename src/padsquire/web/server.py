@@ -21,7 +21,7 @@ from pathlib import Path
 
 from aiohttp import web
 
-from .. import __version__, ble, gcm, hid, installer, liveinput, updater
+from .. import __version__, ble, gcm, hid, installer, liveinput, settingsfile, stickcheck, updater
 from ..client import NotApplied, NovaClient
 from ..gcm import DeadZone, Feature, Key, ProtocolError, Vibration
 from ..simulator import SimulatedNova
@@ -32,6 +32,7 @@ API_HEADER = "X-PadSquire"
 
 ERRORS = (NotApplied, ProtocolError, ble.BleError, hid.HidError, ValueError, KeyError,
           asyncio.TimeoutError)
+STICK_CHECK_MAX_SECONDS = 15
 
 # Reads that get no reply over the USB cable (firmware 7701). Asking costs 11 x 200 ms each,
 # so the state read skips them and the GUI shows them as unavailable.
@@ -233,7 +234,8 @@ PRESENCE = web.AppKey("presence", Presence)
 
 def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
               simulate: bool = False, scanner=None, usb_finder=None,
-              backup_dir: Path | None = None, loader_cache: Path | None = None) -> web.Application:
+              backup_dir: Path | None = None, loader_cache: Path | None = None,
+              live_open=None) -> web.Application:
     session = Session()
     presence = Presence()
     scan = scanner or ble.scan
@@ -272,6 +274,14 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     app = web.Application(middlewares=[guard])
     app[PRESENCE] = presence
     routes = web.RouteTableDef()
+
+    def open_live():
+        """The gamepad device of the connected controller (cable or receiver only)."""
+        if live_open is not None:
+            return live_open(session)
+        if session.mode != "usb":
+            raise liveinput.Unavailable("live input is only available by cable or through the receiver")
+        return liveinput.LiveInput(liveinput.event_node_for(session.address))
 
     async def state_of(nova: NovaClient) -> dict:
         return await read_state(nova, USB_UNSUPPORTED if session.mode == "usb" else frozenset(),
@@ -366,10 +376,10 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     async def input_stream(request):
         """Live stick and trigger positions as JSON lines, about 30 a second, until the page
         stops reading. Not `guarded`: it must not hold the session lock while it runs."""
-        if session.mode != "usb":
+        if session.mode != "usb" and live_open is None:
             return fail("live input is only available by cable", 409)
         try:
-            live = liveinput.LiveInput(liveinput.event_node_for(session.address))
+            live = open_live()
         except liveinput.Unavailable as e:
             return fail(str(e), 409)
         resp = web.StreamResponse(headers={
@@ -555,6 +565,78 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
         nova = need_client()
         await nova.restore_defaults()
         return ok(await state_of(nova))
+
+    # -- stick check --------------------------------------------------------------
+    @routes.post("/api/stick-check")
+    @guarded
+    async def stick_check(request):
+        """Measure drift ("drift": sticks left alone) or reach ("reach": turned around the edge)
+        from the live input. The dead zones that would hide it are 0 for the test, then put back."""
+        d = await body(request)
+        seconds = d.get("seconds", 5)
+        if not isinstance(seconds, (int, float)) or isinstance(seconds, bool) or not 0 < seconds <= STICK_CHECK_MAX_SECONDS:
+            return fail(f"seconds must be more than 0 and at most {STICK_CHECK_MAX_SECONDS}")
+        nova = need_client()
+        try:
+            live = open_live()
+        except liveinput.Unavailable as e:
+            return fail(str(e), 409)
+        try:
+            return ok(await stickcheck.run(nova, live, d.get("test"), float(seconds)))
+        except liveinput.Unavailable as e:
+            return fail(str(e), 409)
+        except RuntimeError as e:          # a dead zone couldn't be put back
+            return fail(str(e), 500)
+        finally:
+            live.close()
+
+    # -- settings file ------------------------------------------------------------
+    def file_scope() -> dict:
+        # Every key (f1) by cable or receiver; the back buttons' own command (0x1F) over Bluetooth.
+        return {"remaps": session.mode != "ble", "mappings": session.mode != "usb",
+                "skip": USB_UNSUPPORTED if session.mode == "usb" else frozenset()}
+
+    def cannot_write(change: dict) -> str | None:
+        usb = session.mode == "usb"
+        if usb and change["section"] == "features" and Feature[change["name"]] in USB_READONLY_FEATURES:
+            return "the controller doesn't take this change by cable or through the receiver"
+        if usb and change["section"] in ("auto_sleep", "mappings"):
+            return "not available by cable or through the receiver"
+        if session.mode == "ble" and change["section"] == "remaps":
+            return "only by cable or through the receiver; over Bluetooth only the back buttons"
+        return None
+
+    async def controller_firmware(nova: NovaClient) -> str | None:
+        try:
+            return await nova.controller_firmware() if session.through_dongle else (await nova.info()).firmware_version
+        except ERRORS:
+            return None
+
+    @routes.get("/api/settings/export")
+    @guarded
+    async def settings_export(_):
+        nova = need_client()
+        settings = await settingsfile.read(nova, **file_scope())
+        return ok(settingsfile.document(settings, app_version=__version__, firmware=await controller_firmware(nova)))
+
+    @routes.post("/api/settings/import")
+    @guarded
+    async def settings_import(request):
+        """Check a settings file and list what loading it changes; with "apply": true, write those
+        changes. Nothing is written unless the whole file is valid."""
+        d = await body(request)
+        try:
+            wanted = settingsfile.parse(d.get("file"))
+        except settingsfile.InvalidFile as e:
+            return fail(f"Can't load this file: {e}")
+        nova = need_client()
+        current = settingsfile.typed(await settingsfile.read(nova, **file_scope()))
+        todo = settingsfile.changes(wanted, current)
+        public = lambda c: {k: v for k, v in c.items() if k != "write"}
+        if d.get("apply") is not True:
+            return ok({"changes": [{**public(c), "why_not": cannot_write(c) or settingsfile.unwritable(c)} for c in todo]})
+        result = await settingsfile.apply(nova, todo, cannot_write)
+        return ok({**result, "state": await state_of(nova)})
 
     # -- firmware ---------------------------------------------------------------
     @routes.get("/api/firmware")

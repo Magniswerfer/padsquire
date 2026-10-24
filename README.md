@@ -15,6 +15,11 @@ controller talks over USB and Bluetooth.
 - **Every setting GameSir Connect has for this controller.** That covers dead zones, stick
   options, button remapping (19 buttons, each to any other or up to three pressed together), vibration strength with a test per
   motor, the Home light and quick triggers.
+- **A stick check** that GameSir's apps don't have. It measures how far each stick drifts when
+  left alone and whether it reaches full tilt in every direction, then suggests the inner and
+  outer dead zones for your controller, to apply with one click.
+- **Settings files.** Save every setting to a file and load it back later or on another Nova 2
+  Lite. Loading shows what changes before anything is written.
 - **Firmware updates**, for the controller and its 2.4 GHz receiver. The app installs GameSir's
   own firmware exactly as GameSir Connect does, after a full backup of the device. See
   [Firmware updates](#firmware-updates).
@@ -27,6 +32,8 @@ controller talks over USB and Bluetooth.
 | Read and change settings | yes | yes | built, not tested on hardware yet |
 | Remap every button | yes | yes | back buttons only, not tested |
 | Live sticks, triggers and buttons | yes | yes | no |
+| Stick check | yes | yes | no |
+| Save and load settings files | yes | yes | built, not tested |
 | Controller firmware update | yes | no (use the cable) | no |
 | Receiver firmware update | | yes | |
 
@@ -170,6 +177,8 @@ controller, and include a fake chip in update mode for the firmware writer.
 - Find the cause of the occasional stop after a change.
 - Controller firmware updates through the 2.4 GHz receiver (JieLi's over-the-air updater, which
   GameSir Connect doesn't use for this controller): research.
+- Macros on the back buttons: the command is known (`0x53` over Bluetooth, `f6` by cable) but
+  its frames aren't decoded yet.
 - Other GameSir controllers.
 
 ## Disclaimer
