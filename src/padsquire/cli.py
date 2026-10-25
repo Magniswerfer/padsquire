@@ -170,7 +170,7 @@ def main(argv=None) -> int:
                             datefmt="%H:%M:%S")
     for line in paths.migrate():          # the folders of the old name, gamesir-linux, once
         print(f"PadSquire: {line}", file=sys.stderr)
-    p = argparse.ArgumentParser(prog="padsquire", description="PadSquire: Linux tools for GameSir controllers")
+    p = argparse.ArgumentParser(prog="padsquire", description="PadSquire: Linux and macOS tools for GameSir controllers")
     p.add_argument("--version", action="version", version=__version__)
     sub = p.add_subparsers(dest="cmd", required=True)
 

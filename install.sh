@@ -1,7 +1,7 @@
 #!/bin/sh
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# PadSquire installer, for Linux and macOS: tools for GameSir controllers.
+# PadSquire installer: Linux and macOS tools for GameSir controllers.
 #
 #   curl -fsSL https://padsquire.com/install.sh | sh
 #
@@ -187,7 +187,7 @@ main() {
     case "$OS" in Linux|Darwin) ;; *) fail "PadSquire is for Linux and macOS." ;; esac
     [ "$(id -u)" -ne 0 ] || fail "run this as yourself, not as root or with sudo. It asks for your password only for the one step that needs it."
     if [ "${1:-}" = "--uninstall" ]; then uninstall; return; fi
-    say "PadSquire: tools for GameSir controllers. Unofficial and open source ($REPO)."
+    say "PadSquire: Linux and macOS tools for GameSir controllers. Unofficial and open source ($REPO)."
     say ""
     say "No warranty: you use PadSquire at your own risk. Settings can be changed back, but a"
     say "firmware update can leave a controller or receiver unusable. PadSquire makes a full backup"

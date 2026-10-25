@@ -1,6 +1,6 @@
 # PadSquire: notes for Claude Code
 
-Linux tools for the GameSir **Nova 2 Lite** (GameSir model code T4N2): a browser settings app (the
+Linux and macOS tools for the GameSir **Nova 2 Lite** (GameSir model code T4N2): a browser settings app (the
 main interface) and a CLI, for configuration by cable, through the 2.4 GHz receiver or over
 Bluetooth, and firmware updates of the controller and the receiver. Built for interoperability
 by studying GameSir Connect 1.14.5/1.16.7 (Windows) and the GameSir Android app 5.8.20. Tested on one
@@ -95,19 +95,20 @@ Open:
 4. Controller firmware updates through the receiver (JieLi's HID over-the-air updater): research.
 5. **macOS**: blue (DualShock 4) mode for games untested; receiver and Bluetooth untested there;
    the app's one-go backup, restore and reinstall are confirmed on hardware; the receiver's
-   firmware is untested there; the disk-access prompt names "Python".
-   macOS support ships
-   with the next release (PyPI 0.1.3 has none, so the installer gets it only after a release).
+   firmware is untested there; the disk-access prompt names "Python". The installer from PyPI
+   (not a checkout) is untested on a Mac until someone runs it after 0.2.0.
 
-## Next steps (as of 2026-10-24)
+## Next steps (as of 2026-10-25)
 
-Published: v0.1.3 (the newest; v0.1.0 first) is on PyPI and GitHub Releases (trusted publishing, `pypi` environment), the repo
+Published: v0.2.0 (the newest: macOS, the compact settings app, profiles, the stick check,
+in-app updates; v0.1.0 first) is on PyPI and GitHub Releases (trusted publishing, `pypi` environment), the repo
 is public, and `https://padsquire.com/install.sh` redirects to the newest release's `install.sh`
 (the website lives in `Magniswerfer/padsquire-website`; edit it only from its own repo). A new
 release: bump `version` in `pyproject.toml`, then push a matching `v*` tag.
 
-Left for the owner: try the real thing, `curl -fsSL https://padsquire.com/install.sh | sh`, then
-open PadSquire from the app menu.
+Left for the owner: try the real thing on both systems, `curl -fsSL https://padsquire.com/install.sh | sh`,
+then open PadSquire from the app menu (on a Mac: Launchpad, Spotlight or Raycast). The in-app
+update can first be tried with the release after 0.2.0.
 
 Then: Bluetooth testing (the checklist in HARDWARE.md).
 
@@ -126,7 +127,7 @@ Then: Bluetooth testing (the checklist in HARDWARE.md).
   in code once confirmed.
 - No GameSir files in the repo (`*.ufw`, `*.exe` are gitignored).
 - Keep the user-facing copy plain and in sentence case.
-- The project is PadSquire ("Linux tools for GameSir controllers"). Use "GameSir" only for what it
+- The project is PadSquire ("Linux and macOS tools for GameSir controllers"). Use "GameSir" only for what it
   works with, never as part of our own name. Public wording leads with interoperability, not with
   how the protocol was found; technical detail belongs in PROTOCOL.md.
 - The settings app is the product: a new capability gets its GUI path, its Setup and help entry
