@@ -133,10 +133,36 @@ def a_backup(args) -> int:
         ident = jlboot.start(boot, LOADER_CACHE)
         _print_identity(ident)
         image = updatemode.backup(boot, ident, args.output, args.size, _log, _progress)
+        if image and args.restart:
+            _restart_now(boot)
     finally:
         dev.close()
+    if args.restart:
+        print("Keep a copy somewhere safe.")
+        return _back_to_normal(args) if image else 1
     print("Keep a copy somewhere safe. Next: `padsquire uboot restart`.")
     return 0 if image else 1
+
+
+# On macOS every command that lets go of the device hands it back to macOS, which resets it, and
+# the controller leaves download mode by itself (seen on hardware, 2026-10-25). --restart restarts
+# it from the same session instead, only after the step succeeded.
+def _restart_now(boot) -> None:
+    updatemode.restart(boot, LOADER_CACHE)
+    print("asked it to restart; waiting for it to come back in normal mode...")
+
+
+def _back_to_normal(args) -> int:
+    found = updatemode.wait_for_normal_mode(args.wait, receiver=args.receiver)
+    print("back in normal mode" + (": " + ", ".join(f"{d.path} ({d.link})" for d in found) if found else ""))
+    return 0
+
+
+def _restart_options(p) -> None:
+    p.add_argument("--restart", action="store_true",
+                   help="restart it afterwards in the same session, if the step succeeded (needed on macOS)")
+    p.add_argument("--wait", type=float, default=20.0, help="seconds to wait for normal mode (default 20)")
+    p.add_argument("--receiver", action="store_true", help="it is the 2.4 GHz receiver")
 
 
 def a_restart(args) -> int:
@@ -196,8 +222,12 @@ def a_restore(args) -> int:
     dev, boot = _open(args)
     try:
         updatemode.restore(boot, args.backup, LOADER_CACHE, _log, _progress)
+        if args.restart:
+            _restart_now(boot)
     finally:
         dev.close()
+    if args.restart:
+        return _back_to_normal(args)
     print("Next: `padsquire uboot restart`.")
     return 0
 
@@ -210,12 +240,16 @@ def a_flash(args) -> int:
     try:
         updatemode.flash(boot, args.ufw, args.backup, args.installed_version, args.firmware_dir,
                          args.reinstall, LOADER_CACHE, _log, _progress)
+        if args.restart:
+            _restart_now(boot)
     except updatemode.Blocked as e:
         for reason in e.reasons:
             print(f"BLOCKED       {reason}", file=sys.stderr)
         return 2
     finally:
         dev.close()
+    if args.restart:
+        return _back_to_normal(args)
     print("Next: `padsquire uboot restart`.")
     return 0
 
@@ -256,6 +290,7 @@ def register(sub) -> None:
     b.add_argument("-o", "--output", type=Path, default=BACKUP_DIR,
                    help=f"directory outside the repo (default: {BACKUP_DIR})")
     b.add_argument("--size", type=_size, help="bytes to read, a multiple of 4096 (default: from the flash ID)")
+    _restart_options(b)
     b.set_defaults(run=a_backup)
 
     t = acts.add_parser("test-write", help="write and erase one unused sector, to test writing")
@@ -269,6 +304,7 @@ def register(sub) -> None:
     s.add_argument("backup", type=Path, help="this controller's flash backup (.bin)")
     s.add_argument("--confirm", action="store_true", help="really write")
     s.add_argument("--device", help="SCSI generic node, e.g. /dev/sg2 (default: find it)")
+    _restart_options(s)
     s.set_defaults(run=a_restore)
 
     from .cli import DEFAULT_FW_DIR
@@ -281,6 +317,7 @@ def register(sub) -> None:
     f.add_argument("--reinstall", action="store_true")
     f.add_argument("--confirm", action="store_true", help="really write")
     f.add_argument("--device", help="SCSI generic node, e.g. /dev/sg2 (default: find it)")
+    _restart_options(f)
     f.set_defaults(run=a_flash)
 
     r = acts.add_parser("restart", help="leave download mode and boot the firmware in flash")

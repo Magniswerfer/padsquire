@@ -6,7 +6,9 @@ Bluetooth, and firmware updates of the controller and the receiver. Built for in
 by studying GameSir Connect 1.14.5/1.16.7 (Windows) and the GameSir Android app 5.8.20. Tested on one
 controller (firmware 7701 and 8201) and its receiver (2800); Bluetooth is not yet tested on hardware.
 Settings and the live view by cable also work on macOS (hidapi, `0xF4` state reports; confirmed
-2026-10-25); firmware updates there don't yet. Steam on macOS owns the Xbox interface (own driver).
+2026-10-25), and firmware backup, restore and update from the CLI with sudo (raw USB, all four
+stages confirmed 2026-10-25); the app doesn't offer them there yet. Steam on macOS owns the Xbox
+interface (own driver).
 
 ## Commands
 
@@ -75,7 +77,8 @@ Open:
 3. **Recovery if the firmware no longer starts**: TBD (PROTOCOL.md section 3, "Recovery").
 4. Controller firmware updates through the receiver (JieLi's HID over-the-air updater): research.
 5. **macOS**: blue (DualShock 4) mode for games untested; receiver and Bluetooth untested there;
-   update mode would need raw SCSI over libusb (no `SG_IO`), not attempted. macOS support ships
+   update mode in the app needs a root helper (the CLI runs under sudo; steps need `--restart`,
+   see PROTOCOL.md). macOS support ships
    with the next release (PyPI 0.1.3 has none, so the installer gets it only after a release).
 
 ## Next steps (as of 2026-10-24)

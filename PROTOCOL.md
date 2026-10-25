@@ -56,8 +56,20 @@ Xbox 360) has no macOS driver, so green mode is no gamepad for macOS games; blue
 (DualShock 4) should be, through macOS's own support (not yet tried). **Steam** brings its own
 Xbox 360 driver on macOS: with Steam running, if00 has `UsbExclusiveOwner = steam_osx` and Steam
 sees an Xbox controller, so green mode works for Steam games; libusb gets "access denied" on that
-interface then. The update-mode disk (section 3) needs raw SCSI commands, which macOS has no
-`SG_IO` for: not attempted.
+interface then.
+
+**Update mode on macOS (confirmed 2026-10-25, all four stages, by cable).** macOS has no `SG_IO`,
+so `jlboot.UsbBotDevice` sends the same SCSI commands over raw USB (libusb): mass storage
+Bulk-Only Transport (31-byte CBW, data, 13-byte CSW) on the disk interface (class 8, protocol
+0x50), after detaching macOS's disk driver, which **only root** may do. Download mode enumerates
+as `4c4a:2342` "BR23UBOOT1.00" as on Linux; macOS mounts nothing and shows no dialog. Results:
+identify (BR23, chip key `0x3496`, JEDEC `0x856014`, 1 MB), a full backup read twice and
+identical with the device CRC matching every sector, a restore of `0x0`-`0x63fff`, and a
+reinstall of 8201 (`T4Nlite2_V182`, `0x1000`-`0x63fff`), each verified sector by sector, with
+settings, MAC and calibration unchanged afterwards. **Quirk:** when a process lets go of the
+device, macOS takes it back and resets it, and the controller leaves download mode by itself
+(within seconds to minutes). So on macOS a step and the restart run in one session
+(`--restart`); a separate `uboot restart` can find it gone, or half gone (`fb06` I/O error).
 
 **`0xF4` state report layout (confirmed 2026-10-25, firmware 8201, by cable, mode Mapped 2).** About
 66 a second once switched on; all zero at rest apart from the fixed bytes. Byte 0 `F4`, 1 `00`,
