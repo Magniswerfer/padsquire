@@ -164,6 +164,12 @@ class Feature(IntEnum):
     SWAP_RT_RB = 0x16
 
 
+# Toggles the controller (8201) reads but won't change by cable or receiver: a set reads back
+# unchanged. Confirmed 2026-10-23 through the receiver. Bluetooth not yet tried.
+USB_READONLY_FEATURES = frozenset({Feature.LOW_BATTERY_WARNING, Feature.SWAP_STICKS, Feature.INVERT_STICKS_XY,
+                                   Feature.PLAY_WHILE_CHARGING, Feature.SWAP_LT_LB, Feature.SWAP_RT_RB})
+
+
 def feature_query(feature: Feature) -> bytes:
     return _small(CMD_FEATURE, feature, None)
 

@@ -21,10 +21,10 @@ from pathlib import Path
 
 from aiohttp import web
 
-from .. import __version__, ble, gcm, hid, installer, liveinput, updater
+from .. import __version__, ble, gcm, hid, installer, liveinput, paths, profiles, settingsfile, stickcheck, updater
 from ..client import NotApplied, NovaClient
 from ..gcm import DeadZone, Feature, Key, ProtocolError, Vibration
-from ..simulator import SimulatedNova
+from ..simulator import LINKS, SimulatedSticks, simulated
 
 STATIC = Path(__file__).parent / "static"
 COOKIE = "padsquire_session"
@@ -32,14 +32,12 @@ API_HEADER = "X-PadSquire"
 
 ERRORS = (NotApplied, ProtocolError, ble.BleError, hid.HidError, ValueError, KeyError,
           asyncio.TimeoutError)
+STICK_CHECK_MAX_SECONDS = 15
 
 # Reads that get no reply over the USB cable (firmware 7701). Asking costs 11 x 200 ms each,
 # so the state read skips them and the GUI shows them as unavailable.
 USB_UNSUPPORTED = {"auto_sleep", "slots"}
-# Feature toggles the controller (8201) reads but refuses to change by cable or receiver: a set
-# reads back unchanged. Confirmed 2026-10-23 through the receiver. Bluetooth not yet tried.
-USB_READONLY_FEATURES = {Feature.LOW_BATTERY_WARNING, Feature.SWAP_STICKS, Feature.INVERT_STICKS_XY,
-                         Feature.PLAY_WHILE_CHARGING, Feature.SWAP_LT_LB, Feature.SWAP_RT_RB}
+USB_READONLY_FEATURES = gcm.USB_READONLY_FEATURES
 
 
 def _key_name(code: int):
@@ -94,7 +92,8 @@ class Session:
 
     def __init__(self):
         self.client: NovaClient | None = None
-        self.mode: str | None = None          # "ble" | "usb" | "simulated"
+        self.mode: str | None = None          # "ble" | "usb", also for a simulated controller
+        self.simulated = False
         self.via: str | None = None           # for "usb": "cable" or "dongle" (the 2.4 GHz receiver)
         self.address: str | None = None
         self.name: str | None = None
@@ -105,10 +104,14 @@ class Session:
     def connected(self) -> bool:
         return self.client is not None
 
-    async def connect_simulated(self):
+    async def connect_simulated(self, link: str = "cable"):
+        """A simulated controller that behaves like the real one on `link` (simulator.LINKS)."""
+        device = simulated(link)
         await self.disconnect()
-        self.client, self.mode, self.address, self.name = (
-            NovaClient(SimulatedNova()), "simulated", "simulator", "GameSir-Nova 2 Lite (simulated)")
+        self.client, self.address, self.name = NovaClient(device), "simulator", "GameSir Nova 2 Lite (simulated)"
+        self.mode = "ble" if link == "bluetooth" else "usb"
+        self.via = {"cable": "cable", "receiver": "dongle"}.get(link)
+        self.simulated = True
 
     async def connect_ble(self, address: str, name: str | None = None):
         await self.disconnect()
@@ -132,6 +135,7 @@ class Session:
                 pass
         self._ctx = None
         self.client = self.mode = self.address = self.name = self.via = None
+        self.simulated = False
 
     @property
     def through_dongle(self) -> bool:
@@ -141,7 +145,7 @@ class Session:
 
     def status(self) -> dict:
         return {"connected": self.connected, "mode": self.mode, "address": self.address, "name": self.name,
-                "via": self.via}
+                "via": self.via, "simulated": self.simulated}
 
 
 async def _try(coro):
@@ -232,9 +236,11 @@ PRESENCE = web.AppKey("presence", Presence)
 
 
 def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
-              simulate: bool = False, scanner=None, usb_finder=None,
-              backup_dir: Path | None = None, loader_cache: Path | None = None) -> web.Application:
+              simulate: str | None = None, scanner=None, usb_finder=None,
+              backup_dir: Path | None = None, loader_cache: Path | None = None,
+              live_open=None, profiles_dir: Path | None = None) -> web.Application:
     session = Session()
+    store = profiles.Store(profiles_dir or paths.PROFILES_DIR)
     presence = Presence()
     scan = scanner or ble.scan
     find_usb = usb_finder or hid.find
@@ -273,9 +279,19 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     app[PRESENCE] = presence
     routes = web.RouteTableDef()
 
+    def open_live():
+        """The gamepad device of the connected controller (cable or receiver only)."""
+        if live_open is not None:
+            return live_open(session)
+        if session.mode != "usb":
+            raise liveinput.Unavailable("live input is only available by cable or through the receiver")
+        if session.simulated:
+            return SimulatedSticks(session.client.t)
+        return liveinput.LiveInput(liveinput.event_node_for(session.address))
+
     async def state_of(nova: NovaClient) -> dict:
         return await read_state(nova, USB_UNSUPPORTED if session.mode == "usb" else frozenset(),
-                                session.through_dongle, remaps=session.mode in ("usb", "simulated"))
+                                session.through_dongle, remaps=session.mode == "usb")
 
     def need_client():
         if not session.connected:
@@ -347,7 +363,10 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     async def connect(request):
         data = await body(request)
         if data.get("simulate"):
-            await session.connect_simulated()
+            link = data.get("link", "cable")
+            if link not in LINKS:
+                return fail(f"link must be one of {', '.join(LINKS)}")
+            await session.connect_simulated(link)
         else:
             address = data.get("address")
             if not isinstance(address, str) or not address:
@@ -367,12 +386,12 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     async def input_stream(request):
         """Live stick and trigger positions as JSON lines, about 30 a second, until the page
         stops reading. Not `guarded`: it must not hold the session lock while it runs."""
-        if session.mode != "usb":
+        if session.mode != "usb" and live_open is None:
             return fail("live input is only available by cable", 409)
         if hid.MACOS:
             return await report_stream(request)
         try:
-            live = liveinput.LiveInput(liveinput.event_node_for(session.address))
+            live = open_live()
         except liveinput.Unavailable as e:
             return fail(str(e), 409)
         resp = web.StreamResponse(headers={
@@ -380,22 +399,26 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
             "X-Content-Type-Options": "nosniff"})
         loop = asyncio.get_running_loop()
         ready = asyncio.Event()
-        loop.add_reader(live.fd, ready.set)
+        fd = getattr(live, "fd", None)     # a simulated controller has no device node: just poll it
+        if fd is not None:
+            loop.add_reader(fd, ready.set)
         try:
             await resp.prepare(request)
             while True:
                 await resp.write(json.dumps(live.state()).encode() + b"\n")
-                try:
-                    await asyncio.wait_for(ready.wait(), timeout=1.0)
-                except asyncio.TimeoutError:
-                    pass       # nothing moved; send the same state as a keepalive
-                ready.clear()
+                if fd is not None:
+                    try:
+                        await asyncio.wait_for(ready.wait(), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        pass       # nothing moved; send the same state as a keepalive
+                    ready.clear()
                 live.pump()
                 await asyncio.sleep(1 / 30)
         except (ConnectionResetError, liveinput.Unavailable):
             pass
         finally:
-            loop.remove_reader(live.fd)
+            if fd is not None:
+                loop.remove_reader(fd)
             live.close()
         return resp
 
@@ -439,7 +462,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
         from . import setup
         found = setup.devices(find_usb)
         lost = False
-        if session.mode == "usb" and session.address not in {d["address"] for d in found["usb"]}:
+        if session.mode == "usb" and not session.simulated and session.address not in {d["address"] for d in found["usb"]}:
             async with session.lock:
                 await session.disconnect()
             lost = True
@@ -592,6 +615,162 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
         await nova.restore_defaults()
         return ok(await state_of(nova))
 
+    # -- stick check --------------------------------------------------------------
+    @routes.post("/api/stick-check")
+    @guarded
+    async def stick_check(request):
+        """Measure drift ("drift": sticks left alone) or reach ("reach": turned around the edge)
+        from the live input. The dead zones that would hide it are 0 for the test, then put back."""
+        d = await body(request)
+        seconds = d.get("seconds", 5)
+        if not isinstance(seconds, (int, float)) or isinstance(seconds, bool) or not 0 < seconds <= STICK_CHECK_MAX_SECONDS:
+            return fail(f"seconds must be more than 0 and at most {STICK_CHECK_MAX_SECONDS}")
+        nova = need_client()
+        try:
+            live = open_live()
+        except liveinput.Unavailable as e:
+            return fail(str(e), 409)
+        try:
+            return ok(await stickcheck.run(nova, live, d.get("test"), float(seconds)))
+        except liveinput.Unavailable as e:
+            return fail(str(e), 409)
+        except RuntimeError as e:          # a dead zone couldn't be put back
+            return fail(str(e), 500)
+        finally:
+            live.close()
+
+    # -- settings file ------------------------------------------------------------
+    def file_scope() -> dict:
+        # Every key (f1) by cable or receiver; the back buttons' own command (0x1F) over Bluetooth.
+        return {"remaps": session.mode != "ble", "mappings": session.mode != "usb",
+                "skip": USB_UNSUPPORTED if session.mode == "usb" else frozenset()}
+
+    def cannot_write(change: dict) -> str | None:
+        usb = session.mode == "usb"
+        if usb and change["section"] == "features" and Feature[change["name"]] in USB_READONLY_FEATURES:
+            return "the controller doesn't take this change by cable or through the receiver"
+        if usb and change["section"] in ("auto_sleep", "mappings"):
+            return "not available by cable or through the receiver"
+        if session.mode == "ble" and change["section"] == "remaps":
+            return "only by cable or through the receiver; over Bluetooth only the back buttons"
+        return None
+
+    async def controller_firmware(nova: NovaClient) -> str | None:
+        try:
+            return await nova.controller_firmware() if session.through_dongle else (await nova.info()).firmware_version
+        except ERRORS:
+            return None
+
+    @routes.get("/api/settings/export")
+    @guarded
+    async def settings_export(_):
+        nova = need_client()
+        settings = await current_settings(nova)
+        return ok(settingsfile.document(settings, app_version=__version__, firmware=await controller_firmware(nova)))
+
+    @routes.post("/api/settings/import")
+    @guarded
+    async def settings_import(request):
+        """Check a settings file and list what loading it changes; with "apply": true, write those
+        changes. Nothing is written unless the whole file is valid."""
+        d = await body(request)
+        try:
+            wanted = settingsfile.parse(d.get("file"))
+        except settingsfile.InvalidFile as e:
+            return fail(f"Can't load this file: {e}")
+        return ok(await load(need_client(), wanted, d.get("apply") is True))
+
+    async def current_settings(nova: NovaClient) -> dict:
+        return await settingsfile.read(nova, **file_scope())
+
+    def pending(wanted: dict, current: dict) -> list[dict]:
+        """The changes loading `wanted` makes, each with why it can't be written here, if so."""
+        return [{**c, "why_not": cannot_write(c) or settingsfile.unwritable(c)}
+                for c in settingsfile.changes(wanted, settingsfile.typed(current))]
+
+    async def load(nova: NovaClient, wanted: dict, apply: bool) -> dict:
+        """Settings (from settingsfile.parse) onto the controller: a preview of the changes, or with
+        `apply` the changes written, each read back, and the new state."""
+        todo = pending(wanted, await current_settings(nova))
+        if not apply:
+            return {"changes": [{k: v for k, v in c.items() if k != "write"} for c in todo]}
+        result = await settingsfile.apply(nova, [{k: v for k, v in c.items() if k != "why_not"} for c in todo],
+                                          cannot_write)
+        return {**result, "state": await state_of(nova)}
+
+    # -- profiles -------------------------------------------------------------------
+    def profile_summary(p: dict, current: dict | None) -> dict:
+        doc = p["doc"]
+        out = {"id": p["id"], "name": p["name"], "saved": doc.get("saved"),
+               "firmware": (doc.get("controller") or {}).get("firmware")}
+        if current is not None:
+            diff = [c for c in pending(settingsfile.parse(doc), current) if not c["why_not"]]
+            out["differs"] = len(diff)
+            out["active"] = not diff
+        return out
+
+    @routes.get("/api/profiles")
+    @guarded
+    async def profile_list(_):
+        """The profiles on this computer; connected, also which one the controller has now."""
+        current = await current_settings(session.client) if session.connected else None
+        return ok({"profiles": [profile_summary(p, current) for p in store.list()], "dir": str(store.root)})
+
+    @routes.post("/api/profiles")
+    @guarded
+    async def profile_create(request):
+        """A new profile: the controller's settings now, or a settings file ("file")."""
+        d = await body(request)
+        if "file" in d:
+            try:
+                settingsfile.parse(d["file"])
+            except settingsfile.InvalidFile as e:
+                return fail(f"Can't use this file: {e}")
+            pid = store.create(d.get("name") or d["file"].get("name"), {k: v for k, v in d["file"].items() if k != "name"})
+        else:
+            nova = need_client()
+            pid = store.create(d.get("name"), settingsfile.document(
+                await current_settings(nova), app_version=__version__, firmware=await controller_firmware(nova)))
+        return ok({"id": pid})
+
+    @routes.post("/api/profiles/update")
+    @guarded
+    async def profile_update(request):
+        """Keep the controller's settings now in an existing profile."""
+        d = await body(request)
+        nova = need_client()
+        store.replace(d.get("id"), settingsfile.document(
+            await current_settings(nova), app_version=__version__, firmware=await controller_firmware(nova)))
+        return ok({"id": d.get("id")})
+
+    @routes.post("/api/profiles/rename")
+    @guarded
+    async def profile_rename(request):
+        d = await body(request)
+        store.rename(d.get("id"), d.get("name"))
+        return ok({"id": d.get("id")})
+
+    @routes.post("/api/profiles/delete")
+    @guarded
+    async def profile_delete(request):
+        d = await body(request)
+        store.delete(d.get("id"))
+        return ok(None)
+
+    @routes.get("/api/profiles/file")
+    @guarded
+    async def profile_file(request):
+        """A profile as a settings file, to save somewhere else."""
+        return ok(store.get(request.query.get("id")))
+
+    @routes.post("/api/profiles/switch")
+    @guarded
+    async def profile_switch(request):
+        """Write a profile to the controller: only what differs, each setting read back."""
+        d = await body(request)
+        doc = store.get(d.get("id"))
+        return ok({**await load(need_client(), settingsfile.parse(doc), apply=True), "name": doc["name"]})
+
     # -- firmware ---------------------------------------------------------------
     @routes.get("/api/firmware")
     @guarded
@@ -640,7 +819,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
 
     async def on_startup(_):
         if simulate:
-            await session.connect_simulated()
+            await session.connect_simulated(simulate)
 
     async def on_cleanup(_):
         await session.disconnect()
@@ -705,7 +884,7 @@ def _stop_older(info: dict) -> bool:
     return False
 
 
-def serve(fw_dir: Path, *, host: str = "127.0.0.1", port: int = 0, simulate: bool = False,
+def serve(fw_dir: Path, *, host: str = "127.0.0.1", port: int = 0, simulate: str | None = None,
           open_browser: bool = True, tab: bool = False, keep_running: bool = False) -> None:
     import signal
     import socket

@@ -240,6 +240,8 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
             return fail("confirmation required")
         if not hid.MACOS and not Path("/sys/class/scsi_generic").exists():
             return fail("restarting needs the sg kernel module; see Setup and help", 409)
+        if session.simulated:
+            return fail("a simulated controller can't be restarted", 409)
         path = session.address if session.mode == "usb" else None
         if path is None:
             return fail("connect the controller by cable or through the receiver first", 409)

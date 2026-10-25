@@ -189,6 +189,12 @@ buttons, plus 16 stick directions on firmware ≥ 6900 (`Nova2LiteDevCfg`).
 **The Home light** (key `450`, scan `0xC2`) is the Nova 2 Lite's only light, with one effect
 (solid, `1`). Colours travel as RGB (`lightingColorMode` 0); the app converts to and from HSB in the UI.
 
+**Assumption the stick check makes (`stickcheck.py`), to check on hardware:** stick dead zones are
+radial (measured from the centre in every direction, like the Sticks page's circle), so a drift of
+4% is hidden by an inner dead zone above 4%, and an outer dead zone of N% gives full tilt at
+(100 − N)% of the stick's reach. To check: with the inner dead zone at 5, hold a stick at about 4%
+up and at 4% diagonally; neither should come through.
+
 **Assumptions the GUI makes, to check on hardware:** dead zones are percent of travel (shown
 0–50); vibration levels 0–4 (GameSir Connect maps levels 0–4 to 0/25/50/75/100%); auto-sleep is
 in minutes; whether the Nova 2 Lite answers the profile query at all (the GUI hides profiles if not).

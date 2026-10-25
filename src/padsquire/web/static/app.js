@@ -101,6 +101,12 @@ const app = {
   connecting: false,
   userDisconnected: false,
   polls: 0,
+  simLink: "cable",
+  profiles: null,         // the profiles on this computer, as the Profiles page last read them
+  renaming: null,         // the id of the profile whose name is being edited
+  switched: null,         // the last switch: the profile's name and what was skipped or failed       // the connection the simulator imitates
+  stickCheck: {},         // the last stick check results, per test
+  fileLoad: null,         // a settings file being loaded: its name, contents, preview and result
 };
 
 const val = (entry) => (entry && "value" in entry ? entry.value : undefined);
@@ -123,6 +129,7 @@ async function save(path, body, apply, statusEl) {
   try {
     const data = await api(path, body);
     apply(data);
+    app.profiles = null;
     if (statusEl) {
       statusEl.textContent = "Saved";
       statusEl.classList.add("show");
@@ -250,7 +257,8 @@ function renderChrome() {
   const st = $("#status");
   st.replaceChildren();
   if (app.status.connected) {
-    const via = app.status.mode === "simulated" ? "Simulated controller"
+    const link = app.status.mode === "usb" ? (app.status.via === "dongle" ? "the 2.4 GHz receiver" : "cable") : "Bluetooth";
+    const via = app.status.simulated ? `Simulated controller, as on ${link}`
       : app.status.mode === "usb" ? (app.status.via === "dongle" ? "Connected through the 2.4 GHz receiver" : "Connected by cable")
       : "Connected over Bluetooth";
     // phones get the short label (app.css); the full one stays for screen readers and as a tooltip
@@ -326,7 +334,8 @@ function sectionHint(id) {
     const own = app.status.via === "dongle" ? val(d.controller_firmware) : val(d.info).firmware_version;
     text = own ? `firmware ${own}` : "through the receiver";
   }
-  if (id === "profiles" && val(d.slots)) text = `${val(d.slots)[1] + 1} of ${val(d.slots)[0]}`;
+  const active = id === "profiles" && (app.profiles || []).find((p) => p.active);
+  if (active) text = active.name;
   if (id === "power" && val(d.auto_sleep) !== undefined) text = `sleep ${val(d.auto_sleep)} min`;
   return text ? h("small", {}, text) : null;
 }
@@ -387,7 +396,11 @@ function panelConnect() {
   const findBtn = h("button", { class: `button primary${app.scanning ? " working" : ""}`, onclick: scan, disabled: app.scanning },
     app.scanning ? "Searching…" : "Find controllers");
   wrap.append(h("div", { class: "button-row" }, findBtn,
-    h("button", { class: "button", onclick: () => connect({ simulate: true }) }, "Use the simulator")));
+    h("button", { class: "button", onclick: () => connect({ simulate: true, link: app.simLink }) }, "Use the simulator"),
+    h("label", { class: "sim-link" }, "as on",
+      h("select", { class: "input", "aria-label": "Simulate the controller as on", onchange: (e) => { app.simLink = e.target.value; } },
+        [["cable", "the cable"], ["receiver", "the 2.4 GHz receiver"], ["bluetooth", "Bluetooth"]].map(([v, t]) =>
+          h("option", { value: v, selected: v === app.simLink }, t))))));
 
   if (app.found) {
     if (app.found.length === 0) {
@@ -401,7 +414,7 @@ function panelConnect() {
     }
   }
   wrap.append(notice("",
-    "The simulator behaves like a controller, so you can try every setting without one."));
+    "The simulator behaves like the controller on the connection you pick, refusals and all, so you can try every setting without one. Over Bluetooth it follows the GameSir app, which isn't tested on hardware yet."));
   return wrap;
 }
 
@@ -422,8 +435,8 @@ function panelController() {
     : [fact("Firmware", info && info.firmware_version, info ? regionName(info.firmware_version) : null)];
   return h("div", {},
     h("h1", {}, app.status.name || "Nova 2 Lite"),
-    h("p", { class: "lede" }, app.status.mode === "simulated"
-      ? "This is the simulator: changes behave like the real controller but go nowhere."
+    h("p", { class: "lede" }, app.status.simulated
+      ? "This is the simulator: changes behave like the real controller on this connection, but go nowhere."
       : `${where}. Every value shown here was read back from the controller.`),
     h("dl", { class: "facts" },
       fact("Battery", bat ? `${bat.level}%` : null, bat && bat.charging ? "charging" : null),
@@ -434,7 +447,131 @@ function panelController() {
       fact("Protocol", info && `GCM ${info.gcm_version}`)),
     h("div", { class: "button-row" },
       h("button", { class: "button", onclick: (e) => working(e.currentTarget, "Reading…", () => reload(true)) }, "Read settings again")),
+    settingsFile(),
   );
+}
+
+// ---------------------------------------------------------------------------
+// settings files: every setting saved to a file, and loaded back after a preview of what changes
+
+function settingsFile() {
+  const input = h("input", { type: "file", accept: ".json,application/json", class: "visually-hidden", tabindex: "-1",
+    "aria-hidden": "true", onchange: () => { if (input.files[0]) previewFile(input.files[0]); input.value = ""; } });
+  const wrap = h("div", { class: "settings-file" }, h("h2", {}, "Save or load settings"),
+    h("p", { class: "note" }, "Keep every setting in a file, to put back later, share with someone, or copy to another Nova 2 Lite. Loading a file shows what it changes before anything is written."),
+    h("div", { class: "button-row" },
+      h("button", { class: "button", onclick: saveFile }, "Save to a file"),
+      h("button", { class: "button", onclick: () => input.click() }, "Load from a file"), input));
+  if (app.fileLoad) wrap.append(fileLoadView());
+  return wrap;
+}
+
+async function saveFile() {
+  let doc;
+  try { doc = await api("/api/settings/export"); } catch (e) { toast(e.message, "error"); return; }
+  await writeJson(doc, `nova-2-lite-settings-${new Date().toISOString().slice(0, 10)}.json`, "Settings");
+}
+
+// A settings document to a file: a save dialog where there is one, a download otherwise.
+async function writeJson(doc, name, what) {
+  const text = JSON.stringify(doc, null, 2) + "\n";
+  if (window.showSaveFilePicker) {
+    // Chromium (and so the app window): a save dialog, to choose where it goes
+    try {
+      const handle = await window.showSaveFilePicker({ suggestedName: name,
+        types: [{ description: "PadSquire settings", accept: { "application/json": [".json"] } }] });
+      const out = await handle.createWritable();
+      await out.write(text);
+      await out.close();
+      toast(`${what} saved as ${handle.name}`);
+    } catch (e) { if (e.name !== "AbortError") toast(`Couldn't save the file: ${e.message}`, "error"); }
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+  const a = h("a", { href: url, download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  toast(`${what} saved as ${name} in your downloads`);
+}
+
+async function previewFile(file) {
+  let doc;
+  try { doc = JSON.parse(await file.text()); }
+  catch { toast(`${file.name} isn't a settings file (not valid JSON).`, "error"); return; }
+  try {
+    const preview = await api("/api/settings/import", { file: doc });
+    app.fileLoad = { name: file.name, doc, preview, result: null };
+  } catch (e) { toast(e.message, "error"); return; }
+  render();
+}
+
+async function applyFile() {
+  const f = app.fileLoad;
+  try {
+    const result = await api("/api/settings/import", { file: f.doc, apply: true });
+    app.dev = result.state;
+    f.result = result;
+    const n = result.applied.length;
+    toast(result.failed.length ? `${n} setting${n === 1 ? "" : "s"} loaded, ${result.failed.length} failed` : `${n} setting${n === 1 ? "" : "s"} loaded`,
+      result.failed.length ? "error" : "info");
+  } catch (e) { toast(e.message, "error"); }
+  render();
+}
+
+// A setting's value in words, as the pages show it.
+function settingValue(section, v) {
+  const labels = app.meta.keys;
+  if (v === null || v === undefined) return "not read";
+  if (typeof v === "boolean") return v ? "on" : "off";
+  if (section === "dead_zones") return `${v}%`;
+  if (section === "auto_sleep") return `${v} minutes`;
+  if (section === "light") return hex(v).toUpperCase();
+  if (section === "trigger_quick") return `left ${v[0] ? "on" : "off"}, right ${v[1] ? "on" : "off"}`;
+  if (section === "vibration") return `left ${v.left_grip}%, right ${v.right_grip}%`;
+  if (section === "remaps") return v.length ? v.map((k) => labels[k] || k).join(" + ") : "its own function";
+  if (section === "mappings") return v[0] === "key" ? labels[v[1]] || v[1] : v[0] === "disabled" ? "nothing" : `a ${v[0]}`;
+  return JSON.stringify(v);
+}
+
+function changeList(list, extra) {
+  return h("ul", { class: "change-list" }, list.map((c) => h("li", {},
+    h("span", { class: "label" }, ["remaps", "mappings"].includes(c.section) ? `What ${app.meta.keys[c.name] || c.name} does` : c.label),
+    h("span", {}, `${settingValue(c.section, c.from)} → ${settingValue(c.section, c.to)}`),
+    extra ? extra(c) : null)));
+}
+
+function fileLoadView() {
+  const f = app.fileLoad;
+  const close = h("button", { class: "button small quiet", onclick: () => { app.fileLoad = null; render(); } }, f.result ? "Close" : "Cancel");
+  const box = h("div", { class: "file-load well" }, h("h3", {}, f.name));
+  const saved = f.doc.saved ? f.doc.saved.slice(0, 16).replace("T", " ") : null;
+  const from = f.doc.controller && f.doc.controller.firmware;
+  if (saved || from) box.append(h("p", { class: "note" }, [saved ? `Saved ${saved}` : null, from ? `from firmware ${from}` : null].filter(Boolean).join(", ") + "."));
+  if (f.result) {
+    const r = f.result;
+    box.append(h("p", {}, `${r.applied.length} setting${r.applied.length === 1 ? "" : "s"} loaded, each read back from the controller.`));
+    if (r.failed.length) box.append(notice("danger", h("p", {}, "These didn't take:"),
+      changeList(r.failed, (c) => h("span", { class: "hint" }, c.error))));
+    if (r.skipped.length) box.append(notice("", h("p", {}, "Left as they are:"),
+      changeList(r.skipped, (c) => h("span", { class: "hint" }, c.why))));
+    box.append(h("div", { class: "button-row" }, close));
+    return box;
+  }
+  const changes = f.preview.changes;
+  const can = changes.filter((c) => !c.why_not), cannot = changes.filter((c) => c.why_not);
+  if (!changes.length) {
+    box.append(notice("ok", "The controller already has these settings. Nothing to change."), h("div", { class: "button-row" }, close));
+    return box;
+  }
+  if (can.length) box.append(h("p", {}, `Loading this file changes ${can.length} setting${can.length === 1 ? "" : "s"}:`), changeList(can));
+  if (cannot.length) box.append(h("p", { class: "note" }, "These can't be changed over this connection, so they stay as they are:"),
+    changeList(cannot, (c) => h("span", { class: "hint" }, c.why_not)));
+  box.append(h("div", { class: "button-row" },
+    can.length ? h("button", { class: "button primary", onclick: applyFile }, `Load ${can.length} setting${can.length === 1 ? "" : "s"}`) : null,
+    close));
+  return box;
 }
 
 function regionName(fw) {
@@ -787,8 +924,142 @@ function panelSticks() {
     featureToggle("SWAP_LEFT_STICK_DPAD", "Swap left stick and D-pad")));
   wrap.append(h("p", { class: "note" }, liveNote("The line shows what the computer gets for each amount of stick travel, and the dot shows each stick now. ") +
     "The outer dead zone stops at 25%: above that the controller's firmware gets full tilt wrong, and the stick jumps to the opposite side."));
+  wrap.append(stickCheck());
   app.live = (st) => live.forEach((f) => f(st));
   return wrap;
+}
+
+// ---------------------------------------------------------------------------
+// stick check: drift and reach measured from the live input, with the dead zones they suggest
+
+const STICK_TESTS = {
+  drift: { seconds: 5, title: "Drift", button: "Check for drift",
+    how: "Put the controller down and don't touch the sticks while it measures.",
+    running: "Measuring drift. Don't touch the sticks…" },
+  reach: { seconds: 8, title: "Reach", button: "Check reach",
+    how: "Turn both sticks slowly around their edge, 2 or 3 times, while it measures.",
+    running: "Turn both sticks slowly around their edge…" },
+};
+
+function stickCheck() {
+  const wrap = h("div", { class: "stick-check" }, h("h2", {}, "Check your sticks"),
+    h("p", { class: "note" }, "Measures how far each stick wanders when left alone, and whether it reaches full tilt in every direction, then suggests dead zones for this controller."));
+  if (app.status.mode !== "usb") {
+    wrap.append(notice("", "The check needs the cable or the 2.4 GHz receiver: it reads what the computer receives from the sticks."));
+    return wrap;
+  }
+  const pair = h("div", { class: "pair" });
+  for (const test of Object.keys(STICK_TESTS)) pair.append(stickTest(test));
+  wrap.append(pair, h("p", { class: "note" },
+    "For the few seconds of a check, the dead zones it measures are set to 0, so they don't hide anything, then put back as they were."));
+  return wrap;
+}
+
+function stickTest(test) {
+  const t = STICK_TESTS[test];
+  const box = h("div", { class: "check well" }, h("h3", {}, t.title), h("p", { class: "note" }, t.how));
+  const result = app.stickCheck[test];
+  const status = h("p", { class: "note", "aria-live": "polite" });
+  const btn = h("button", { class: "button", onclick: async () => {
+    btn.disabled = true;
+    let left = t.seconds;
+    status.replaceChildren(h("span", { class: "busy" }, `${t.running} ${left} s`));
+    const timer = setInterval(() => {
+      left = Math.max(0, left - 1);
+      status.replaceChildren(h("span", { class: "busy" }, left ? `${t.running} ${left} s` : "Putting the dead zones back…"));
+    }, 1000);
+    try {
+      app.stickCheck[test] = await api("/api/stick-check", { test, seconds: t.seconds });
+    } catch (e) { toast(e.message, "error"); }
+    clearInterval(timer);
+    if (app.section === "sticks") render();
+  } }, result ? "Check again" : `${t.button} (${t.seconds} seconds)`);
+  box.append(h("div", { class: "button-row" }, btn), status);
+  if (result) {
+    for (const [side, name] of [["left", "Left stick"], ["right", "Right stick"]]) {
+      box.append(test === "drift" ? driftResult(name, result[side]) : reachResult(name, result[side]));
+    }
+  }
+  return box;
+}
+
+// a "use N%" button that writes the suggestion like the slider would
+function useButton(zone, value) {
+  return h("button", { class: "button small", onclick: () =>
+    save("/api/dead-zone", { zone, value }, (got) => { app.dev.dead_zones[zone] = { value: got }; render(); toast(`Set to ${got}%`); }, null) },
+  `Use ${value}%`);
+}
+
+function driftResult(name, r) {
+  const now = val(app.dev.dead_zones[r.zone]) ?? r.current;
+  const want = r.suggested_inner;
+  let text, action = null, kind = "ok";
+  if (r.peak < 0.5) text = `Stays in the centre: no drift.`;
+  else text = `Wanders up to ${r.peak}% from the centre.`;
+  if (now <= r.peak) {
+    kind = "warn";
+    text += ` The inner dead zone, ${now}%, is smaller, so the stick may move by itself in games. ${want}% hides it.`;
+    action = useButton(r.zone, want);
+  } else if (now < want) {
+    text += ` The inner dead zone, ${now}%, only just covers it. ${want}% leaves room for drift that grows with wear.`;
+    action = useButton(r.zone, want);
+  } else if (now > want + 3) {
+    text += ` The inner dead zone, ${now}%, hides more than it needs to. ${want}% would give finer control near the centre.`;
+    action = useButton(r.zone, want);
+  } else text += ` The inner dead zone, ${now}%, is right for it.`;
+  return h("div", { class: `check-result ${kind}` }, h("h4", {}, name), h("p", {}, text), action);
+}
+
+function reachResult(name, r) {
+  const now = val(app.dev.dead_zones[r.zone]) ?? r.current;
+  const out = h("div", { class: "check-result" }, h("h4", {}, name));
+  out.append(reachView(r));
+  if (!r.complete) {
+    out.classList.add("warn");
+    out.append(h("p", {}, "Not enough of the edge was covered. Turn the stick all the way round, slowly, then check again."));
+    return out;
+  }
+  const want = r.suggested_outer;
+  if (!r.short) {
+    out.classList.add("ok");
+    out.append(h("p", {}, `Reaches full tilt in every direction.${now ? ` The outer dead zone, ${now}%, isn't needed for that; 0% uses the stick's whole travel.` : ""}`));
+    if (now) out.append(useButton(r.zone, 0));
+    return out;
+  }
+  let text = `Falls short of full tilt in ${r.short} of ${r.sectors.length} directions, reaching ${r.weakest}% at worst. `;
+  if (now >= want) {
+    out.classList.add("ok");
+    text += `The outer dead zone, ${now}%, makes up for it.`;
+  } else {
+    out.classList.add("warn");
+    text += r.outer_too_small
+      ? `An outer dead zone of ${want}%, the most the firmware handles, makes up for most of it.`
+      : `An outer dead zone of ${want}% makes every direction reach full tilt.`;
+  }
+  out.append(h("p", {}, text));
+  if (now < want) out.append(useButton(r.zone, want));
+  return out;
+}
+
+// How far the stick got in each slice around it, on the dead-zone circle's scale.
+function reachView(r) {
+  const svg = s("svg", { class: "stick-view reach-view", viewBox: "-110 -110 220 220", role: "img",
+    "aria-label": r.weakest === null ? "Not measured" : `Reaches at least ${r.weakest}% in every direction measured` });
+  svg.append(s("circle", { class: "sv-reach", r: 100 }), s("circle", { class: "sv-rim", r: 100 }),
+    s("circle", { class: "rv-full", r: 97 }),
+    s("line", { class: "sv-axis", x1: -100, x2: 100, y1: 0, y2: 0 }),
+    s("line", { class: "sv-axis", x1: 0, x2: 0, y1: -100, y2: 100 }));
+  const n = r.sectors.length;
+  r.sectors.forEach((reach, i) => {
+    if (reach === null) return;
+    const rad = 100 * Math.min(reach, 1.1);
+    const a0 = (i / n) * 2 * Math.PI, a1 = ((i + 1) / n) * 2 * Math.PI;
+    const arc = `${rad * Math.cos(a0)} ${rad * Math.sin(a0)} A${rad} ${rad} 0 0 1 ${rad * Math.cos(a1)} ${rad * Math.sin(a1)}`;
+    const kind = reach < 0.97 ? "short" : "ok";
+    // the slice filled, and only its outer edge drawn
+    svg.append(s("path", { class: `rv-fill ${kind}`, d: `M0 0 L${arc} Z` }), s("path", { class: `rv-edge ${kind}`, d: `M${arc}` }));
+  });
+  return svg;
 }
 
 function panelTriggers() {
@@ -956,21 +1227,135 @@ function panelLighting() {
   return wrap;
 }
 
-function panelProfiles() {
+// ---------------------------------------------------------------------------
+// profiles: named sets of settings kept on this computer, written to the controller on a switch
+
+async function panelProfiles() {
   const d = app.dev;
-  const wrap = h("div", {}, h("h1", {}, "Profiles"));
-  if (errOf(d.slots)) {
-    wrap.append(h("p", { class: "lede" }, "This controller didn't report any profiles over Bluetooth, so switching profiles isn't available."),
-      h("p", { class: "note" }, `Controller reply: ${errOf(d.slots)}`));
-    return wrap;
+  const wrap = h("div", {}, h("h1", {}, "Profiles"),
+    h("p", { class: "lede" }, "A profile is a full set of settings, kept on this computer. Switching writes only what's different to the controller, and the controller keeps it, on any device, until you change it."));
+  let list;
+  try { list = await api("/api/profiles"); } catch (e) { wrap.append(h("p", { class: "note" }, e.message)); return wrap; }
+  app.profiles = list.profiles;
+  renderChrome();                         // the nav shows the active profile
+
+  const switched = app.switched && switchedView();
+  if (switched) wrap.append(switched);
+  if (list.profiles.length) wrap.append(h("ul", { class: "profile-list" }, list.profiles.map(profileRow)));
+  else wrap.append(notice("", "No profiles yet. Set the controller up the way you like it, then save that as your first profile below."));
+
+  const name = h("input", { class: "input", type: "text", id: "profile-name", maxlength: "60", required: true, autocomplete: "off",
+    placeholder: "For example: Racing games" });
+  const form = h("form", { class: "profile-new", onsubmit: async (e) => {
+    e.preventDefault();
+    try {
+      await api("/api/profiles", { name: name.value });
+      toast(`Saved the current settings as ${name.value.trim()}`);
+      render();
+    } catch (err) { toast(err.message, "error"); }
+  } }, h("label", { class: "label", for: "profile-name" }, "Name"), name, h("button", { class: "button primary", type: "submit" }, "Save as a profile"));
+  const input = h("input", { type: "file", accept: ".json,application/json", class: "visually-hidden", tabindex: "-1", "aria-hidden": "true",
+    onchange: () => { if (input.files[0]) importProfile(input.files[0]); input.value = ""; } });
+  wrap.append(h("h2", {}, "Save the current settings"),
+    h("p", { class: "note" }, "Everything the controller reports right now becomes a new profile."), form,
+    h("div", { class: "button-row" }, h("button", { class: "button", onclick: () => input.click() }, "Add a profile from a file"), input),
+    h("p", { class: "note" }, `Profiles are kept in ${list.dir}, one settings file each.`));
+
+  // The controller's own profile slots: only Bluetooth reports them, and that isn't tested yet.
+  if (val(d.slots)) {
+    const [total, current] = val(d.slots);
+    const mark = savedMark();
+    const options = Array.from({ length: total }, (_, i) => [String(i), `Slot ${i + 1}`]);
+    wrap.append(h("h2", {}, "Slots on the controller"),
+      h("p", { class: "note" }, "Over Bluetooth the controller also reports profile slots of its own. Switching slot loads that slot's settings from the controller."),
+      h("div", { class: "rows" }, row("Active slot", null, [mark, segmented("slot", options, String(current), (n) =>
+        save("/api/slot", { slot: +n }, (state) => { app.dev = state; render(); }, mark))])));
   }
-  const [total, current] = val(d.slots);
-  wrap.append(h("p", { class: "lede" }, "Each profile keeps its own set of settings. Switching loads that profile's settings from the controller."));
-  const mark = savedMark();
-  const options = Array.from({ length: total }, (_, i) => [String(i), `Profile ${i + 1}`]);
-  wrap.append(h("div", { class: "rows" }, row("Active profile", null, [mark, segmented("slot", options, String(current), (n) =>
-    save("/api/slot", { slot: +n }, (state) => { app.dev = state; render(); }, mark))])));
   return wrap;
+}
+
+function profileRow(p) {
+  const saved = p.saved ? p.saved.slice(0, 16).replace("T", " ") : null;
+  const status = p.active ? h("span", { class: "chip ok" }, icon("check"), "On the controller now")
+    : h("span", { class: "chip" }, `${p.differs} setting${p.differs === 1 ? "" : "s"} different`);
+  let title;
+  if (app.renaming === p.id) {
+    const field = h("input", { class: "input", type: "text", value: p.name, maxlength: "60", required: true, "aria-label": `New name for ${p.name}` });
+    title = h("form", { class: "profile-rename", onsubmit: async (e) => {
+      e.preventDefault();
+      try { await api("/api/profiles/rename", { id: p.id, name: field.value }); app.renaming = null; render(); }
+      catch (err) { toast(err.message, "error"); }
+    } }, field, h("button", { class: "button small primary", type: "submit" }, "Rename"),
+      h("button", { class: "button small quiet", type: "button", onclick: () => { app.renaming = null; render(); } }, "Cancel"));
+    setTimeout(() => field.select(), 0);
+  } else title = h("h3", {}, p.name);
+  const more = h("details", { class: "profile-more" }, h("summary", { class: "button small quiet" }, "More"),
+    h("div", { class: "profile-menu" },
+      p.active ? null : h("button", { class: "button small", onclick: () => updateProfile(p) }, "Replace with the current settings"),
+      h("button", { class: "button small", onclick: () => { app.renaming = p.id; render(); } }, "Rename"),
+      h("button", { class: "button small", onclick: () => exportProfile(p) }, "Save to a file"),
+      h("button", { class: "button small", onclick: () => deleteProfile(p) }, "Delete")));
+  return h("li", { class: `profile${p.active ? " active" : ""}` },
+    h("div", { class: "profile-head" }, title,
+      h("p", { class: "note" }, status, saved ? ` Saved ${saved}${p.firmware ? `, firmware ${p.firmware}` : ""}.` : null)),
+    h("div", { class: "button-row" },
+      p.active ? null : h("button", { class: "button primary small", onclick: () => switchProfile(p) }, "Switch"),
+      more));
+}
+
+async function switchProfile(p) {
+  try {
+    const r = await api("/api/profiles/switch", { id: p.id });
+    app.dev = r.state;
+    app.switched = { name: r.name, applied: r.applied, skipped: r.skipped, failed: r.failed };
+    toast(r.failed.length ? `Switched to ${r.name}, but ${r.failed.length} setting${r.failed.length === 1 ? "" : "s"} didn't take` : `Switched to ${r.name}`,
+      r.failed.length ? "error" : "info");
+  } catch (e) { toast(e.message, "error"); }
+  render();
+}
+
+function switchedView() {
+  const r = app.switched;
+  if (!r.failed.length && !r.skipped.length) return null;
+  const close = h("button", { class: "button small quiet", onclick: () => { app.switched = null; render(); } }, "Close");
+  return h("div", { class: "file-load well" }, h("h3", {}, `Switched to ${r.name}`),
+    h("p", {}, `${r.applied.length} setting${r.applied.length === 1 ? "" : "s"} written, each read back from the controller.`),
+    r.failed.length ? notice("danger", h("p", {}, "These didn't take:"), changeList(r.failed, (c) => h("span", { class: "hint" }, c.error))) : null,
+    r.skipped.length ? h("details", { class: "explain" }, h("summary", {}, `${r.skipped.length} left as they are over this connection`),
+      changeList(r.skipped, (c) => h("span", { class: "hint" }, c.why))) : null,
+    h("div", { class: "button-row" }, close));
+}
+
+async function updateProfile(p) {
+  const yes = await confirmDialog(`Replace ${p.name}?`, `${p.name} gets the controller's settings as they are now. Its old settings are replaced.`, "Replace");
+  if (!yes) return;
+  try { await api("/api/profiles/update", { id: p.id }); toast(`${p.name} now has the current settings`); }
+  catch (e) { toast(e.message, "error"); }
+  render();
+}
+
+async function deleteProfile(p) {
+  const yes = await confirmDialog(`Delete ${p.name}?`, "The profile is removed from this computer. The controller's settings stay as they are.", "Delete");
+  if (!yes) return;
+  try { await api("/api/profiles/delete", { id: p.id }); toast(`Deleted ${p.name}`); }
+  catch (e) { toast(e.message, "error"); }
+  render();
+}
+
+async function exportProfile(p) {
+  let doc;
+  try { doc = await api(`/api/profiles/file?id=${encodeURIComponent(p.id)}`); } catch (e) { toast(e.message, "error"); return; }
+  await writeJson(doc, `${p.id}.json`, p.name);
+}
+
+async function importProfile(file) {
+  let doc;
+  try { doc = JSON.parse(await file.text()); }
+  catch { toast(`${file.name} isn't a settings file (not valid JSON).`, "error"); return; }
+  const name = (doc && typeof doc.name === "string" && doc.name) || file.name.replace(/\.json$/i, "");
+  try { await api("/api/profiles", { name, file: doc }); toast(`Added ${name}`); }
+  catch (e) { toast(e.message, "error"); }
+  render();
 }
 
 const SLEEP_MINUTES = [5, 10, 15, 20, 30, 60];
@@ -1569,7 +1954,7 @@ async function connect(target) {
     app.userDisconnected = false;
   } catch (e) { toast(e.message, "error"); return; }
   finally { app.connecting = false; }
-  app.dev = null; render();
+  app.dev = null; app.stickCheck = {}; app.fileLoad = null; app.profiles = null; app.switched = null; render();
   await reload(false);
 }
 
@@ -1684,6 +2069,18 @@ async function panelSetup() {
     qa("The live view or the controller stops responding",
       "This has been seen right after a change, mostly through the receiver. Use Restart on the Buttons page: by cable it restarts the controller, through the receiver it restarts the receiver. Nothing is changed or erased, and settings are kept.",
       "If that doesn't help, turn the controller off and on: hold Home for about 5 seconds, turn it on, and switch to green."),
+    qa("A stick moves by itself, or doesn't reach full tilt",
+      "Use Check your sticks on the Sticks page, by cable or through the receiver. It measures how far each stick wanders when left alone and how far it gets in every direction, and suggests an inner and an outer dead zone to cover it.",
+      "During a check the dead zones it measures are set to 0 for a few seconds, then put back. If PadSquire was closed in the middle of one, look at the dead zones on the Sticks page and set them again.",
+      "If a stick still falls short at the largest outer dead zone (25%), calibrate it: see Calibration in the Button guide."),
+    qa("Saving and loading settings",
+      "Save to a file on the Controller page keeps every setting the controller reported in a small text file (JSON). Load from a file lists what would change and writes nothing until you choose Load.",
+      "Some settings only change over some connections: a few toggles and sleep time not by cable or receiver, remapping of every button not over Bluetooth. Those stay as they are and the list says why.",
+      "Each setting is written and read back on its own, so if one fails the others still load. The file holds no Bluetooth address or pairing, so it's safe to share."),
+    qa("Profiles",
+      "A profile is a full set of settings kept on this computer, in ~/.local/share/padsquire/profiles. Switching writes only what's different and reads each setting back; the controller then keeps those settings, also on other devices, until something changes them.",
+      "A profile saved over one connection can hold settings another can't change: sleep time and the back buttons' Bluetooth mapping aren't available by cable or receiver, and six toggles can't be changed there. A switch leaves those as they are and lists them; the profile still counts as on the controller.",
+      "If a profile shows settings different right after a switch, one of them didn't take: the switch says which. Try once more; if the controller stopped responding, see the answer above about restarting it."),
     qa("Bluetooth doesn't find it",
       "Put the controller in Android mode: hold Home and A for 2 seconds until the light flashes yellow. Pair it once in your system's Bluetooth settings, then use Find controllers here."),
     onMac() ? qa("Why does my Mac ask for my password?",

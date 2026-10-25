@@ -15,6 +15,14 @@ controller talks over USB and Bluetooth.
 - **Every setting GameSir Connect has for this controller.** That covers dead zones, stick
   options, button remapping (19 buttons, each to any other or up to three pressed together), vibration strength with a test per
   motor, the Home light and quick triggers.
+- **A stick check** that GameSir's apps don't have. It measures how far each stick drifts when
+  left alone and whether it reaches full tilt in every direction, then suggests the inner and
+  outer dead zones for your controller, to apply with one click.
+- **Profiles**, as many as you like, kept on your computer: save the controller's settings under
+  a name and switch with one click. Only what differs is written, and the controller keeps it on
+  any device.
+- **Settings files.** Save every setting to a file and load it back later or on another Nova 2
+  Lite. Loading shows what changes before anything is written.
 - **Firmware updates**, for the controller and its 2.4 GHz receiver. The app installs GameSir's
   own firmware exactly as GameSir Connect does, after a full backup of the device. See
   [Firmware updates](#firmware-updates).
@@ -27,6 +35,9 @@ controller talks over USB and Bluetooth.
 | Read and change settings | yes | yes | built, not tested on hardware yet |
 | Remap every button | yes | yes | back buttons only, not tested |
 | Live sticks, triggers and buttons | yes (macOS too) | yes | no |
+| Stick check | yes | yes | no |
+| Save and load settings files | yes | yes | built, not tested |
+| Profiles | yes | yes | built, not tested |
 | Controller firmware update | yes | no (use the cable) | no |
 | Receiver firmware update | | yes | |
 
@@ -168,9 +179,11 @@ padsquire uboot --help                          # update mode: backup, restore, 
 ```
 
 `usb` works by cable and through the receiver; `ble` does the same over Bluetooth, and
-`--simulate` tries any command without a controller. On a Mac, `uboot` commands that use update
-mode run with `sudo`, and need `--restart` (the controller leaves update mode once a command lets
-go of it). `padsquire --help` lists everything. For
+`--simulate` tries any command without a controller. `padsquire gui --simulate receiver` (or
+`cable`, `bluetooth`) opens the settings app on a simulated controller that behaves like the real
+one on that connection. On a Mac, `uboot` commands that use update mode run with `sudo`, and need
+`--restart` (the controller leaves update mode once a command lets go of it). `padsquire --help`
+lists everything. For
 automatic weekly firmware checks there is a systemd timer in `contrib/systemd/`.
 
 ## How it works
@@ -199,6 +212,8 @@ controller, and include a fake chip in update mode for the firmware writer.
 - Find the cause of the occasional stop after a change.
 - Controller firmware updates through the 2.4 GHz receiver (JieLi's over-the-air updater, which
   GameSir Connect doesn't use for this controller): research.
+- Macros on the back buttons: the command is known (`0x53` over Bluetooth, `f6` by cable) but
+  its frames aren't decoded yet.
 - Other GameSir controllers.
 
 ## Disclaimer

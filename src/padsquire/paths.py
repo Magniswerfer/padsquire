@@ -27,6 +27,7 @@ def cache_home() -> Path:
 DATA_DIR = data_home() / NAME
 FIRMWARE_DIR = DATA_DIR / "firmware"
 BACKUP_DIR = DATA_DIR / "backups"
+PROFILES_DIR = DATA_DIR / "profiles"
 LOADER_CACHE = cache_home() / NAME / "loaders"
 # the app window's own browser profile: its size and nothing else worth keeping
 BROWSER_PROFILE = cache_home() / NAME / "window"

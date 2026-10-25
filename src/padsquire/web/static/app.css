@@ -132,6 +132,61 @@ pad-model.offline { opacity: .55; filter: grayscale(1); }
 .live-readout { min-height: 1.3em; color: var(--ink-faint); font-size: var(--text-xs); text-align: center; }
 
 
+.sim-link { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--ink-soft); font-size: var(--text-sm); }
+
+/* stick check: one box per test, a result per stick */
+.stick-check { display: grid; gap: var(--space-3); margin-top: var(--space-6); }
+.stick-check h2 { margin-bottom: 0; }
+.check { padding: var(--space-4); }
+.check h3 { margin: 0; }
+.check-result { display: grid; gap: var(--space-2); justify-items: start; padding-top: var(--space-3); border-top: var(--hairline) solid var(--line); }
+.check-result h4 { margin: 0; font-size: var(--text-sm); }
+.check-result p { margin: 0; font-size: var(--text-sm); max-width: var(--measure); }
+.check-result.warn h4 { color: var(--warn); }
+.check-result.ok h4 { color: var(--ok); }
+.reach-view { justify-self: center; width: min(100%, 10rem); }
+.rv-full { fill: none; stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 3 3; }
+.rv-fill { fill: var(--accent-wash); stroke: var(--accent-wash); stroke-width: .5; }
+.rv-fill.short { fill: var(--warn-wash); stroke: var(--warn-wash); }
+.rv-edge { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round; }
+.rv-edge.short { stroke: var(--warn); }
+
+/* profiles */
+.profile-list { list-style: none; display: grid; gap: var(--space-3); max-width: 46rem; margin: 0; padding: 0; }
+.profile { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3);
+  padding: var(--space-4); border: var(--hairline) solid var(--line); border-radius: var(--radius-md); background: var(--paper-raised); }
+.profile.active { border-color: var(--accent-line); }
+.profile-head { display: grid; gap: var(--space-1); min-width: 0; }
+.profile-head h3 { margin: 0; overflow-wrap: anywhere; }
+.profile-head .note { margin: 0; }
+.profile-head .chip { margin-right: var(--space-2); }
+.profile-more { position: relative; }
+.profile-more summary { list-style: none; cursor: pointer; }
+.profile-more summary::-webkit-details-marker { display: none; }
+.profile-menu { position: absolute; right: 0; z-index: 5; display: grid; gap: var(--space-2); min-width: 15rem; margin-top: var(--space-2);
+  padding: var(--space-3); border: var(--hairline) solid var(--line); border-radius: var(--radius-md); background: var(--paper-raised); box-shadow: var(--shadow-pop); }
+.profile-menu .button { justify-content: flex-start; }
+@media (max-width: 40rem) {
+  .profile .button-row { width: 100%; }
+  .profile-more { flex: 1 1 100%; }
+  .profile-menu { position: static; min-width: 0; box-shadow: none; }
+}
+.profile-new, .profile-rename { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); max-width: 46rem; }
+.profile-new .input { flex: 1 1 14rem; }
+.profile-rename .input { flex: 1 1 12rem; }
+
+/* settings files */
+.settings-file { display: grid; gap: var(--space-3); margin-top: var(--space-6); }
+.settings-file h2 { margin-bottom: 0; }
+.file-load { display: grid; gap: var(--space-3); max-width: 46rem; padding: var(--space-4); }
+.file-load h3 { margin: 0; overflow-wrap: anywhere; }
+.file-load p { margin: 0; }
+.change-list { list-style: none; margin: 0; padding: 0; border-top: var(--hairline) solid var(--line); font-size: var(--text-sm); }
+.change-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1) var(--space-4); padding: var(--space-2) 0; border-bottom: var(--hairline) solid var(--line); }
+.change-list .label { font-weight: var(--weight-bold); }
+.change-list .hint { grid-column: 1 / -1; color: var(--ink-faint); }
+@media (max-width: 30rem) { .change-list li { grid-template-columns: 1fr; } }
+
 /* -- controller figures: the outline drawings with the controls laid over them -------- */
 .figure { display: block; width: 100%; height: auto; overflow: visible; }
 .figure .line { fill: none; stroke: var(--drawing-ink); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
