@@ -1,5 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
+import pytest
+
 from padsquire import cli, desktop, paths
+
+
+@pytest.fixture(autouse=True)
+def linux(monkeypatch):
+    """The Linux behaviour, on any machine; the macOS tests switch it back."""
+    monkeypatch.setattr(desktop, "MACOS", False)
 
 
 def test_menu_entry_installs_and_removes(capsys, monkeypatch):
@@ -62,3 +70,35 @@ def test_app_window_through_a_flatpak_browser(monkeypatch):
     opened = []
     monkeypatch.setattr(desktop.webbrowser, "open", opened.append)
     assert desktop.open_app("u") == "browser tab" and opened == ["u"]
+
+
+def test_macos_app_installs_and_removes(capsys, monkeypatch, tmp_path):
+    monkeypatch.setattr(desktop, "MACOS", True)
+    monkeypatch.setattr(desktop, "applications_dir", lambda: tmp_path / "Applications")
+    monkeypatch.setattr(desktop, "_mac_icon", lambda icns: False)
+    monkeypatch.setattr(desktop.subprocess, "run", lambda argv, **kw: None)
+    cli.main(["menu"])
+    app = tmp_path / "Applications" / "PadSquire.app"
+    launcher = app / "Contents" / "MacOS" / "PadSquire"
+    assert launcher.read_text().startswith("#!/bin/sh\nexec ") and launcher.read_text().endswith(" gui\n")
+    assert launcher.stat().st_mode & 0o111
+    with open(app / "Contents" / "Info.plist", "rb") as f:
+        info = desktop.plistlib.load(f)
+    assert info["CFBundleIdentifier"] == desktop.MAC_APP_ID and info["CFBundleExecutable"] == "PadSquire"
+    assert "~/Applications" in capsys.readouterr().out
+    cli.main(["menu", "--remove"])
+    assert not app.exists()
+    # an app of the same name that isn't ours is never replaced or removed
+    (app / "Contents").mkdir(parents=True)
+    assert cli.main(["menu"]) == 1 and desktop.remove_entry() == [] and app.exists()
+
+
+def test_macos_app_window_from_an_app_bundle(monkeypatch, tmp_path):
+    monkeypatch.setattr(desktop, "MACOS", True)
+    monkeypatch.setattr(desktop, "applications_dir", lambda: tmp_path)
+    monkeypatch.setattr(desktop, "Path", lambda p: tmp_path / "System" if p == "/Applications" else desktop.Path(p))
+    exe = tmp_path / "Brave Browser.app" / "Contents" / "MacOS" / "Brave Browser"
+    exe.parent.mkdir(parents=True)
+    exe.write_text("")
+    browser = desktop.app_browser()
+    assert browser.command == [str(exe)] and browser.prefix == "brave"

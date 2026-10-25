@@ -1,7 +1,7 @@
 #!/bin/sh
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# PadSquire installer: Linux tools for GameSir controllers.
+# PadSquire installer, for Linux and macOS: tools for GameSir controllers.
 #
 #   curl -fsSL https://padsquire.com/install.sh | sh
 #
@@ -12,9 +12,10 @@
 #   1. Makes a private Python environment for PadSquire in ~/.local/share/padsquire/venv and
 #      installs PadSquire into it (from PyPI, or from GitHub if PyPI doesn't have it yet).
 #   2. Links the padsquire command into ~/.local/bin.
-#   3. Adds PadSquire to your app menu (~/.local/share/applications).
-#   4. Only if you say yes: installs the udev rules that let you use the controller without sudo.
-#      This is the one step that needs your password.
+#   3. Adds PadSquire to your app menu (~/.local/share/applications), or on macOS makes a small
+#      PadSquire app in ~/Applications.
+#   4. Linux only, and only if you say yes: installs the udev rules that let you use the controller
+#      without sudo. This is the one step that needs your password. macOS needs no such step.
 # Running it again updates PadSquire. Your settings live on the controller; firmware downloads and
 # flash backups in ~/.local/share/padsquire are never touched.
 #
@@ -43,6 +44,7 @@ VENV="$DATA/venv"
 WINDOW="${XDG_CACHE_HOME:-$HOME/.cache}/padsquire/window"   # the app window's own browser profile
 BIN="$HOME/.local/bin"
 RULES="/etc/udev/rules.d/70-gamesir.rules"
+OS=$(uname -s)
 
 say()  { printf '%s\n' "$*"; }
 step() { printf '\n\033[1m%s\033[0m\n' "$*"; }
@@ -60,7 +62,10 @@ ask() {
 }
 
 install_hint() {   # the command that installs a distribution package, for messages
-    if command -v dnf >/dev/null 2>&1; then say "sudo dnf install $1"
+    if [ "$OS" = Darwin ]; then
+        if [ "$1" = python3 ]; then say "brew install python (https://brew.sh), or the installer from https://www.python.org"
+        else say "brew install $1 (https://brew.sh)"; fi
+    elif command -v dnf >/dev/null 2>&1; then say "sudo dnf install $1"
     elif command -v apt >/dev/null 2>&1; then say "sudo apt install $1"
     elif command -v pacman >/dev/null 2>&1; then say "sudo pacman -S $1"
     elif command -v zypper >/dev/null 2>&1; then say "sudo zypper install $1"
@@ -68,7 +73,11 @@ install_hint() {   # the command that installs a distribution package, for messa
 }
 
 find_python() {
-    for py in python3.14 python3.13 python3.12 python3.11 python3; do
+    # On macOS also where Homebrew and python.org put it, in case the shell's PATH doesn't say;
+    # the system's own python3 there is too old.
+    for py in python3.14 python3.13 python3.12 python3.11 python3 \
+              /opt/homebrew/bin/python3 /usr/local/bin/python3 \
+              /Library/Frameworks/Python.framework/Versions/Current/bin/python3; do
         if command -v "$py" >/dev/null 2>&1 &&
            "$py" -c 'import sys; sys.exit(sys.version_info < (3, 11))' 2>/dev/null; then
             command -v "$py"; return 0
@@ -109,17 +118,30 @@ link_command() {
     case ":$PATH:" in
         *":$BIN:"*) ;;
         *) say "   $BIN isn't on your PATH yet, so typing just 'padsquire' won't work in a terminal."
-           say "   The app menu entry works anyway. To fix the terminal, add this line to ~/.profile:"
+           if [ "$OS" = Darwin ]; then
+               say "   The PadSquire app works anyway. To fix the terminal, add this line to ~/.zprofile:"
+           else
+               say "   The app menu entry works anyway. To fix the terminal, add this line to ~/.profile:"
+           fi
            say "     export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
     esac
 }
 
 add_menu_entry() {
-    step "3. Adding PadSquire to your app menu"
+    if [ "$OS" = Darwin ]; then
+        step "3. Adding the PadSquire app to ~/Applications (Launchpad and Spotlight find it there)"
+    else
+        step "3. Adding PadSquire to your app menu"
+    fi
     "$VENV/bin/padsquire" menu | sed 's/^/   /'
 }
 
 install_rules() {
+    if [ "$OS" = Darwin ]; then
+        step "4. Permission to use the controller"
+        say "   Nothing to do: macOS's own driver lets PadSquire change settings without sudo."
+        return 0
+    fi
     step "4. Permission to use the controller (optional, needs your password)"
     if [ -f "$RULES" ] && cmp -s "$RULES" "$("$VENV/bin/padsquire" udev-rules --path)"; then
         say "   Already installed ($RULES)."; return 0
@@ -150,7 +172,7 @@ uninstall() {
     for dir in "$HOME"/.var/app/*/cache/padsquire; do     # the same, for a Flatpak browser
         [ -d "$dir" ] && rm -rf "$dir" && say "   Removed $dir (the app window's browser profile)."
     done
-    if [ -f "$RULES" ]; then
+    if [ "$OS" = Linux ] && [ -f "$RULES" ]; then
         if ask "   Also remove the udev rule ($RULES, needs your password)? [y/N]" no; then
             sudo rm -f "$RULES" && sudo udevadm control --reload && say "   Removed $RULES."
         fi
@@ -162,10 +184,10 @@ uninstall() {
 }
 
 main() {
-    [ "$(uname -s)" = Linux ] || fail "PadSquire is for Linux."
+    case "$OS" in Linux|Darwin) ;; *) fail "PadSquire is for Linux and macOS." ;; esac
     [ "$(id -u)" -ne 0 ] || fail "run this as yourself, not as root or with sudo. It asks for your password only for the one step that needs it."
     if [ "${1:-}" = "--uninstall" ]; then uninstall; return; fi
-    say "PadSquire: Linux tools for GameSir controllers. Unofficial and open source ($REPO)."
+    say "PadSquire: tools for GameSir controllers. Unofficial and open source ($REPO)."
     say ""
     say "No warranty: you use PadSquire at your own risk. Settings can be changed back, but a"
     say "firmware update can leave a controller or receiver unusable. PadSquire makes a full backup"
@@ -176,9 +198,15 @@ main() {
     add_menu_entry
     install_rules
     step "Ready"
-    say "   Open PadSquire from your app menu, or run: padsquire gui"
-    say "   Firmware updates also need 7-Zip and the sg kernel module; the app's Setup and help page"
-    say "   explains both when you get there."
+    if [ "$OS" = Darwin ]; then
+        say "   Open PadSquire from Launchpad or Spotlight, or run: padsquire gui"
+        say "   On macOS PadSquire changes settings; firmware updates still need Linux. To play games,"
+        say "   switch the controller to blue mode (hold Menu + View): macOS supports that one."
+    else
+        say "   Open PadSquire from your app menu, or run: padsquire gui"
+        say "   Firmware updates also need 7-Zip and the sg kernel module; the app's Setup and help page"
+        say "   explains both when you get there."
+    fi
     if ask "   Open PadSquire now? [Y/n]" yes; then
         nohup "$VENV/bin/padsquire" gui >/dev/null 2>&1 &
     fi

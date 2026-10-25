@@ -76,11 +76,18 @@ def cmd_menu(args) -> int:
     from . import desktop
     if args.remove:
         gone = desktop.remove_entry()
-        print("Removed " + ", ".join(map(str, gone)) if gone else "PadSquire wasn't in the app menu.")
+        print("Removed " + ", ".join(map(str, gone)) if gone else
+              "PadSquire wasn't in ~/Applications." if desktop.MACOS else "PadSquire wasn't in the app menu.")
         return 0
-    for f in desktop.install_entry():
+    try:
+        written = desktop.install_entry()
+    except FileExistsError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    for f in written:
         print(f"Wrote {f}")
-    print("PadSquire is in your app menu. To take it out again: padsquire menu --remove")
+    where = "in ~/Applications (Launchpad and Spotlight find it)" if desktop.MACOS else "in your app menu"
+    print(f"PadSquire is {where}. To take it out again: padsquire menu --remove")
     return 0
 
 
@@ -217,7 +224,7 @@ def main(argv=None) -> int:
     g.add_argument("--firmware-dir", type=Path, default=DEFAULT_FW_DIR)
     g.set_defaults(func=cmd_gui)
 
-    m = sub.add_parser("menu", help="add PadSquire to your app menu (no root needed)")
+    m = sub.add_parser("menu", help="add PadSquire to your app menu, or ~/Applications on macOS (no root needed)")
     m.add_argument("--remove", action="store_true", help="take it out of the app menu again")
     m.set_defaults(func=cmd_menu)
 

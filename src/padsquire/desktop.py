@@ -4,13 +4,16 @@ udev rules file that ships inside the package.
 
 Nothing here needs root. The menu entry and icon go to the user's own folders
 (~/.local/share/applications and ~/.local/share/icons), as the freedesktop.org specs describe.
+On macOS the entry is a small app in ~/Applications instead, which Launchpad and Spotlight list.
 """
 
 from __future__ import annotations
 
+import plistlib
 import shutil
 import subprocess
 import sys
+import tempfile
 import webbrowser
 from dataclasses import dataclass
 from importlib.resources import files
@@ -36,6 +39,11 @@ APP_WINDOW_BROWSERS = [("chromium-browser", "chromium"), ("chromium", "chromium"
 FLATPAK_BROWSERS = [("org.chromium.Chromium", "chromium"), ("com.google.Chrome", "chrome"),
                     ("com.brave.Browser", "brave"), ("com.microsoft.Edge", "msedge"), ("com.vivaldi.Vivaldi", "vivaldi")]
 
+# On macOS the same browsers live in app bundles, in /Applications or ~/Applications.
+MAC_BROWSERS = [("Google Chrome", "chrome"), ("Chromium", "chromium"), ("Brave Browser", "brave"),
+                ("Microsoft Edge", "msedge"), ("Vivaldi", "vivaldi")]
+MACOS = sys.platform == "darwin"
+
 
 @dataclass(frozen=True)
 class Browser:
@@ -51,6 +59,13 @@ class Browser:
 
 def app_browser() -> Browser | None:
     """The browser that opens the settings app in its own window, if there is one."""
+    if MACOS:
+        for name, prefix in MAC_BROWSERS:
+            for folder in (Path("/Applications"), applications_dir()):
+                exe = folder / f"{name}.app" / "Contents" / "MacOS" / name
+                if exe.is_file():
+                    return Browser(name, [str(exe)], prefix, paths.BROWSER_PROFILE)
+        return None
     for name, prefix in APP_WINDOW_BROWSERS:
         exe = shutil.which(name)
         if exe:
@@ -130,8 +145,89 @@ def icon_file() -> Path:
     return paths.data_home() / "icons" / "hicolor" / "scalable" / "apps" / "padsquire.svg"
 
 
+# -- macOS: an app in ~/Applications ----------------------------------------------------------
+
+MAC_APP_ID = "com.padsquire.PadSquire"    # marks the app as ours, so removing it never touches another
+
+
+def applications_dir() -> Path:
+    return Path.home() / "Applications"
+
+
+def mac_app() -> Path:
+    return applications_dir() / "PadSquire.app"
+
+
+def _mac_app_is_ours(app: Path) -> bool:
+    try:
+        with open(app / "Contents" / "Info.plist", "rb") as f:
+            return plistlib.load(f).get("CFBundleIdentifier") == MAC_APP_ID
+    except (OSError, plistlib.InvalidFileException):
+        return False
+
+
+def _mac_icon(icns: Path) -> bool:
+    """Render the SVG icon to an .icns with macOS's own tools (Quick Look, sips, iconutil)."""
+    tools = [shutil.which(t) for t in ("qlmanage", "sips", "iconutil")]
+    if not all(tools):
+        return False
+    qlmanage, sips, iconutil = tools
+    with tempfile.TemporaryDirectory() as tmp:
+        svg = Path(tmp) / "padsquire.svg"
+        svg.write_bytes((DATA / "padsquire.svg").read_bytes())
+        subprocess.run([qlmanage, "-t", "-s", "1024", "-o", tmp, str(svg)], capture_output=True, check=False)
+        png = Path(tmp) / "padsquire.svg.png"
+        if not png.is_file():
+            return False
+        iconset = Path(tmp) / "padsquire.iconset"
+        iconset.mkdir()
+        for size in (16, 32, 128, 256, 512):
+            for scale in (1, 2):
+                name = f"icon_{size}x{size}{'@2x' if scale == 2 else ''}.png"
+                subprocess.run([sips, "-z", str(size * scale), str(size * scale), str(png),
+                                "--out", str(iconset / name)], capture_output=True, check=False)
+        return subprocess.run([iconutil, "-c", "icns", str(iconset), "-o", str(icns)],
+                              capture_output=True, check=False).returncode == 0 and icns.is_file()
+
+
+def _install_mac_app() -> list[Path]:
+    app = mac_app()
+    if app.exists() and not _mac_app_is_ours(app):
+        raise FileExistsError(f"{app} exists and isn't PadSquire's; move it away and try again")
+    contents = app / "Contents"
+    (contents / "MacOS").mkdir(parents=True, exist_ok=True)
+    (contents / "Resources").mkdir(exist_ok=True)
+    launcher = contents / "MacOS" / "PadSquire"
+    # Apps start with a minimal PATH; _exe() is an absolute path.
+    launcher.write_text(f"#!/bin/sh\nexec {_exe()} gui\n")
+    launcher.chmod(0o755)
+    icon = _mac_icon(contents / "Resources" / "padsquire.icns")
+    info = {"CFBundleIdentifier": MAC_APP_ID, "CFBundleName": "PadSquire", "CFBundleDisplayName": "PadSquire",
+            "CFBundleExecutable": "PadSquire", "CFBundlePackageType": "APPL",
+            "CFBundleInfoDictionaryVersion": "6.0", "CFBundleShortVersionString": _version(),
+            "LSApplicationCategoryType": "public.app-category.utilities",
+            # no Dock icon of its own: the settings window is what you see, and closing it stops the app
+            "LSUIElement": True}
+    if icon:
+        info["CFBundleIconFile"] = "padsquire"
+    with open(contents / "Info.plist", "wb") as f:
+        plistlib.dump(info, f)
+    lsregister = Path("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework"
+                      "/Support/lsregister")
+    if lsregister.exists():     # Launchpad and Spotlight see it at once, with its icon
+        subprocess.run([str(lsregister), "-f", str(app)], capture_output=True, check=False)
+    return [app]
+
+
+def _version() -> str:
+    from . import __version__
+    return __version__
+
+
 def install_entry() -> list[Path]:
     """Add PadSquire to the app menu. Returns the files written."""
+    if MACOS:
+        return _install_mac_app()
     entry, icon = entry_file(), icon_file()
     for f in (entry, icon):
         f.parent.mkdir(parents=True, exist_ok=True)
@@ -158,6 +254,12 @@ def _remove_window_entries() -> list[Path]:
 
 
 def remove_entry() -> list[Path]:
+    if MACOS:
+        app = mac_app()
+        if _mac_app_is_ours(app):
+            shutil.rmtree(app)
+            return [app]
+        return []
     removed = _remove_window_entries()
     for f in (entry_file(), icon_file()):
         if f.exists():

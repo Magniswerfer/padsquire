@@ -11,7 +11,7 @@ Settings by cable also work on macOS (hidapi; confirmed 2026-10-25); firmware up
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -e '.[gui,test]'   # no system pip on this box; 7zip for update/extract
-pytest                                   # 203 tests; PADSQUIRE_INSTALLER=<setup.exe> adds a real-installer test,
+pytest                                   # 205 tests; PADSQUIRE_INSTALLER=<setup.exe> adds a real-installer test,
                                          # PADSQUIRE_BACKUP=<dump.bin> PADSQUIRE_UFW=<.ufw> a real layout check
 padsquire probe --guided             # read-only report of the controller in every mode -> JSON
 padsquire ble scan | info | deadzone | feature | vibration | sleep | restore
@@ -47,8 +47,10 @@ padsquire uboot test-write | restore | flash ... --confirm        # writes (need
   `cli_uboot.py` and `web/update.py`, which runs them as background jobs for the Firmware page.
 - `web/setup.py`: Setup and help checks and `/api/devices` (sysfs polling for plug in/out).
   `web/update.py`: update-mode jobs (controller and receiver), including the restart button.
-- `desktop.py`: app-menu entry, own app window, packaged udev rules (`data/`). `install.sh`: the
-  curl installer (own venv in ~/.local/share/padsquire/venv). Releases: push a `v*` tag (PyPI).
+- `desktop.py`: app-menu entry, own app window, packaged udev rules (`data/`); on macOS the entry
+  is `~/Applications/PadSquire.app` (icon rendered from the SVG with qlmanage/sips/iconutil) and
+  the window comes from a browser in /Applications. `install.sh`: the curl installer for Linux and
+  macOS (own venv in ~/.local/share/padsquire/venv). Releases: push a `v*` tag (PyPI).
 - `paths.py`: data and cache folders; moves the folders of the old project name once at startup.
 - `liveinput.py`: sticks, triggers and buttons from the xpad evdev node.
 - `probe.py`: read-only hardware probe. `PROTOCOL.md`: all protocol notes (CC BY-SA 4.0).
@@ -71,8 +73,8 @@ Open:
 3. **Recovery if the firmware no longer starts**: TBD (PROTOCOL.md section 3, "Recovery").
 4. Controller firmware updates through the receiver (JieLi's HID over-the-air updater): research.
 5. **macOS**: blue (DualShock 4) mode for games untested; receiver and Bluetooth untested there;
-   update mode would need raw SCSI over libusb (no `SG_IO`), not attempted; `padsquire menu` and
-   the own app window are Linux-only.
+   update mode would need raw SCSI over libusb (no `SG_IO`), not attempted. macOS support ships
+   with the next release (PyPI 0.1.3 has none, so the installer gets it only after a release).
 
 ## Next steps (as of 2026-10-24)
 

@@ -24,3 +24,15 @@ jobs:
       - run: pytest -q
       - name: Installer runs end to end
         run: PADSQUIRE_SOURCE="$PWD[gui]" sh install.sh < /dev/null && ~/.local/bin/padsquire --version
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: pip install -e '.[gui,test]'
+      - run: pytest -q
+      - name: Installer runs end to end
+        run: PADSQUIRE_SOURCE="$PWD[gui]" sh install.sh < /dev/null && ~/.local/bin/padsquire --version && test -x ~/Applications/PadSquire.app/Contents/MacOS/PadSquire

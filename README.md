@@ -1,7 +1,7 @@
 # PadSquire
 
 **Linux tools for GameSir controllers.** Configure and update the GameSir **Nova 2 Lite** on Linux,
-without Windows. Unofficial and open source, built for interoperability by studying how the
+and configure it on macOS, without Windows. Unofficial and open source, built for interoperability by studying how the
 controller talks over USB and Bluetooth.
 
 ![The settings app, Sticks page](docs/screenshot.png)
@@ -30,11 +30,14 @@ controller talks over USB and Bluetooth.
 | Controller firmware update | yes | no (use the cable) | no |
 | Receiver firmware update | | yes | |
 
-Tested on one Nova 2 Lite (firmware 7701 and 8201) and its receiver (firmware 2800).
+Tested on one Nova 2 Lite (firmware 7701 and 8201) and its receiver (firmware 2800). On macOS,
+settings and remapping work by cable; see [On a Mac](#on-a-mac) for what doesn't yet.
 
 ## Get started
 
-You need Linux and Python 3.11 or newer (most distributions have it). Run:
+You need Linux or macOS, and Python 3.11 or newer (most Linux distributions have it; on a Mac,
+`brew install python` with [Homebrew](https://brew.sh/), or the installer from
+[python.org](https://www.python.org/downloads/macos/)). Run:
 
 ```sh
 curl -fsSL https://padsquire.com/install.sh | sh
@@ -47,13 +50,16 @@ first, and run it with `sh install.sh`. It needs no root, except for one step it
    PadSquire into it, so nothing is installed system-wide
    ([venv](https://docs.python.org/3/library/venv.html)).
 2. It links the `padsquire` command into `~/.local/bin`.
-3. It adds PadSquire to your app menu.
-4. Only if you say yes, it installs a [udev](https://man7.org/linux/man-pages/man7/udev.7.html)
-   rule so you can use the controller without `sudo`. It shows the commands first; this is the
-   one step that asks for your password.
+3. It adds PadSquire to your app menu. On macOS it makes a small PadSquire app in
+   `~/Applications` instead, which Launchpad and Spotlight find.
+4. On Linux, only if you say yes, it installs a
+   [udev](https://man7.org/linux/man-pages/man7/udev.7.html) rule so you can use the controller
+   without `sudo`. It shows the commands first; this is the one step that asks for your password.
+   macOS needs nothing here.
 
-Then open **PadSquire** from your app menu. It opens in its own window (with Chrome, Chromium,
-Brave, Edge or Vivaldi; otherwise in a browser tab) and stops by itself when you close it. The
+Then open **PadSquire** from your app menu (on macOS: Launchpad or Spotlight). It opens in its own
+window (with Chrome, Chromium, Brave, Edge or Vivaldi; otherwise in a browser tab) and stops by
+itself when you close it. The
 window uses its own small browser profile in `~/.cache/padsquire/window` (for a Flatpak browser, as
 on a Steam Deck: `~/.var/app/<browser>/cache/padsquire/window`), so it keeps its size and none of
 your extensions or cookies come along; deleting that folder is safe.
@@ -64,7 +70,7 @@ before you run it.
 - **Remove:** `curl -fsSL https://padsquire.com/install.sh | sh -s -- --uninstall`.
   Your firmware downloads and flash backups stay in `~/.local/share/padsquire`.
 - **With pipx** instead: `pipx install 'padsquire[gui]'`, then `padsquire menu` for the app-menu
-  entry ([pipx](https://pipx.pypa.io/)).
+  entry, or the app in `~/Applications` on macOS ([pipx](https://pipx.pypa.io/)).
 - **From source**, for development: `git clone https://github.com/Magniswerfer/padsquire`, then in
   that folder `python3 -m venv .venv && .venv/bin/pip install -e '.[gui,test]'` and
   `.venv/bin/padsquire gui`.
@@ -74,12 +80,10 @@ reach it: the server rejects requests without the link's session cookie, request
 host name, and API calls without a custom header. Fonts are bundled, so nothing loads from the
 internet.
 
-### On a Mac (early)
+### On a Mac
 
 Settings work on macOS by cable: macOS's own driver serves the controller's settings channel, so
-there's nothing to set up and no sudo. The installer above is for Linux; on a Mac use pipx
-(`pipx install 'padsquire[gui]'`, then `padsquire gui`) or the from-source steps, with Python
-3.11 or newer ([Homebrew](https://brew.sh/): `brew install python`).
+there's nothing to set up and no `sudo`. The same installer works on a Mac.
 
 - **Works:** every setting and remap by cable, tested on one controller. The receiver and
   Bluetooth should work the same way but aren't tested on a Mac yet.
@@ -101,7 +105,7 @@ there's nothing to set up and no sudo. The installer above is for Linux; on a Ma
 
 ## Firmware updates
 
-On the app's **Firmware** page: download the firmware (the app checks for new official firmware
+Linux only, for now. On the app's **Firmware** page: download the firmware (the app checks for new official firmware
 and verifies its checksums), switch the controller or the receiver to update mode, make a
 backup, install, restart. The controller's firmware is installed by cable; the receiver's through
 the receiver itself.
@@ -156,7 +160,8 @@ padsquire uboot --help                          # update mode: backup, restore, 
 ```
 
 `usb` works by cable and through the receiver; `ble` does the same over Bluetooth, and
-`--simulate` tries any command without a controller. `padsquire --help` lists everything. For
+`--simulate` tries any command without a controller. `update`, `uboot` and the firmware commands
+need Linux for anything that touches the device. `padsquire --help` lists everything. For
 automatic weekly firmware checks there is a systemd timer in `contrib/systemd/`.
 
 ## How it works
