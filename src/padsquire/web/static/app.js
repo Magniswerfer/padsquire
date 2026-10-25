@@ -51,7 +51,12 @@ async function api(path, body) {
     throw new Error("Lost contact with PadSquire. Is it still running?");
   }
   let json;
-  try { json = await res.json(); } catch { throw new Error(`Unexpected reply from PadSquire (HTTP ${res.status}).`); }
+  try { json = await res.json(); } catch {
+    // a 404 without JSON: the page is newer than the running server (it was updated, or the
+    // code changed, while it ran); the page's files are read fresh, the server's code isn't
+    if (res.status === 404) throw new Error("This part of PadSquire isn't running yet: restart PadSquire (close its window and open it again) to use it.");
+    throw new Error(`Unexpected reply from PadSquire (HTTP ${res.status}).`);
+  }
   if (!json.ok) throw new Error(json.error || "The request failed.");
   return json.data;
 }
