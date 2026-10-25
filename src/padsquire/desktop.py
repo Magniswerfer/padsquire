@@ -9,7 +9,6 @@ On macOS the entry is a small app in ~/Applications instead, which Launchpad and
 
 from __future__ import annotations
 
-import json
 import plistlib
 import shutil
 import subprocess
@@ -178,13 +177,19 @@ def _mac_icon(icns: Path) -> bool:
 
 
 def _hide_extension(app: Path) -> None:
-    """Finder, Spotlight and Raycast show "PadSquire", not "PadSquire.app". The flag is the one
-    Finder's Get Info sets; macOS's own Foundation sets it here, with no permission needed."""
-    script = ("ObjC.import('Foundation'); $.NSURL.fileURLWithPath(" + json.dumps(str(app)) + ")"
-              ".setResourceValueForKeyError($.YES, $.NSURLHasHiddenExtensionKey, null)")
-    osascript = shutil.which("osascript")
-    if osascript:
-        subprocess.run([osascript, "-l", "JavaScript", "-e", script], capture_output=True, check=False)
+    """Finder, Spotlight and Raycast show "PadSquire", not "PadSquire.app" (unless the Mac shows
+    every extension: Finder's "Show all filename extensions"). The flag is the one Finder's Get
+    Info sets: 0x0010 in the Finder flags, byte 9 of com.apple.FinderInfo (what `SetFile -a E`
+    writes; seen 2026-10-25). Written with xattr, which every Mac has."""
+    xattr = shutil.which("xattr")
+    if not xattr:
+        return
+    read = subprocess.run([xattr, "-px", "com.apple.FinderInfo", str(app)], capture_output=True, text=True, check=False)
+    info = bytearray(bytes.fromhex(read.stdout.replace("\n", " ")) if read.returncode == 0 else bytes(32))
+    if len(info) != 32:
+        return
+    info[9] |= 0x10
+    subprocess.run([xattr, "-wx", "com.apple.FinderInfo", info.hex(), str(app)], capture_output=True, check=False)
 
 
 def _install_mac_app() -> list[Path]:

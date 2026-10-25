@@ -102,3 +102,21 @@ def test_macos_app_window_from_an_app_bundle(monkeypatch, tmp_path):
     exe.write_text("")
     browser = desktop.app_browser()
     assert browser.command == [str(exe)] and browser.prefix == "brave"
+
+
+def test_macos_app_hides_its_extension(monkeypatch, tmp_path):
+    """Byte 9 of com.apple.FinderInfo gets 0x10, keeping the rest, as `SetFile -a E` does."""
+    written = []
+    monkeypatch.setattr(desktop.shutil, "which", lambda name: "/usr/bin/xattr" if name == "xattr" else None)
+
+    def run(argv, **kw):
+        if argv[1] == "-px":                     # existing Finder info, with another flag set
+            return type("R", (), {"returncode": 0, "stdout": "00 " * 8 + "01 00" + " 00" * 22 + "\n"})()
+        written.append(argv)
+        return type("R", (), {"returncode": 0})()
+    monkeypatch.setattr(desktop.subprocess, "run", run)
+    desktop._hide_extension(tmp_path / "PadSquire.app")
+    (cmd,) = written
+    assert cmd[:3] == ["/usr/bin/xattr", "-wx", "com.apple.FinderInfo"]
+    info = bytes.fromhex(cmd[3])
+    assert len(info) == 32 and info[8] == 0x01 and info[9] == 0x10
