@@ -10,7 +10,8 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE", "LICENSES/*"]
-dependencies = ["hidapi>=0.14; sys_platform == 'darwin'"]
+dependencies = ["hidapi>=0.14; sys_platform == 'darwin'", "pyusb>=1.2; sys_platform == 'darwin'",
+                "libusb-package>=1.0.26; sys_platform == 'darwin'"]
 
 [project.optional-dependencies]
 ble = ["bleak>=0.22"]

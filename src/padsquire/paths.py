@@ -32,6 +32,34 @@ LOADER_CACHE = cache_home() / NAME / "loaders"
 BROWSER_PROFILE = cache_home() / NAME / "window"
 
 
+def _sudo_owner() -> tuple[int, int] | None:
+    """The user who ran sudo, when we run as root through it (macOS update mode needs root)."""
+    if not hasattr(os, "geteuid") or os.geteuid() != 0:
+        return None
+    try:
+        return int(os.environ["SUDO_UID"]), int(os.environ["SUDO_GID"])
+    except (KeyError, ValueError):
+        return None
+
+
+def give_back(path: Path) -> Path:
+    """Under sudo, hand a file or folder we made to the user who ran sudo, so that their own
+    PadSquire can read it afterwards. Otherwise nothing."""
+    owner = _sudo_owner()
+    if owner is not None:
+        os.chown(path, *owner)
+    return path
+
+
+def make_dirs(path: Path) -> Path:
+    """mkdir -p, giving every folder it creates back to the sudo user (see give_back)."""
+    missing = [p for p in [path, *path.parents] if not p.exists()]
+    path.mkdir(parents=True, exist_ok=True)
+    for p in reversed(missing):
+        give_back(p)
+    return path
+
+
 def _merge(old: Path, new: Path, moved: list[Path], left: list[Path]) -> None:
     """Move everything in `old` that `new` doesn't have; keep clashes in `old`."""
     for child in sorted(old.iterdir()):

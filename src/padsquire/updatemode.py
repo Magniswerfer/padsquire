@@ -52,6 +52,8 @@ class Blocked(Failed):
 
 
 def no_sg_hint() -> str:
+    if jlboot.MACOS:
+        return ""
     if not Path("/sys/class/scsi_generic").exists():
         return " The sg kernel module isn't loaded: run `sudo modprobe sg` and try again."
     return ""
@@ -71,8 +73,8 @@ def find_path(path: str | None = None) -> str:
     return found[0].path
 
 
-def open_device(path: str | None = None) -> tuple[jlboot.SgDevice, jlboot.JLBoot]:
-    dev = jlboot.SgDevice(find_path(path))
+def open_device(path: str | None = None) -> tuple[jlboot.SgDevice | jlboot.UsbBotDevice, jlboot.JLBoot]:
+    dev = jlboot.open_device(find_path(path))
     return dev, jlboot.JLBoot(dev.execute)
 
 
@@ -204,12 +206,13 @@ def backup(boot: jlboot.JLBoot, ident: jlboot.Identity, out_dir: Path = BACKUP_D
 
     digest = hashlib.sha256(data).hexdigest()
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    out_dir.mkdir(parents=True, exist_ok=True)
+    paths.make_dirs(out_dir)
     base = out_dir / f"nova2lite-{ident.vendor.lower()}-flash-{stamp}"
     image, manifest = base.with_suffix(".bin"), base.with_suffix(".json")
     # Owner-only: the flash holds the controller's Bluetooth pairing keys.
     with os.fdopen(os.open(image, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as f:
         f.write(data)
+    paths.give_back(image)
     if hashlib.sha256(image.read_bytes()).hexdigest() != digest:
         raise Failed(f"{image} does not read back as written")
     with os.fdopen(os.open(manifest, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as f:
@@ -225,6 +228,7 @@ def backup(boot: jlboot.JLBoot, ident: jlboot.Identity, out_dir: Path = BACKUP_D
             "device_crc": {"sectors": sectors, "mismatched": len(bad)},
         }, f, indent=2)
         f.write("\n")
+    paths.give_back(manifest)
     log(f"Saved {image} (SHA-256 {digest}).")
     return image
 

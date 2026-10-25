@@ -271,8 +271,12 @@ def send_update_mode(fd: int) -> None:
 def enter_update_mode(path: str) -> None:
     """Switch the controller on `path` into its USB download (firmware update) mode."""
     if MACOS:
-        # Nothing here can talk to the update-mode disk yet (no SG_IO): don't strand the controller.
-        raise HidError("update mode isn't available on macOS yet; use a Linux computer for this")
+        device = _open_hidapi(path)
+        try:
+            device.write(b"\x00" + UPDATE_MODE + bytes(REPORT_SIZE - len(UPDATE_MODE)))
+        finally:
+            device.close()
+        return
     try:
         fd = os.open(path, os.O_RDWR)
     except PermissionError:

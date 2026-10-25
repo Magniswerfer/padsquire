@@ -183,10 +183,14 @@ def test_update_mode_command_is_one_padded_report():
     assert fake.writes == [b"\x00\xf2\x00\x04\xf6" + bytes(60)]
 
 
-def test_update_mode_is_refused_on_macos(monkeypatch):
+def test_update_mode_on_macos_is_the_same_report(monkeypatch):
     monkeypatch.setattr(hid, "MACOS", True)
-    with pytest.raises(hid.HidError, match="macOS"):
-        hid.enter_update_mode("DevSrvsID:1")
+    fake = FakeHidapiDevice({})
+    fake.open_path = lambda path: None
+    fake.close = lambda: None
+    monkeypatch.setattr(hid, "_hidapi", lambda: type("M", (), {"device": staticmethod(lambda: fake)}))
+    hid.enter_update_mode("DevSrvsID:1")
+    assert fake.writes == [b"\xf2\x00\x04\xf6" + bytes(60)]
 
 
 def test_controller_firmware_from_a_state_report():

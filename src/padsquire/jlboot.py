@@ -9,20 +9,26 @@ reaches the device. Flash writes come later, in their own module, after a verifi
 
 The loader binary is fetched from jl-uboot-tool (MIT, kagaimiq) at a pinned commit and checked
 against its SHA-256, so no JieLi binary lives in this repo.
+
+On Linux the commands go through the kernel's SCSI generic driver (SG_IO). macOS has no such
+thing, so there they go over raw USB (libusb): the same SCSI commands wrapped in USB mass
+storage's Bulk-Only Transport, after taking the disk away from macOS's own driver, which only
+root may do.
 """
 
 from __future__ import annotations
 
 import ctypes
-import fcntl
 import hashlib
 import os
+import struct
+import sys
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from . import jlcrypt
+from . import jlcrypt, paths
 
 # -- what may be sent ---------------------------------------------------------------
 
@@ -120,6 +126,7 @@ class SgDevice:
             buf, hdr.dxfer_direction = None, SG_DXFER_NONE
         if buf is not None:
             hdr.dxferp = ctypes.addressof(buf)
+        import fcntl                       # Linux only, like SG_IO itself
         try:
             fcntl.ioctl(self.fd, SG_IO, hdr)
         except OSError as e:
@@ -135,11 +142,123 @@ class SgDevice:
         os.close(self.fd)
 
 
+# -- raw USB (macOS) --------------------------------------------------------------------------
+
+MACOS = sys.platform == "darwin"
+JIELI_VID = 0x4C4A
+# USB product IDs of download mode, confirmed on hardware (PROTOCOL.md), and the chip each one is.
+# The receiver's USB name says BR34 but its SCSI INQUIRY says BD19, which is what counts.
+UBOOT_PIDS = {0x2342: "BR23", 0x3442: "BD19"}
+CBW = struct.Struct("<4sIIBBB")         # signature, tag, data length, flags, LUN, command length
+CSW = struct.Struct("<4sIIB")           # signature, tag, residue, status
+
+
+def _usb():
+    try:
+        import libusb_package
+        import usb.core
+        import usb.util
+    except ImportError:
+        raise JLBootError("update mode on macOS needs pyusb and libusb-package: "
+                          "pip install pyusb libusb-package") from None
+    return libusb_package, usb
+
+
+class UsbBotDevice:
+    """A download-mode chip over raw USB: execute(cdb, data_out, data_in_len) -> data_in, like
+    SgDevice. `device` is a pyusb device; the mass storage interface is taken from macOS's disk
+    driver for as long as this is open, and handed back on close()."""
+
+    def __init__(self, device, timeout_ms: int = 5000):
+        _, usb = _usb()
+        self.usb, self.dev, self.timeout_ms, self.tag = usb, device, timeout_ms, 0
+        intf = next((i for i in device.get_active_configuration()
+                     if i.bInterfaceClass == 0x08 and i.bInterfaceProtocol == 0x50), None)   # mass storage, BOT
+        if intf is None:
+            raise JLBootError("the download-mode device has no USB disk interface")
+        self.intf = intf.bInterfaceNumber
+        bulk = [e for e in intf if usb.util.endpoint_type(e.bmAttributes) == usb.util.ENDPOINT_TYPE_BULK]
+        self.ep_in = next(e for e in bulk if usb.util.endpoint_direction(e.bEndpointAddress) == usb.util.ENDPOINT_IN)
+        self.ep_out = next(e for e in bulk if usb.util.endpoint_direction(e.bEndpointAddress) == usb.util.ENDPOINT_OUT)
+        self.detached = False
+        try:
+            if device.is_kernel_driver_active(self.intf):
+                device.detach_kernel_driver(self.intf)
+                self.detached = True
+            usb.util.claim_interface(device, self.intf)
+        except usb.core.USBError as e:
+            if e.errno == 13 or "Access denied" in str(e):
+                raise JLBootError("macOS lets only the administrator take the update-mode disk from its "
+                                  "disk driver: run this with sudo") from None
+            raise JLBootError(f"could not open the download-mode device: {e}") from e
+
+    def execute(self, cdb: bytes, data_out: bytes | None = None, data_in_len: int = 0) -> bytes:
+        usb = self.usb
+        self.tag = (self.tag + 1) & 0xFFFFFFFF
+        length = len(data_out) if data_out else data_in_len
+        flags = 0x80 if data_in_len and not data_out else 0x00
+        what = f"SCSI command {cdb[:2].hex()}"
+        try:
+            self.ep_out.write(CBW.pack(b"USBC", self.tag, length, flags, 0, len(cdb)) + cdb.ljust(16, b"\0"),
+                              self.timeout_ms)
+            data = b""
+            try:
+                if data_out:
+                    self.ep_out.write(data_out, self.timeout_ms)
+                elif data_in_len:
+                    data = bytes(self.ep_in.read(data_in_len, self.timeout_ms))
+            except usb.core.USBError as e:
+                if e.errno != 32:              # a stall ends the data phase; the status still follows
+                    raise
+                self.dev.clear_halt(self.ep_in if flags else self.ep_out)
+            status = bytes(self.ep_in.read(CSW.size, self.timeout_ms))
+        except usb.core.USBError as e:
+            raise JLBootError(f"{what} failed: {e}") from e
+        if len(status) != CSW.size:
+            raise JLBootError(f"{what} failed: a {len(status)}-byte status")
+        signature, tag, _residue, result = CSW.unpack(status)
+        if signature != b"USBS" or tag != self.tag:
+            raise JLBootError(f"{what} failed: the status doesn't belong to it ({status.hex()})")
+        if result != 0:
+            raise JLBootError(f"{what} failed (status {result})")
+        # The residue is not usable, as over SG_IO: read_twice and the device CRC catch bad reads.
+        return data[:data_in_len] if data_in_len else b""
+
+    def close(self) -> None:
+        usb = self.usb
+        try:
+            usb.util.release_interface(self.dev, self.intf)
+            if self.detached:
+                self.dev.attach_kernel_driver(self.intf)
+        except usb.core.USBError:
+            pass                               # gone already: it restarted, or was unplugged
+        usb.util.dispose_resources(self.dev)
+
+
+def _usb_devices():
+    libusb_package, _ = _usb()
+    return list(libusb_package.find(find_all=True, idVendor=JIELI_VID))
+
+
+def _usb_path(device) -> str:
+    return f"usb:{device.bus}:{device.address}"
+
+
+def open_device(path: str):
+    """SgDevice for /dev/sgN; on macOS, UsbBotDevice for a usb:<bus>:<address> path."""
+    if path.startswith("usb:"):
+        device = next((d for d in _usb_devices() if _usb_path(d) == path), None)
+        if device is None:
+            raise JLBootError(f"{path} is no longer connected")
+        return UsbBotDevice(device)
+    return SgDevice(path)
+
+
 # -- finding the device -------------------------------------------------------------------
 
 @dataclass
 class UbootDevice:
-    path: str           # /dev/sgN
+    path: str           # /dev/sgN, or usb:<bus>:<address> on macOS
     vendor: str         # chip family, e.g. "BR23"
     product: str        # "UBOOT1.00"
 
@@ -149,7 +268,15 @@ class UbootDevice:
 
 
 def disks(sys_root: Path = Path("/sys"), dev_root: Path = Path("/dev")) -> list[UbootDevice]:
-    """Every SCSI generic node with its INQUIRY strings, as the kernel cached them (no I/O)."""
+    """Every SCSI generic node with its INQUIRY strings, as the kernel cached them (no I/O).
+    On macOS: every JieLi USB device, from its USB IDs (also no I/O, and no root needed)."""
+    if MACOS:
+        try:
+            found = _usb_devices()
+        except JLBootError:
+            return []
+        return [UbootDevice(_usb_path(d), UBOOT_PIDS.get(d.idProduct, f"{d.idProduct:04x}"),
+                            "UBOOT1.00" if d.idProduct in UBOOT_PIDS else "unknown") for d in found]
     out = []
     for node in sorted((sys_root / "class" / "scsi_generic").glob("sg*")):
         try:
@@ -272,8 +399,9 @@ def fetch_loader(loader: Loader, cache_dir: Path) -> bytes:
             raise JLBootError(f"could not download the {loader.chip} loader from {loader.url}: {e}") from e
     if hashlib.sha256(blob).hexdigest() != loader.sha256:
         raise JLBootError(f"the {loader.chip} loader does not match its pinned SHA-256; not using it")
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    paths.make_dirs(cache_dir)
     path.write_bytes(blob)
+    paths.give_back(path)
     return blob
 
 

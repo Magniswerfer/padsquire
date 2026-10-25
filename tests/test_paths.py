@@ -60,3 +60,19 @@ def test_cli_moves_and_says_so(capsys):
     assert "PadSquire: Moved" in capsys.readouterr().err
     assert (share / "padsquire" / "backups" / "flash-1.json").exists()
     assert os.environ["XDG_DATA_HOME"] in str(share)
+
+
+def test_files_made_under_sudo_go_back_to_the_user(tmp_path, monkeypatch):
+    chowned = []
+    monkeypatch.setattr(paths.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(paths.os, "chown", lambda p, uid, gid: chowned.append((p, uid, gid)))
+    monkeypatch.setenv("SUDO_UID", "501")
+    monkeypatch.setenv("SUDO_GID", "20")
+    (tmp_path / "a").mkdir()
+    paths.make_dirs(tmp_path / "a" / "b" / "c")
+    paths.give_back(tmp_path / "a" / "b" / "c")
+    assert chowned == [(tmp_path / "a" / "b", 501, 20), (tmp_path / "a" / "b" / "c", 501, 20),
+                       (tmp_path / "a" / "b" / "c", 501, 20)]
+    monkeypatch.delenv("SUDO_UID")
+    paths.give_back(tmp_path / "a")                   # root without sudo: left alone
+    assert len(chowned) == 3

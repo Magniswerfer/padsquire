@@ -46,7 +46,7 @@ the controller stays in download mode and the command can be run again.
 Run again with --confirm to go ahead."""
 
 
-def _open(args) -> tuple[jlboot.SgDevice, jlboot.JLBoot]:
+def _open(args) -> tuple[jlboot.SgDevice | jlboot.UsbBotDevice, jlboot.JLBoot]:
     return updatemode.open_device(args.device)
 
 
