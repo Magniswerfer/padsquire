@@ -17,21 +17,25 @@
 <script src="/static/app.js" defer></script>
 </head>
 <body>
-<header class="top">
-  <div class="app-bar">
-    <span class="app-title"><span class="logo" id="logo" aria-hidden="true"></span>PadSquire <span class="app-device">Nova 2 Lite</span></span>
-    <div class="app-status" id="status" aria-live="polite"></div>
-  </div>
-  <nav class="tabs" aria-label="Settings">
-    <ul class="navlist" id="nav"></ul>
-  </nav>
+<header class="app-bar">
+  <span class="app-title"><span class="logo" id="logo" aria-hidden="true"></span>PadSquire <span class="app-device">Nova 2 Lite</span></span>
+  <div class="app-status" id="status" aria-live="polite"></div>
 </header>
 
 <main class="layout">
-  <pad-model id="pad" src="/static/models/nova-2-lite.glb" role="img" aria-label="Your controller">
-    <img class="pad-drawing" src="/static/img/nova-2-lite-angle.svg" width="640" height="480" alt="">
-  </pad-model>
+  <aside class="side" aria-label="Controller">
+    <pad-model id="pad" src="/static/models/nova-2-lite.glb" role="img" aria-label="Your controller">
+      <img class="pad-drawing" src="/static/img/nova-2-lite-angle.svg" width="640" height="480" alt="">
+    </pad-model>
+    <nav class="pages" aria-label="Settings">
+      <ul class="navlist" id="nav"></ul>
+    </nav>
+  </aside>
+
   <section class="panel sheet" id="panel" tabindex="-1" aria-live="polite"></section>
+
+  <p class="source app-foot">PadSquire, free software under the AGPL.
+    <a href="https://github.com/Magniswerfer/padsquire" target="_blank" rel="noopener">Source code</a></p>
 </main>
 
 <div class="toasts" id="toasts" role="status" aria-live="assertive"></div>

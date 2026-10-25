@@ -85,8 +85,8 @@ const SECTIONS = [
   { id: "profiles", label: "Profiles" },
   { id: "power", label: "Power" },
   { id: "firmware", label: "Firmware", offline: true, apart: true },   // firmware and help, set apart
-  { id: "guide", label: "Button guide", offline: true },
-  { id: "setup", label: "Setup and help", offline: true },
+  { id: "setup", label: "Help", offline: true },
+  { id: "guide", label: "Button guide", offline: true, under: "setup" },   // a tab of Help, not in the list
 ];
 
 const app = {
@@ -279,11 +279,13 @@ function renderChrome() {
 
   const nav = $("#nav");
   nav.replaceChildren();
+  const here = SECTIONS.find((x) => x.id === app.section);
   for (const sec of SECTIONS) {
+    if (sec.under) continue;
     const usable = app.status.connected || sec.offline || sec.id === "controller";
     nav.append(h("li", { class: sec.apart ? "apart" : null }, h("a", {
       href: usable ? `#${sec.id}` : null,
-      "aria-current": app.section === sec.id ? "page" : null,
+      "aria-current": app.section === sec.id || (here && here.under === sec.id) ? "page" : null,
       "aria-disabled": usable ? null : "true",
     }, sec.label, sectionHint(sec.id))));
   }
@@ -1847,7 +1849,7 @@ async function panelGuide() {
         h("figcaption", {}, "From the back")));
   } catch (e) { pic = h("p", { class: "note" }, e.message); }
   return h("div", {},
-    h("h1", {}, "Button guide"),
+    h("h1", {}, "Help"), helpTabs("guide"),
     h("p", { class: "lede" }, "Every button on the Nova 2 Lite, the modes and what the Home light means, and the shortcuts built into the controller."),
     pic,
     h("h2", {}, "What the buttons do"),
@@ -2038,8 +2040,19 @@ function setupNotice(only) {
 
 const NEEDS = { settings: "Needed for everything", updates: "Needed for firmware updates and backups", optional: "Optional" };
 
+// Help has two tabs: what this computer needs (and what to do when something goes wrong), and
+// the button guide. Each is its own page (#setup, #guide), so links to either keep working.
+function helpTabs(current) {
+  const group = h("div", { class: "segmented help-tabs", role: "radiogroup", "aria-label": "Help" });
+  for (const [id, label] of [["setup", "Setup and help"], ["guide", "Button guide"]]) {
+    group.append(h("input", { type: "radio", name: "help-tab", id: `help-${id}`, value: id, checked: id === current,
+      onchange: () => { location.hash = `#${id}`; } }), h("label", { for: `help-${id}` }, label));
+  }
+  return group;
+}
+
 async function panelSetup() {
-  const wrap = h("div", {}, h("h1", {}, "Setup and help"),
+  const wrap = h("div", {}, h("h1", {}, "Help"), helpTabs("setup"),
     h("p", { class: "lede" }, "What this computer needs to work with the controller, checked just now. Each command comes with what it does and links to its documentation: read that first, run it in a terminal, then check again."));
   try { app.setup = await api("/api/setup"); }
   catch (e) { wrap.append(h("p", { class: "note" }, e.message)); return wrap; }
@@ -2103,9 +2116,7 @@ async function panelSetup() {
     qa("Starting this app",
       command("padsquire gui"),
       "It runs on this computer only (127.0.0.1) and opens your browser with a one-time link. Stop it with Ctrl+C in its terminal.")));
-  wrap.append(h("h2", {}, "Appearance"), h("div", { class: "appearance" }, themeControl(),
-    h("p", { class: "source" }, "PadSquire, free software under the AGPL. ",
-      h("a", { href: "https://github.com/Magniswerfer/padsquire", target: "_blank", rel: "noopener" }, "Source code"))));
+  wrap.append(h("h2", {}, "Appearance"), h("div", { class: "appearance" }, themeControl()));
   return wrap;
 }
 
