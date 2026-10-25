@@ -95,8 +95,8 @@ Open:
 4. Controller firmware updates through the receiver (JieLi's HID over-the-air updater): research.
 5. **macOS**: blue (DualShock 4) mode for games untested; receiver and Bluetooth untested there;
    the app's one-go backup, restore and reinstall are confirmed on hardware; the receiver's
-   firmware is untested there; the disk-access prompt names "Python". The installer from PyPI
-   (not a checkout) is untested on a Mac until someone runs it after 0.2.0.
+   firmware is untested there; the disk-access prompt names "Python". The curl installer from
+   padsquire.com installs 0.2.0 from PyPI on a Mac and the app connects (confirmed 2026-10-25).
 
 ## Next steps (as of 2026-10-25)
 
@@ -106,9 +106,9 @@ is public, and `https://padsquire.com/install.sh` redirects to the newest releas
 (the website lives in `Magniswerfer/padsquire-website`; edit it only from its own repo). A new
 release: bump `version` in `pyproject.toml`, then push a matching `v*` tag.
 
-Left for the owner: try the real thing on both systems, `curl -fsSL https://padsquire.com/install.sh | sh`,
-then open PadSquire from the app menu (on a Mac: Launchpad, Spotlight or Raycast). The in-app
-update can first be tried with the release after 0.2.0.
+Confirmed on a Mac: `curl -fsSL https://padsquire.com/install.sh | sh` installs 0.2.0 from PyPI,
+and the app opens and connects. Left: the same on Linux, and the in-app update, which can first
+be tried with the release after 0.2.0.
 
 Then: Bluetooth testing (the checklist in HARDWARE.md).
 
