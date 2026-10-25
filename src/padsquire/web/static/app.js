@@ -697,37 +697,46 @@ function panelBackButtons() {
   return wrap;
 }
 
-// The dead-zone circle (.stick-view in ds/components.css): the shaded inner disc and outer ring
-// are ignored. The dot is what the computer gets now; the ring is where the stick must be for
-// it, worked out backwards from that output (the live values come after the dead zones). That
-// assumes the usual scaling: output rises evenly from the inner dead zone to full at the outer
-// one. `anti` counts only where the controller applies it (not by cable or receiver, firmware 8201).
-function stickView(antiApplied) {
-  const svg = s("svg", { class: "stick-view", viewBox: "-110 -110 220 220", role: "img" });
-  const outer = s("circle", { class: "sv-outer", r: 100 });
-  const reach = s("circle", { class: "sv-reach", r: 100 });
-  const inner = s("circle", { class: "sv-inner", r: 0 });
-  const raw = s("circle", { class: "sv-raw", r: 9 });
-  const out = s("circle", { class: "sv-out", r: 6 });
-  svg.append(outer, reach, inner, s("circle", { class: "sv-rim", r: 100 }),
-    s("line", { class: "sv-axis", x1: -100, x2: 100, y1: 0, y2: 0 }),
-    s("line", { class: "sv-axis", x1: 0, x2: 0, y1: -100, y2: 100 }), raw, out);
+// The stick response curve: how far the stick is pushed (across) against what the computer gets
+// (up), so a dead zone can't look like the stick "inside" it. The shaded bands are travel that is
+// ignored. Assumes the usual scaling: output rises evenly from the inner dead zone to full at the
+// outer one. `anti` is drawn only where the controller applies it (not by cable or receiver,
+// firmware 8201). The live dot sits on the curve, at the least travel that gives today's output
+// (the live values come after the dead zones).
+// A trigger is drawn the same way: `across` names the travel, the start dead zone is `inner`, the
+// end dead zone `outer`, and quick trigger an `anti` of 100 (full output as soon as it counts).
+function responseCurve(antiApplied, across = "Stick pushed") {
+  const X0 = 30, Y0 = 136, W = 160, H = 124;              // plot area: (X0, Y0) is travel 0, output 0
+  const px = (t) => X0 + W * t / 100, py = (o) => Y0 - H * o / 100;
+  const svg = s("svg", { class: "curve", viewBox: "0 0 200 168", role: "img" });
+  const low = s("rect", { class: "ignored", y: py(100), height: H });
+  const high = s("rect", { class: "ignored", y: py(100), height: H });
+  const axes = s("path", { class: "axis", d: `M${X0} ${py(100)} V${Y0} H${X0 + W}` });
+  const line = s("polyline", { class: "line" });
+  const dot = s("circle", { class: "dot", r: 4.5, cx: px(0), cy: py(0) });
+  const label = (x, y, text, extra = {}) => { const t = s("text", { x, y, ...extra }); t.textContent = text; return t; };
+  svg.append(low, high, axes, line, dot,
+    label(X0 + W / 2, 160, across, { "text-anchor": "middle" }),
+    label(14, py(50), "Output", { "text-anchor": "middle", transform: `rotate(-90 14 ${py(50)})` }),
+    label(X0 - 4, py(100) + 3, "100", { "text-anchor": "end", class: "tick" }),
+    label(X0 - 4, Y0 + 3, "0", { "text-anchor": "end", class: "tick" }));
   let z = { inner: 0, outer: 0, anti: 0 };
   const update = (values) => {
     z = { ...values, anti: antiApplied ? values.anti : 0 };
-    reach.setAttribute("r", 100 - z.outer);
-    inner.setAttribute("r", z.inner);
-    svg.setAttribute("aria-label", `Inner dead zone ${values.inner}%, outer dead zone ${values.outer}%, anti-dead zone ${values.anti}%`);
+    const full = 100 - z.outer;
+    low.setAttribute("x", px(0)); low.setAttribute("width", px(z.inner) - px(0));
+    high.setAttribute("x", px(full)); high.setAttribute("width", px(100) - px(full));
+    line.setAttribute("points", [[0, 0], [z.inner, 0], [z.inner, z.anti], [full, 100], [100, 100]]
+      .map(([t, o]) => `${px(t)},${py(o)}`).join(" "));
+    svg.setAttribute("aria-label", values.label
+      || `Inner dead zone ${values.inner}%, outer dead zone ${values.outer}%, anti-dead zone ${values.anti}%`);
   };
-  // live output, -1..1 on each axis
-  const show = (x, y) => {
-    const m = Math.min(1, Math.hypot(x, y));
-    const o = 100 * m, full = 100 - z.outer;
+  // live output, 0..1
+  const show = (m) => {
+    const o = 100 * Math.min(m, 1), full = 100 - z.outer;
     const t = o <= 0 ? 0 : o >= 100 ? full : o <= z.anti ? z.inner
       : z.inner + (o - z.anti) / (100 - z.anti) * (full - z.inner);
-    const [ux, uy] = m > 0 ? [x / Math.hypot(x, y), y / Math.hypot(x, y)] : [0, 0];
-    out.setAttribute("cx", ux * o); out.setAttribute("cy", uy * o);
-    raw.setAttribute("cx", ux * t); raw.setAttribute("cy", uy * t);
+    dot.setAttribute("cx", px(t)); dot.setAttribute("cy", py(o));
     return Math.round(o);
   };
   return { svg, update, show };
@@ -746,13 +755,13 @@ function panelSticks() {
     const zones = { inner: `${prefix}_STICK_INNER`, outer: `${prefix}_STICK_OUTER`, anti: `${prefix}_STICK_ANTI` };
     const entries = Object.fromEntries(Object.entries(zones).map(([k, z]) => [k, d.dead_zones[z]]));
     const values = Object.fromEntries(Object.entries(entries).map(([k, e]) => [k, val(e) ?? 0]));
-    const pic = stickView(antiApplied);
+    const pic = responseCurve(antiApplied);
     pic.update(values);
     const readout = h("p", { class: "live-readout", "aria-live": "off" });
-    live.push((st) => { readout.textContent = `Output ${pic.show(st[axes[0]], st[axes[1]])}%`; });
+    live.push((st) => { readout.textContent = `Output ${pic.show(Math.hypot(st[axes[0]], st[axes[1]]))}%`; });
     const col = h("div", {}, h("h2", {}, side), pic.svg, readout,
-      h("div", { class: "legend" }, h("span", {}, h("i"), "Ignored"), h("span", {}, h("i", { class: "raw" }), "The stick"),
-        h("span", {}, h("i", { class: "out" }), "What the computer gets")));
+      h("div", { class: "legend" }, h("span", {}, h("i"), "Stick travel that is ignored"),
+        h("span", {}, h("i", { class: "line" }), "What the computer gets")));
     const rows = h("div", { class: "rows" });
     const spec = [
       ["inner", "Inner dead zone", "Movement near the centre is ignored"],
@@ -776,7 +785,7 @@ function panelSticks() {
   wrap.append(pair, h("h2", {}, "Both sticks"), h("div", { class: "rows" },
     featureToggle("SWAP_STICKS", "Swap left and right stick"),
     featureToggle("SWAP_LEFT_STICK_DPAD", "Swap left stick and D-pad")));
-  wrap.append(h("p", { class: "note" }, liveNote("The shaded parts of each circle are ignored. The dot shows what the computer gets from the stick now, and the ring where the stick is for that. ") +
+  wrap.append(h("p", { class: "note" }, liveNote("The line shows what the computer gets for each amount of stick travel, and the dot shows each stick now. ") +
     "The outer dead zone stops at 25%: above that the controller's firmware gets full tilt wrong, and the stick jumps to the opposite side."));
   app.live = (st) => live.forEach((f) => f(st));
   return wrap;
@@ -796,19 +805,18 @@ function panelTriggers() {
     // end dead zone is 100 minus it.
     const back = val(d.dead_zones[zones.end]);
     const values = { start: val(d.dead_zones[zones.start]) ?? 0, end: back == null ? 0 : Math.max(0, 100 - back) };
-    const startEl = h("span", { class: "dead start" });
-    const endEl = h("span", { class: "dead end" });
-    const paint = () => { startEl.style.width = `${values.start}%`; endEl.style.width = `${values.end}%`; };
+    // the same curve as the sticks: pull across, output up, the ignored pull shaded
+    const isQuick = !errOf(d.trigger_quick) && quick[qi];
+    const pic = responseCurve(true, "Trigger pulled");
+    const paint = () => pic.update({ inner: values.start, outer: values.end, anti: isQuick ? 100 : 0,
+      label: `${side}: first ${values.start}% and last ${values.end}% of the pull ignored`
+        + (isQuick ? "; quick trigger on" : "") });
     paint();
-    const levelEl = h("span", { class: "level" });
     const readout = h("p", { class: "live-readout", "aria-live": "off" });
-    live.push((st) => {
-      levelEl.style.width = `${100 * st[axis]}%`;
-      readout.textContent = `Pressed ${Math.round(100 * st[axis])}%`;
-    });
-    const col = h("div", {}, h("h2", {}, side),
-      h("div", { class: "travel well", role: "img", "aria-label": `${side}: first ${values.start}% and last ${values.end}% of travel ignored` }, startEl, endEl, levelEl),
-      h("div", { class: "travel-scale" }, h("span", {}, "Released"), h("span", {}, "Fully pressed")), readout);
+    live.push((st) => { readout.textContent = `Output ${pic.show(st[axis])}%`; });
+    const col = h("div", {}, h("h2", {}, side), pic.svg, readout,
+      h("div", { class: "legend" }, h("span", {}, h("i"), "Pull that is ignored"),
+        h("span", {}, h("i", { class: "line" }), "What the computer gets")));
     const rows = h("div", { class: "rows" });
     for (const [key, label, help] of [["start", "Start dead zone", "Ignored at the beginning of the pull"], ["end", "End dead zone", "Full press is reached this much before the end of the pull"]]) {
       const zone = zones[key];
@@ -829,7 +837,7 @@ function panelTriggers() {
     pair.append(col);
   }
   wrap.append(pair);
-  const note = liveNote("The bar shows how far each trigger is pulled now, as the computer receives it.");
+  const note = liveNote("The line shows what the computer gets for each amount of pull, and the dot shows each trigger now.");
   if (note) wrap.append(h("p", { class: "note" }, note));
   app.live = (st) => live.forEach((f) => f(st));
   return wrap;
