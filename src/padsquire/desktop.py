@@ -9,6 +9,7 @@ On macOS the entry is a small app in ~/Applications instead, which Launchpad and
 
 from __future__ import annotations
 
+import json
 import plistlib
 import shutil
 import subprocess
@@ -167,27 +168,23 @@ def _mac_app_is_ours(app: Path) -> bool:
 
 
 def _mac_icon(icns: Path) -> bool:
-    """Render the SVG icon to an .icns with macOS's own tools (Quick Look, sips, iconutil)."""
-    tools = [shutil.which(t) for t in ("qlmanage", "sips", "iconutil")]
-    if not all(tools):
+    """The macOS app icon, built once by tools/make-mac-icon.sh and shipped in the package: the
+    logo on a rounded square, as macOS (and Raycast, Spotlight, Finder) expect an app icon."""
+    try:
+        icns.write_bytes((DATA / "padsquire.icns").read_bytes())
+        return True
+    except OSError:
         return False
-    qlmanage, sips, iconutil = tools
-    with tempfile.TemporaryDirectory() as tmp:
-        svg = Path(tmp) / "padsquire.svg"
-        svg.write_bytes((DATA / "padsquire.svg").read_bytes())
-        subprocess.run([qlmanage, "-t", "-s", "1024", "-o", tmp, str(svg)], capture_output=True, check=False)
-        png = Path(tmp) / "padsquire.svg.png"
-        if not png.is_file():
-            return False
-        iconset = Path(tmp) / "padsquire.iconset"
-        iconset.mkdir()
-        for size in (16, 32, 128, 256, 512):
-            for scale in (1, 2):
-                name = f"icon_{size}x{size}{'@2x' if scale == 2 else ''}.png"
-                subprocess.run([sips, "-z", str(size * scale), str(size * scale), str(png),
-                                "--out", str(iconset / name)], capture_output=True, check=False)
-        return subprocess.run([iconutil, "-c", "icns", str(iconset), "-o", str(icns)],
-                              capture_output=True, check=False).returncode == 0 and icns.is_file()
+
+
+def _hide_extension(app: Path) -> None:
+    """Finder, Spotlight and Raycast show "PadSquire", not "PadSquire.app". The flag is the one
+    Finder's Get Info sets; macOS's own Foundation sets it here, with no permission needed."""
+    script = ("ObjC.import('Foundation'); $.NSURL.fileURLWithPath(" + json.dumps(str(app)) + ")"
+              ".setResourceValueForKeyError($.YES, $.NSURLHasHiddenExtensionKey, null)")
+    osascript = shutil.which("osascript")
+    if osascript:
+        subprocess.run([osascript, "-l", "JavaScript", "-e", script], capture_output=True, check=False)
 
 
 def _install_mac_app() -> list[Path]:
@@ -212,6 +209,8 @@ def _install_mac_app() -> list[Path]:
         info["CFBundleIconFile"] = "padsquire"
     with open(contents / "Info.plist", "wb") as f:
         plistlib.dump(info, f)
+    _hide_extension(app)
+    app.touch()                 # a changed bundle date makes Launchpad, Spotlight and Raycast look again
     lsregister = Path("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework"
                       "/Support/lsregister")
     if lsregister.exists():     # Launchpad and Spotlight see it at once, with its icon
