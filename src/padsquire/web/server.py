@@ -321,7 +321,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
             "usb_readonly_features": [f.name for f in USB_READONLY_FEATURES],
             "remap_targets": [k.name for k in gcm.NOVA_REMAP_TARGETS],
             "remap_max_targets": gcm.REMAP_MAX_TARGETS,
-            "update_mode": not hid.MACOS,
+            "platform": "macos" if hid.MACOS else "linux",
         })
 
     @routes.get("/api/status")
@@ -422,8 +422,8 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
                     await resp.write(json.dumps(st).encode() + b"\n")
                     last, sent = st, loop.time()
                 await asyncio.sleep(1 / 30)
-        except (ConnectionResetError, hid.HidError, OSError):
-            pass
+        except (ConnectionResetError, hid.HidError, OSError, ValueError):
+            pass               # ValueError: hidapi's "not open", once update mode took the device
         finally:
             if session.client is not None and session.client.t is transport:
                 try:

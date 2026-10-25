@@ -165,6 +165,11 @@ def _restart_options(p) -> None:
     p.add_argument("--receiver", action="store_true", help="it is the 2.4 GHz receiver")
 
 
+def a_helper(args) -> int:
+    from . import macos_helper
+    return macos_helper.main_serve(args.socket, macos_helper.owner_arg(args.owner))
+
+
 def a_restart(args) -> int:
     dev, boot = _open(args)
     try:
@@ -319,6 +324,11 @@ def register(sub) -> None:
     f.add_argument("--device", help="SCSI generic node, e.g. /dev/sg2 (default: find it)")
     _restart_options(f)
     f.set_defaults(run=a_flash)
+
+    h = acts.add_parser("helper", help=argparse.SUPPRESS)   # the settings app's macOS helper, run as root
+    h.add_argument("--socket", type=Path, required=True)
+    h.add_argument("--owner", required=True)
+    h.set_defaults(run=a_helper)
 
     r = acts.add_parser("restart", help="leave download mode and boot the firmware in flash")
     r.add_argument("--device", help="SCSI generic node, e.g. /dev/sg2 (default: find it)")

@@ -200,8 +200,9 @@ main() {
     step "Ready"
     if [ "$OS" = Darwin ]; then
         say "   Open PadSquire from Launchpad or Spotlight, or run: padsquire gui"
-        say "   On macOS PadSquire changes settings; firmware updates still need Linux. Steam games work"
-        say "   in green mode (Steam has its own driver); for others, switch to blue (hold Menu + View)."
+        say "   Firmware updates ask for your password in macOS's own dialog; the app explains why."
+        say "   Steam games work in green mode (Steam has its own driver); for others, switch to blue"
+        say "   (hold Menu + View)."
     else
         say "   Open PadSquire from your app menu, or run: padsquire gui"
         say "   Firmware updates also need 7-Zip and the sg kernel module; the app's Setup and help page"

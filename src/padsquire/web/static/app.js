@@ -153,6 +153,35 @@ function icon(name) {
 // the mark on a step that's done, in place of its number
 const stepDone = () => h("span", { class: "step-done" }, icon("check"));
 
+// A button that shows it's working while fn runs: disabled, a spinner, and a label saying what
+// happens ("Backing up…"); back to itself afterwards, if it is still on the page.
+async function working(button, label, fn) {
+  const idle = button.textContent;
+  button.disabled = true;
+  button.classList.add("working");
+  button.setAttribute("aria-busy", "true");
+  button.textContent = label;
+  try { return await fn(); }
+  finally {
+    button.disabled = false;
+    button.classList.remove("working");
+    button.removeAttribute("aria-busy");
+    button.textContent = idle;
+  }
+}
+
+// The same for a firmware step, which runs on the server as a job and outlives the click: the
+// button that started it keeps saying so for as long as the job runs.
+function jobButton(job, kinds, label, button) {
+  if (job && job.state === "running" && kinds.includes(job.kind)) {
+    button.disabled = true;
+    button.classList.add("working");
+    button.setAttribute("aria-busy", "true");
+    button.textContent = label;
+  }
+  return button;
+}
+
 function notice(kind, ...children) {
   const name = { ok: "check", warn: "alert", danger: "alert" }[kind] || "info";
   return h("div", { class: `notice${kind ? ` ${kind}` : ""}` }, icon(name), h("div", { class: "notice-body" }, ...children));
@@ -355,7 +384,7 @@ function panelConnect() {
       h("li", {}, "Or over Bluetooth: turn the controller on in Android mode by holding Home and A for 2 seconds until the light turns yellow."),
       h("li", {}, "Find it below and connect.")),
   );
-  const findBtn = h("button", { class: "button primary", onclick: scan, disabled: app.scanning },
+  const findBtn = h("button", { class: `button primary${app.scanning ? " working" : ""}`, onclick: scan, disabled: app.scanning },
     app.scanning ? "Searching…" : "Find controllers");
   wrap.append(h("div", { class: "button-row" }, findBtn,
     h("button", { class: "button", onclick: () => connect({ simulate: true }) }, "Use the simulator")));
@@ -367,7 +396,8 @@ function panelConnect() {
     } else {
       wrap.append(h("ul", { class: "found" }, app.found.map((d) =>
         h("li", {}, h("span", {}, d.name, h("span", { class: "addr" }, d.link === "usb" ? `${d.via === "dongle" ? "2.4 GHz receiver" : "USB cable"}, ${d.address}` : d.address)),
-          h("button", { class: "button primary small", onclick: () => connect({ address: d.address, name: d.name, link: d.link }) }, "Connect")))));
+          h("button", { class: "button primary small", onclick: (e) => working(e.currentTarget, "Connecting…",
+            () => connect({ address: d.address, name: d.name, link: d.link })) }, "Connect")))));
     }
   }
   wrap.append(notice("",
@@ -403,7 +433,7 @@ function panelController() {
       fact("Bluetooth address", info && info.mac),
       fact("Protocol", info && `GCM ${info.gcm_version}`)),
     h("div", { class: "button-row" },
-      h("button", { class: "button", onclick: () => reload(true) }, "Read settings again")),
+      h("button", { class: "button", onclick: (e) => working(e.currentTarget, "Reading…", () => reload(true)) }, "Read settings again")),
   );
 }
 
@@ -572,35 +602,42 @@ function restartBox() {
   const box = notice("",
     h("p", {}, h("strong", {}, "If the controller stops responding after a change. "),
       "This happens now and then, mostly through the receiver; the change itself is kept. A restart fixes it."),
-    !app.meta.update_mode ? null
-    : app.status.mode === "usb" && sg
-      ? h("div", { class: "button-row" }, h("button", { class: "button", onclick: restartDevice }, receiver ? "Restart the receiver" : "Restart the controller"))
+    app.status.mode === "usb" && sg
+      ? h("div", { class: "button-row" }, h("button", { class: `button${app.restarting ? " working" : ""}`, disabled: !!app.restarting,
+          onclick: restartDevice }, app.restarting ? "Restarting…" : receiver ? "Restart the receiver" : "Restart the controller"))
       : app.status.mode === "usb" ? h("p", {}, "The restart button needs a one-time setup: ", h("a", { href: "#setup" }, "see Setup and help"), ".") : null,
     h("p", { class: "note" }, receiver
       ? "If restarting the receiver doesn't help, turn the controller off and on: hold Home for about 5 seconds, turn it on, and hold Menu and View until the light is green."
-      : `${app.meta.update_mode ? "Or by hand" : "To restart it"}: hold Home for about 5 seconds, turn it on, and hold Menu and View until the light is green.`));
+      : "Or by hand: hold Home for about 5 seconds, turn it on, and hold Menu and View until the light is green."));
   return box;
 }
 
 async function restartDevice() {
+  if (app.restarting) return;
   const receiver = app.status.via === "dongle";
   const yes = await confirmDialog(receiver ? "Restart the receiver?" : "Restart the controller?",
-    receiver ? "The receiver restarts and the controller links to it again, in a few seconds. Nothing is changed or erased."
-             : "The controller restarts in a few seconds. Your settings are kept; nothing is changed or erased.", "Restart");
+    (receiver ? "The receiver restarts and the controller links to it again, in a few seconds. Nothing is changed or erased."
+              : "The controller restarts in a few seconds. Your settings are kept; nothing is changed or erased.")
+    + (onMac() ? ` ${MAC_PASSWORD_SHORT}` : ""), "Restart");
   if (!yes) return;
   try { await api("/api/update/reboot", { confirm: true }); }
   catch (e) { toast(e.message, "error"); return; }
+  app.restarting = true;               // its button (rebuilt by render) says so until it's back
   app.status = await api("/api/status"); app.dev = null;
-  toast("Restarting…");
   render();
-  for (let i = 0; i < 80; i++) {
-    await new Promise((r) => setTimeout(r, 500));
-    const job = ((await api("/api/update").catch(() => null)) || {}).job;
-    if (job && job.kind === "reboot" && job.state !== "running") {
-      toast(job.state === "done" ? (receiver ? "The receiver restarted" : "The controller restarted") : job.error,
-        job.state === "done" ? "info" : "error");
-      return;        // watchDevices connects again once it is back
+  try {
+    for (let i = 0; i < 80; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      const job = ((await api("/api/update").catch(() => null)) || {}).job;
+      if (job && job.kind === "reboot" && job.state !== "running") {
+        toast(job.state === "done" ? (receiver ? "The receiver restarted" : "The controller restarted") : job.error,
+          job.state === "done" ? "info" : "error");
+        return;        // watchDevices connects again once it is back
+      }
     }
+  } finally {
+    app.restarting = false;
+    render();
   }
 }
 
@@ -870,12 +907,10 @@ function panelVibration() {
       label, value: v[field], unit: "%", step: 25,         // the controller stores multiples of 25
       onCommit: (n, mark) => save("/api/vibration", { [field]: n }, (got) => { d.vibration = { value: got }; }, mark),
     });
-    const test = h("button", { class: "button small", onclick: async () => {
-      test.disabled = true;
+    const test = h("button", { class: "button small", onclick: () => working(test, "Testing…", async () => {
       try { await api("/api/vibration/test", { motor, strength: val(d.vibration)[field] || 75 }); }
       catch (e) { toast(e.message, "error"); }
-      test.disabled = false;
-    } }, "Test");
+    }) }, "Test");
     item.querySelector(".setting-control").append(test);
     rows.append(item);
   }
@@ -954,7 +989,7 @@ function panelPower() {
   wrap.append(notice("warn",
     h("h3", {}, "Factory settings"),
     h("p", {}, "Resets every setting on the controller, including button mapping and the Home light."),
-    h("div", { class: "button-row" }, h("button", { class: "button", onclick: restore }, "Restore factory settings"))));
+    h("div", { class: "button-row" }, h("button", { class: "button", onclick: (e) => restore(e.currentTarget) }, "Restore factory settings"))));
   return wrap;
 }
 
@@ -986,27 +1021,29 @@ async function panelFirmware() {
   }
 
   const status = h("p", { class: "note", "aria-live": "polite" });
-  const check = h("button", { class: "button", onclick: async () => {
-    check.disabled = true; status.textContent = "Checking for new official firmware…";
+  const check = h("button", { class: "button", onclick: () => working(check, "Checking…", async () => {
+    status.textContent = "Checking for new official firmware…";
     try {
       const r = await api("/api/firmware/check", {});
       status.textContent = r.update_available
         ? `GameSir Connect ${r.latest} is available.` : `You have the latest release (GameSir Connect ${r.latest}).`;
     } catch (e) { status.textContent = e.message; }
-    check.disabled = false;
-  } }, "Check for updates");
-  const dl = h("button", { class: "button primary", onclick: async () => {
-    dl.disabled = true; status.textContent = "Downloading GameSir Connect and extracting its firmware. This takes a minute…";
+  }) }, "Check for updates");
+  const dl = h("button", { class: "button primary", onclick: () => working(dl, "Downloading…", async () => {
+    status.textContent = "Downloading GameSir Connect and extracting its firmware. This takes a minute…";
     try {
       const r = await api("/api/firmware/download", {});
       toast(r.updated ? `Downloaded firmware from GameSir Connect ${r.latest}` : "Already up to date");
       render();
-    } catch (e) { status.textContent = e.message; dl.disabled = false; }
-  } }, fw.extracted ? "Download latest firmware" : "Download firmware");
+    } catch (e) { status.textContent = e.message; }
+  }) }, fw.extracted ? "Download latest firmware" : "Download firmware");
   wrap.append(h("div", { class: "button-row" }, check, dl), status);
 
   upd.fw = fw;
-  upd.box = h("div", { class: "update", "aria-live": "polite" }, h("p", { class: "busy" }, "Looking for the controller…"));
+  // Rebuilt (a reconnect re-renders the page): start from what was shown, not a placeholder, so
+  // the page doesn't jump while a step runs.
+  upd.box = h("div", { class: "update", "aria-live": "polite" },
+    ...(upd.data ? updateView() : [h("p", { class: "busy" }, "Looking for the controller…")]));
   upd.shown = "";
   wrap.append(h("h2", {}, "Install firmware"), upd.box);
   pollUpdate();
@@ -1047,18 +1084,35 @@ async function pollUpdate() {
 
 // When a job has just finished: keep the rest of the app in step with the controller.
 async function afterJob(job) {
-  if (!job || job.state === "running" || upd.seenJob === `${job.id}${job.state}`) return;
-  const first = upd.seenJob === null;
+  if (!job) return;
+  if (job.state === "running") {                // seen running here: its result is news to this page
+    if (upd.seenJob === null) upd.seenJob = `${job.id}running`;
+    return;
+  }
+  if (upd.seenJob === `${job.id}${job.state}`) return;
+  const first = upd.seenJob === null;           // finished before this page was opened
   upd.seenJob = `${job.id}${job.state}`;
-  if (first) return;                 // finished before this page was opened
+  if (first) return;
   if (job.state === "failed") { toast(job.error, "error"); return; }
+  if (job.result && job.result.restarted) {        // macOS: the whole round in one go, restart included
+    if (job.result.backup) upd.backup = job.result.backup;
+    toast(job.kind === "backup" ? "Backup saved; the controller is back in normal mode"
+      : job.kind === "install" ? `Firmware ${job.result.version} installed; the controller is back in normal mode`
+      : "Backup written back; the controller is back in normal mode");
+    try {
+      const usb = (await api("/api/devices")).usb;      // no Bluetooth scan for this
+      if (usb.length === 1) await connect(usb[0]);
+    } catch (e) { toast(e.message, "error"); }
+    upd.fw = await api("/api/firmware").catch(() => upd.fw);
+    return;
+  }
   if (job.kind === "backup") { upd.backup = job.result.backup; toast("Backup saved"); }
   if (job.kind === "restore") toast("Backup written back. Restart it to use it.");
   if (job.kind === "install") toast(`Firmware ${job.result.version} installed. Restart it to use it.`);
   if (job.kind === "enter") { app.status = await api("/api/status"); app.dev = null; renderChrome(); }
   if (job.kind === "restart") {
     try {
-      const usb = (await api("/api/scan", {})).filter((d) => d.link === "usb");
+      const usb = (await api("/api/devices")).usb;      // no Bluetooth scan for this
       if (usb.length === 1) await connect(usb[0]);
       toast(job.result && job.result.device === "receiver" ? "The receiver is back in normal mode" : "The controller is back in normal mode");
     } catch (e) { toast(e.message, "error"); }
@@ -1086,10 +1140,29 @@ async function runStep(path, body, title, text, okLabel) {
 
 const addr = (n) => `0x${n.toString(16)}`;
 
-function macosNote() {
+// A backup's time (stored in UTC, as in its file name) in this computer's time zone.
+function localStamp(iso) {
+  const t = new Date(iso);
+  if (isNaN(t)) return iso.replace("T", " ").slice(0, 16);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())} ${p(t.getHours())}:${p(t.getMinutes())}`;
+}
+
+// macOS: one button does the whole round (see /api/update/run); elsewhere the steps go one by one.
+const oneGo = (d) => onMac() && d.mode === "normal" && d.cable;
+const runAll = (action, extra, title, text, okLabel) =>
+  runStep("/api/update/run", { action, ...extra }, title, `${text} ${MAC_PASSWORD_SHORT}`, okLabel);
+
+// macOS: update mode needs administrator rights there, so a password dialog comes up. Say why
+// before it does, in the page and in the confirm dialog right before it.
+const onMac = () => app.meta && app.meta.platform === "macos";
+const MAC_PASSWORD_SHORT = "Next, macOS asks for your password: only an administrator may take the controller's update-mode disk away from macOS. It asks once for this session, and PadSquire never sees the password.";
+function macPasswordNote() {
   return notice("",
-    h("p", {}, h("strong", {}, "Firmware updates aren't available on macOS yet. "),
-      "Backups, updates and restarts use the controller's update mode, which PadSquire can only talk to on Linux so far. Every setting works here."));
+    h("p", {}, h("strong", {}, "Why your Mac asks for your password. "),
+      "In update mode the controller shows up as a USB disk, and macOS lets only an administrator take a disk away from its own disk driver. So when you switch to update mode (or restart the controller from this app), macOS asks for your password in its own dialog."),
+    h("p", {}, "It asks once per session. With it, a small PadSquire helper runs as administrator and holds the controller's update-mode disk until the controller restarts, then quits. It only passes on PadSquire's update commands, the same ones the Linux version sends; the checks on what may be written stay in the app. PadSquire never sees your password: macOS handles it."),
+    h("p", {}, "macOS may then also ask whether \u201cPython\u201d may access a disk. That is PadSquire's helper (PadSquire runs on Python), reaching the controller's update-mode disk; allow it. Each button below does its whole job in one go: it switches the controller to update mode, does the step and restarts it, because on a Mac the controller leaves update mode by itself soon after."));
 }
 
 function updateView() {
@@ -1098,11 +1171,14 @@ function updateView() {
   const job = d.job;
   const running = job && job.state === "running";
   const inUpdate = d.mode === "download";
+  // A one-go action (macOS) passes through update mode and back: keep the page's shape still
+  // meanwhile, so only its progress box changes.
+  const shownInUpdate = inUpdate && !(running && job.one_go);
   const out = [];
 
-  if (!app.meta.update_mode) return [macosNote()];
   const notice = setupNotice(true);
   if (notice) out.push(notice);
+  if (onMac()) out.push(macPasswordNote());
   const device = d.device || "controller";
   const thing = device === "receiver" ? "receiver" : "controller";
   const where = inUpdate ? `${thing === "receiver" ? "Receiver" : "Controller"} in update mode`
@@ -1115,18 +1191,22 @@ function updateView() {
   // 1. update mode
   const steps = h("ol", { class: "steps" });
   let first;
-  if (inUpdate) {
+  if (shownInUpdate) {
     first = h("p", { class: "note" }, thing === "receiver"
       ? "The receiver is in update mode. The controller can't connect through it until you restart it."
       : "The controller is in update mode. Its normal functions are off until you restart it.");
+  } else if (d.mode === "normal" && onMac()) {
+    first = h("p", { class: "note" }, "On a Mac there is no separate switch: each button below switches the controller to update mode, does its step and restarts it, in one go.");
   } else if (d.mode === "normal") {
     const enter = (target, title, text) => runStep("/api/update/enter", { confirm: true, target }, title, text, "Switch");
     first = h("div", {}, h("p", { class: "note" }, "Nothing is written in this step."),
       h("div", { class: "button-row" },
-        d.cable ? h("button", { class: "button primary", disabled: running, onclick: () => enter("controller", "Switch the controller to update mode?",
-          "The controller stops working as a gamepad until you restart it from this page. Nothing is written yet.") }, "Switch the controller to update mode") : null,
-        d.receiver ? h("button", { class: `button${d.cable ? "" : " primary"}`, disabled: running, onclick: () => enter("receiver", "Switch the receiver to update mode?",
-          "The controller can't connect through the receiver until you restart the receiver from this page. Nothing is written yet.") }, "Switch the receiver to update mode") : null),
+        d.cable ? jobButton(job, ["enter"], "Switching…", h("button", { class: "button primary", disabled: running, onclick: () => enter("controller", "Switch the controller to update mode?",
+          "The controller stops working as a gamepad until you restart it from this page. Nothing is written yet."
+          + (onMac() ? ` ${MAC_PASSWORD_SHORT}` : "")) }, "Switch the controller to update mode")) : null,
+        d.receiver ? jobButton(job, ["enter"], "Switching…", h("button", { class: `button${d.cable ? "" : " primary"}`, disabled: running, onclick: () => enter("receiver", "Switch the receiver to update mode?",
+          "The controller can't connect through the receiver until you restart the receiver from this page. Nothing is written yet."
+          + (onMac() ? ` ${MAC_PASSWORD_SHORT}` : "")) }, "Switch the receiver to update mode")) : null),
       h("p", { class: "note" }, "The controller's firmware is installed by cable; the receiver's through the receiver itself."));
   } else first = h("p", { class: "note" }, "Connect the controller by cable, or plug in the 2.4 GHz receiver with the controller on, and switch it to PC/Xbox mode: hold Menu + View until the Home light is green.");
   steps.append(h("li", { class: inUpdate ? "done" : "" }, inUpdate ? stepDone() : null, h("h3", {}, "Switch to update mode"), first));
@@ -1138,15 +1218,17 @@ function updateView() {
   const backupStep = h("li", { class: mine.length ? "done" : "" }, mine.length ? stepDone() : null, h("h3", {}, `Back up the ${thing}`));
   if (mine.length) {
     const sel = h("select", { class: "input", "aria-label": "Backup", disabled: running, onchange: (e) => { upd.backup = e.target.value; pollUpdate(); } },
-      mine.map((b) => h("option", { value: b.name, selected: b.name === upd.backup }, `${b.created.replace("T", " ").slice(0, 16)}  (${b.name})`)));
+      mine.map((b) => h("option", { value: b.name, selected: b.name === upd.backup }, `${localStamp(b.created)}  (${b.name})`)));
     backupStep.append(h("p", { class: "note" }, d.identity ? `Backups of this ${thing}:` : "Backups on this computer:"), sel);
   } else {
     backupStep.append(h("p", { class: "note" }, thing === "receiver"
       ? "There is no backup of this receiver yet. Every write needs one: it holds the firmware and the pairing with your controller."
       : "There is no backup of this controller yet. Every write needs one: it holds the firmware, settings, Bluetooth address and calibration."));
   }
-  backupStep.append(h("div", { class: "button-row" }, h("button", { class: `button${mine.length ? "" : " primary"}`, disabled: running || !inUpdate,
-    onclick: () => runStep("/api/update/backup") }, mine.length ? "Make another backup" : "Make a backup")),
+  backupStep.append(h("div", { class: "button-row" }, jobButton(job, ["backup"], "Backing up…", h("button", { class: `button${mine.length ? "" : " primary"}`, disabled: running || !(inUpdate || oneGo(d)),
+    onclick: () => inUpdate ? runStep("/api/update/backup")
+      : runAll("backup", {}, "Make a backup?", "The controller switches to update mode, its whole flash is read twice and compared, and it restarts. Nothing is written to it.", "Back up") },
+    mine.length ? "Make another backup" : "Make a backup"))),
     h("p", { class: "note" }, "Backups are saved in ~/.local/share/padsquire/backups. Copy them somewhere safe."));
   steps.append(backupStep);
 
@@ -1169,25 +1251,32 @@ function updateView() {
     if (check && check.warnings.length) install.append(h("ul", { class: "warnings" }, check.warnings.map((w) => h("li", {}, w))));
     const f = files.find((x) => x.file === upd.file);
     install.append(h("div", { class: "button-row" },
-      h("button", { class: "button primary", disabled: running || !inUpdate || !(check && check.allowed), onclick: () => runStep("/api/update/install",
-        { file: upd.file, backup: upd.backup, confirm: true }, `Install firmware ${f && f.version}?`,
-        `The firmware area of the ${thing} is erased and rewritten. Keep it plugged in until it finishes. If anything fails, it stays in update mode and you can run it again or write the backup back.`,
-        "Install") }, `Install firmware ${f ? f.version : ""}`)));
+      jobButton(job, ["install"], "Installing…", h("button", { class: "button primary", disabled: running || !(inUpdate || oneGo(d)) || !(check && check.allowed), onclick: () => inUpdate
+        ? runStep("/api/update/install",
+          { file: upd.file, backup: upd.backup, confirm: true }, `Install firmware ${f && f.version}?`,
+          `The firmware area of the ${thing} is erased and rewritten. Keep it plugged in until it finishes. If anything fails, it stays in update mode and you can run it again or write the backup back.`,
+          "Install")
+        : runAll("install", { file: upd.file, backup: upd.backup, confirm: true }, `Install firmware ${f && f.version}?`,
+          "The controller switches to update mode, its firmware area is erased and rewritten and checked, and it restarts. Keep it plugged in until it finishes. If the write fails it doesn't restart: run it again straight away, or write the backup back.",
+          "Install") }, `Install firmware ${f ? f.version : ""}`))));
   }
   install.append(h("p", { class: "note" }, thing === "receiver"
       ? "To go back to the firmware in a backup, write the backup back. The pairing stays as it is."
       : "To go back to the firmware in a backup, write the backup back. Settings, Bluetooth address and calibration stay as they are."),
-    h("div", { class: "button-row" }, h("button", { class: "button", disabled: running || !inUpdate || !upd.backup, onclick: () => runStep("/api/update/restore",
-      { backup: upd.backup, confirm: true }, "Write the backup back?",
-      `The firmware area of the ${thing} is erased and rewritten with the firmware in the backup. Keep it plugged in until it finishes.`, "Write it back") },
-      "Write the backup back")));
+    h("div", { class: "button-row" }, jobButton(job, ["restore"], "Writing it back…", h("button", { class: "button", disabled: running || !(inUpdate || oneGo(d)) || !upd.backup, onclick: () => inUpdate
+      ? runStep("/api/update/restore",
+        { backup: upd.backup, confirm: true }, "Write the backup back?",
+        `The firmware area of the ${thing} is erased and rewritten with the firmware in the backup. Keep it plugged in until it finishes.`, "Write it back")
+      : runAll("restore", { backup: upd.backup, confirm: true }, "Write the backup back?",
+        "The controller switches to update mode, its firmware area is erased and rewritten with the firmware in the backup and checked, and it restarts. Keep it plugged in until it finishes.", "Write it back") },
+      "Write the backup back"))));
   steps.append(install);
 
-  // 4. restart
-  steps.append(h("li", {}, h("h3", {}, `Restart the ${thing}`),
+  // 4. restart (on a Mac only needed when it is stuck in update mode; the buttons above restart it)
+  if (!onMac() || shownInUpdate) steps.append(h("li", {}, h("h3", {}, `Restart the ${thing}`),
     d.stay ? notice("danger", "The last write did not verify. Don't restart or unplug the controller: run the same step again.") : null,
-    h("div", { class: "button-row" }, h("button", { class: "button", disabled: running || !inUpdate || d.stay,
-      onclick: () => runStep("/api/update/restart") }, `Restart ${thing}`))));
+    h("div", { class: "button-row" }, jobButton(job, ["restart"], "Restarting…", h("button", { class: "button", disabled: running || !inUpdate || d.stay,
+      onclick: () => runStep("/api/update/restart") }, `Restart ${thing}`)))));
   out.push(steps);
   out.push(h("p", { class: "note" }, h("strong", {}, "Not known yet: "),
     "how to get the controller into update mode if its firmware no longer starts. The M + X + B shortcut goes through the firmware, so it wouldn't help then. That's why a write that fails keeps the controller in update mode until it has been done again: don't unplug or restart it in between."));
@@ -1576,22 +1665,30 @@ async function panelSetup() {
     qa("The controller isn't found",
       "Check the Home light is green: hold Menu and View for 2 seconds; each press moves to the next mode (green, red, blue). In blue mode it pretends to be a PlayStation controller and can't be configured.",
       "By cable, try another cable or port: some cables only charge. Through the receiver, turn the controller on and wait for it to link before switching to green.",
-      app.meta.update_mode
+      !onMac()
         ? "If it shows up but can't be opened, the device permissions above aren't in place yet, or the controller was plugged in before they were: unplug it and plug it in again."
         : "If it shows up but can't be opened, another program has it: macOS lets only one program use it at a time. Close other PadSquire windows and GameSir software, or unplug it and plug it in again."),
-    app.meta.update_mode ? qa("The live view or the controller stops responding",
+    qa("The live view or the controller stops responding",
       "This has been seen right after a change, mostly through the receiver. Use Restart on the Buttons page: by cable it restarts the controller, through the receiver it restarts the receiver. Nothing is changed or erased, and settings are kept.",
-      "If that doesn't help, turn the controller off and on: hold Home for about 5 seconds, turn it on, and switch to green.")
-    : qa("The controller stops responding",
-      "This has been seen right after a change, mostly through the receiver; settings are kept. Turn the controller off and on: hold Home for about 5 seconds, turn it on, and switch to green."),
+      "If that doesn't help, turn the controller off and on: hold Home for about 5 seconds, turn it on, and switch to green."),
     qa("Bluetooth doesn't find it",
       "Put the controller in Android mode: hold Home and A for 2 seconds until the light flashes yellow. Pair it once in your system's Bluetooth settings, then use Find controllers here."),
-    !app.meta.update_mode ? null : qa("Switching to update mode doesn't work",
-      "The sg module must be loaded (see above). Use a USB port on the computer itself or a powered USB 2 hub; some hubs disturb the controller's update mode.",
+    onMac() ? qa("Why does my Mac ask for my password?",
+      "In update mode the controller shows up as a USB disk, and macOS lets only an administrator take a disk away from its own disk driver. Firmware backups, updates and the restart button all need update mode, so they ask for your password in macOS's own dialog, once per session; PadSquire never sees it.",
+      "With it, a small PadSquire helper runs as administrator and holds the controller's update-mode disk until the controller restarts, then quits. It only passes on PadSquire's update commands, the same ones the Linux version sends, and can't send the one command that would change the chip for good. If you cancel the dialog, nothing happens and the controller stays as it was.") : null,
+    qa("Switching to update mode doesn't work",
+      onMac()
+        ? "Use a USB port on the Mac itself or a powered USB 2 hub; some hubs disturb the controller's update mode. If the password dialog didn't come up, look behind other windows."
+        : "The sg module must be loaded (see above). Use a USB port on the computer itself or a powered USB 2 hub; some hubs disturb the controller's update mode.",
       "Nothing has been written at that point. To get the controller back: unplug it, hold Home for about 5 seconds, and turn it on again. The receiver: unplug it and plug it back in."),
-    !app.meta.update_mode ? null : qa("A firmware write fails",
+    qa("The controller stays on and the buttons do nothing",
+      "It's in update mode. That mode is built into the chip and doesn't run the firmware, so Home can't turn it off, and on battery it stays on when unplugged. Your firmware and settings are still there.",
+      "Plug it in by cable. " + (onMac()
+        ? "On a Mac it restarts by itself within about a minute; or use Restart on the Firmware page."
+        : "Then use Restart on the Firmware page, or run: padsquire uboot restart")),
+    qa("A firmware write fails",
       "The controller or receiver stays in update mode on purpose. Don't unplug it and don't restart it: run the same step again. If it keeps failing, write your backup back the same way. Every write is checked block by block, and nothing outside the firmware area is ever touched."),
-    !app.meta.update_mode ? null : qa("Where are my backups?",
+    qa("Where are my backups?",
       "In ~/.local/share/padsquire/backups, one file per backup with a .json next to it. They hold the firmware and your controller's Bluetooth pairing and calibration: copy them somewhere safe, and don't share them."),
     qa("Starting this app",
       command("padsquire gui"),
@@ -1599,11 +1696,12 @@ async function panelSetup() {
   return wrap;
 }
 
-async function restore() {
+async function restore(button) {
   const yes = await confirmDialog("Restore factory settings?",
     "Every setting on the controller goes back to how it shipped. This can't be undone.", "Restore");
   if (!yes) return;
-  await save("/api/restore", { confirm: true }, (state) => { app.dev = state; toast("Factory settings restored"); render(); }, null);
+  await working(button, "Restoring…", () =>
+    save("/api/restore", { confirm: true }, (state) => { app.dev = state; toast("Factory settings restored"); render(); }, null));
 }
 
 // ---------------------------------------------------------------------------

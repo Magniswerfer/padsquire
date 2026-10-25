@@ -88,8 +88,14 @@ there's nothing to set up and no `sudo`. The same installer works on a Mac.
 - **Works:** every setting and remap by cable, and the live sticks, triggers and buttons view,
   tested on one controller. The receiver and Bluetooth should work the same way but aren't
   tested on a Mac yet.
-- **Not yet:** firmware updates, backups and the restart button (they need update mode, which
-  only Linux can talk to so far).
+- **Firmware updates, backups and restarts** work by cable too (tested on one controller). In
+  update mode the controller is a USB disk, and macOS lets only an administrator take a disk
+  away from its disk driver, so these ask for your password in macOS's own dialog. A small
+  PadSquire helper then runs as administrator until the controller restarts, passing on only
+  PadSquire's update commands. On a Mac each button does its whole job in one go (switch,
+  step, restart), because there the controller leaves update mode by itself soon after.
+  macOS may also ask whether "Python" may access a disk: that's the same helper.
+- **Not tested on a Mac yet:** the receiver's firmware.
 - **Playing games:** in PC/Xbox mode (green) Steam recognises it as an Xbox controller, because
   Steam brings its own driver; macOS itself has none for that mode. For games outside Steam, hold
   Menu + View until the light is blue: macOS sees a DualShock 4 there and supports it without a
@@ -107,7 +113,7 @@ there's nothing to set up and no `sudo`. The same installer works on a Mac.
 
 ## Firmware updates
 
-Linux only, for now. On the app's **Firmware** page: download the firmware (the app checks for new official firmware
+On the app's **Firmware** page (on a Mac, see [On a Mac](#on-a-mac) for the password): download the firmware (the app checks for new official firmware
 and verifies its checksums), switch the controller or the receiver to update mode, make a
 backup, install, restart. The controller's firmware is installed by cable; the receiver's through
 the receiver itself.
@@ -162,8 +168,9 @@ padsquire uboot --help                          # update mode: backup, restore, 
 ```
 
 `usb` works by cable and through the receiver; `ble` does the same over Bluetooth, and
-`--simulate` tries any command without a controller. `update`, `uboot` and the firmware commands
-need Linux for anything that touches the device. `padsquire --help` lists everything. For
+`--simulate` tries any command without a controller. On a Mac, `uboot` commands that use update
+mode run with `sudo`, and need `--restart` (the controller leaves update mode once a command lets
+go of it). `padsquire --help` lists everything. For
 automatic weekly firmware checks there is a systemd timer in `contrib/systemd/`.
 
 ## How it works

@@ -35,6 +35,13 @@ def _doc(title: str, url: str) -> dict:
 
 def install_command(package: str) -> tuple[str, list[str], list[dict]]:
     """(command, what it does, documentation) for installing a package on this distribution."""
+    if hid.MACOS:
+        name = {"7zip": "sevenzip"}.get(package, package)
+        return (f"brew install {name}",
+                [f"brew install {name} downloads {package} from Homebrew and installs it for your user. "
+                 "Homebrew is the usual way to install command-line tools on a Mac; it needs to be "
+                 "installed first.", f"To undo it: brew uninstall {name}"],
+                [_doc("Homebrew", "https://brew.sh/"), _doc("brew install", "https://docs.brew.sh/Manpage#install-options-formulacask-")])
     ids = _distro()
     sudo = "sudo runs it as the administrator, because installing software changes the system; it asks for your password."
     if ids & {"fedora", "rhel", "centos", "nobara"}:
@@ -100,11 +107,35 @@ def _with(c: tuple[str, list[str], list[dict]], why: str, doc: dict) -> tuple[st
     return command, [why, *explain], [doc, *docs]
 
 
+def _seven_zip_check() -> dict:
+    try:
+        seven = installer.find_7zip()
+    except installer.ExtractError:
+        seven = None
+    return {"id": "7zip", "title": "7-Zip", "ok": bool(seven), "need": "updates",
+            "detail": f"Found ({seven})." if seven else
+                      "Needed to unpack GameSir's firmware from GameSir Connect's installer.",
+            **_cmd(None if seven else _with(install_command("7zip"),
+                "7-Zip unpacks archives. GameSir ships its firmware inside the GameSir Connect installer, "
+                "which is one.", _doc("7-Zip", "https://www.7-zip.org/")))}
+
+
+def _firmware_check(fw_dir: Path) -> dict:
+    try:
+        bundled = installer.load_manifest(fw_dir)
+    except (OSError, KeyError, ValueError):
+        bundled = []
+    return {"id": "firmware", "title": "Firmware downloaded", "ok": bool(bundled), "need": "updates",
+            "detail": f"{len(bundled)} files in {fw_dir}." if bundled else
+                      "Use Download firmware on the Firmware page. It fetches GameSir Connect and extracts it.",
+            **_cmd(None)}
+
+
 def checks(fw_dir: Path) -> list[dict]:
     """Each check: id, title, ok, need ("settings", "updates" or "optional"), detail, and for
     anything missing a command with a plain explanation of each part and links to its documentation."""
     if hid.MACOS:
-        return _macos_checks()
+        return _macos_checks(fw_dir)
     out = []
     rules = next((d / RULES_NAME for d in RULES_DIRS if (d / RULES_NAME).exists()), None)
     devices = hid.find()
@@ -139,25 +170,7 @@ def checks(fw_dir: Path) -> list[dict]:
                      _doc("tee", f"{MAN}/man1/tee.1.html"),
                      _doc("The sg driver", "https://tldp.org/HOWTO/SCSI-Generic-HOWTO/")]))})
 
-    try:
-        seven = installer.find_7zip()
-    except installer.ExtractError:
-        seven = None
-    out.append({"id": "7zip", "title": "7-Zip", "ok": bool(seven), "need": "updates",
-                "detail": f"Found ({seven})." if seven else
-                          "Needed to unpack GameSir's firmware from GameSir Connect's installer.",
-                **_cmd(None if seven else _with(install_command("7zip"),
-                    "7-Zip unpacks archives. GameSir ships its firmware inside the GameSir Connect installer, "
-                    "which is one.", _doc("7-Zip", "https://www.7-zip.org/")))})
-
-    try:
-        bundled = installer.load_manifest(fw_dir)
-    except (OSError, KeyError, ValueError):
-        bundled = []
-    out.append({"id": "firmware", "title": "Firmware downloaded", "ok": bool(bundled), "need": "updates",
-                "detail": f"{len(bundled)} files in {fw_dir}." if bundled else
-                          "Use Download firmware on the Firmware page. It fetches GameSir Connect and extracts it.",
-                **_cmd(None)})
+    out += [_seven_zip_check(), _firmware_check(fw_dir)]
 
     try:
         import bleak  # noqa: F401
@@ -194,9 +207,9 @@ def _device_check(devices, download=()) -> dict:
             **_cmd(None)}
 
 
-def _macos_checks() -> list[dict]:
+def _macos_checks(fw_dir: Path) -> list[dict]:
     """On macOS the system's own HID driver serves the settings channel: nothing to set up for
-    settings. Firmware updates need the update-mode disk, which only works on Linux so far."""
+    settings. Update mode asks for the administrator password each session (macos_helper)."""
     out = []
     try:
         import hid as _hidapi  # noqa: F401
@@ -222,10 +235,30 @@ def _macos_checks() -> list[dict]:
                           "without a driver. Change settings in green; they stay on the controller.",
                 **_cmd(None)})
 
-    out.append({"id": "updates", "title": "Firmware updates", "ok": False, "need": "optional",
-                "detail": "Not available on macOS yet: backups, updates and the restart button use the "
-                          "controller's update mode, which PadSquire can only talk to on Linux so far.",
-                **_cmd(None)})
+    try:
+        import libusb_package  # noqa: F401
+        import usb  # noqa: F401
+        usb_ok = True
+    except ImportError:
+        usb_ok = False
+    out.append({"id": "updates", "title": "Firmware updates (asks for your password)", "ok": usb_ok,
+                "need": "updates",
+                "detail": ("Ready. In update mode the controller is a USB disk, and macOS lets only an "
+                           "administrator take a disk away from its own disk driver. So switching to update "
+                           "mode, and the restart button, ask for your password in macOS's own dialog, once "
+                           "per session. A small PadSquire helper then runs as administrator until the "
+                           "controller restarts, passing on only PadSquire's update commands. PadSquire "
+                           "never sees the password.") if usb_ok else
+                          "The pyusb and libusb-package Python packages are missing.",
+                **_cmd(None if usb_ok else (
+                    f"{sys.executable} -m pip install pyusb libusb-package",
+                    ["This runs pip from PadSquire's own Python environment and installs pyusb and "
+                     "libusb-package, which PadSquire uses to reach the controller's update mode on macOS. "
+                     "It only changes PadSquire's own environment, not the system.",
+                     f"To undo it: {sys.executable} -m pip uninstall pyusb libusb-package"],
+                    [_doc("pip install", "https://pip.pypa.io/en/stable/cli/pip_install/"),
+                     _doc("pyusb", "https://github.com/pyusb/pyusb")]))})
+    out += [_seven_zip_check(), _firmware_check(fw_dir)]
 
     try:
         import bleak  # noqa: F401

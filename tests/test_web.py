@@ -14,6 +14,7 @@ API = {"X-PadSquire": "1"}
 
 
 def run(fn, fw_dir, **kw):
+    kw.setdefault("usb_finder", lambda: [])   # never the real controller, if one is plugged in
     async def go():
         app = build_app(TOKEN, fw_dir, **kw)
         async with TestClient(TestServer(app, host="127.0.0.1")) as client:
@@ -197,7 +198,7 @@ def test_remap_every_key(tmp_path):
 
 @pytest.mark.parametrize("macos, ids", [
     (False, {"udev", "sg", "7zip", "firmware", "bluetooth", "device"}),
-    (True, {"hidapi", "play", "updates", "bluetooth", "device"}),
+    (True, {"hidapi", "play", "updates", "7zip", "firmware", "bluetooth", "device"}),
 ])
 def test_setup_checks_explain_their_commands(tmp_path, monkeypatch, macos, ids):
     from padsquire import hid
@@ -211,20 +212,10 @@ def test_setup_checks_explain_their_commands(tmp_path, monkeypatch, macos, ids):
             if x["command"]:                         # every command says what it does
                 assert x["explain"] and all(d["url"].startswith("https://") for d in x["docs"])
         meta = (await (await c.get("/api/meta", headers=API)).json())["data"]
-        assert meta["update_mode"] is not macos
+        assert meta["platform"] == ("macos" if macos else "linux")
     run(go, tmp_path)
 
 
-def test_macos_refuses_update_mode(tmp_path, monkeypatch):
-    from padsquire import hid
-    monkeypatch.setattr(hid, "MACOS", True)
-
-    async def go(c):
-        await login(c)
-        for path in ("/api/update/enter", "/api/update/reboot"):
-            r = await c.post(path, json={"confirm": True}, headers=API)
-            assert r.status == 409 and "macOS" in (await r.json())["error"]
-    run(go, tmp_path)
 
 
 def test_devices_lists_what_is_plugged_in(tmp_path):
@@ -277,3 +268,15 @@ def test_bye_needs_the_cookie_but_no_header(tmp_path):
         await c.get("/api/status", headers=API)
         assert c.server.app[PRESENCE].bye_at is None
     run(go, tmp_path)
+
+
+def test_one_go_route_checks_its_input(tmp_path):
+    async def go(c):
+        await login(c)
+        r = await c.post("/api/update/run", json={"action": "erase"}, headers=API)
+        assert r.status == 400 and "action" in (await r.json())["error"]
+        r = await c.post("/api/update/run", json={"action": "install"}, headers=API)
+        assert r.status == 400 and "confirmation" in (await r.json())["error"]
+        r = await c.post("/api/update/run", json={"action": "backup"}, headers=API)
+        assert r.status == 400 and "by cable" in (await r.json())["error"]     # nothing plugged in
+    run(go, tmp_path, usb_finder=lambda: [])

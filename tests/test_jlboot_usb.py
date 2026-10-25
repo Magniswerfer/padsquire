@@ -107,11 +107,18 @@ def test_data_out_and_a_failed_status():
     assert not disk.driver                                         # it had none to give back
 
 
+def test_registry_devices_from_ioreg(monkeypatch):
+    plist = jlboot.plistlib.dumps([{"idVendor": 0x4C4A, "idProduct": 0x2342, "locationID": 0x01100000, "USB Address": 3},
+                                   {"idVendor": 0x05AC, "idProduct": 0x8104, "locationID": 0x00200000, "USB Address": 1}])
+    monkeypatch.setattr(jlboot.subprocess, "run", lambda *a, **k: type("R", (), {"stdout": plist})())
+    assert jlboot._registry_devices() == [("usb:1:3", 0x2342)]
+
+
 def test_uboot_devices_from_usb_ids(monkeypatch):
     class D:
         def __init__(self, pid, address):
             self.idProduct, self.bus, self.address = pid, 1, address
     monkeypatch.setattr(jlboot, "MACOS", True)
-    monkeypatch.setattr(jlboot, "_usb_devices", lambda: [D(0x2342, 5), D(0x3442, 6), D(0x1234, 7)])
+    monkeypatch.setattr(jlboot, "_registry_devices", lambda: [("usb:1:5", 0x2342), ("usb:1:6", 0x3442), ("usb:1:7", 0x1234)])
     assert [(d.path, d.vendor, d.chip) for d in jlboot.find()] == [("usb:1:5", "BR23", "br23"), ("usb:1:6", "BD19", "bd19")]
     assert len(jlboot.disks()) == 3

@@ -6,9 +6,10 @@ Bluetooth, and firmware updates of the controller and the receiver. Built for in
 by studying GameSir Connect 1.14.5/1.16.7 (Windows) and the GameSir Android app 5.8.20. Tested on one
 controller (firmware 7701 and 8201) and its receiver (2800); Bluetooth is not yet tested on hardware.
 Settings and the live view by cable also work on macOS (hidapi, `0xF4` state reports; confirmed
-2026-10-25), and firmware backup, restore and update from the CLI with sudo (raw USB, all four
-stages confirmed 2026-10-25); the app doesn't offer them there yet. Steam on macOS owns the Xbox
-interface (own driver).
+2026-10-25), and firmware backup, restore and update (raw USB, all four stages confirmed
+2026-10-25): from the CLI with sudo, and in the app through `macos_helper` (an administrator
+helper started via a PadSquire-named osacompile applet and `launchctl asuser`; one-go
+`/api/update/run` actions). Steam on macOS owns the Xbox interface (own driver).
 
 ## Commands
 
@@ -46,6 +47,9 @@ padsquire uboot test-write | restore | flash ... --confirm        # writes (need
   refuses without `--backup`.
 - `jlwrite.py`: the only code that erases or writes flash (FB01, FB04), inside one window that
   may not touch a reserved area; `burn()` follows JieLi's order. Tests: `tests/test_jlwrite.py`.
+- `macos_helper.py`: macOS only. The settings app's administrator helper: forwards the allowed
+  SCSI commands over a user-only Unix socket, holds the device for a session, sends an INQUIRY
+  keepalive. Tests never start it (`tests/conftest.py` runs the Linux paths everywhere).
 - `updatemode.py`: the download-mode steps (enter, backup, restore, flash, restart) shared by
   `cli_uboot.py` and `web/update.py`, which runs them as background jobs for the Firmware page.
 - `web/setup.py`: Setup and help checks and `/api/devices` (sysfs polling for plug in/out).
@@ -77,8 +81,9 @@ Open:
 3. **Recovery if the firmware no longer starts**: TBD (PROTOCOL.md section 3, "Recovery").
 4. Controller firmware updates through the receiver (JieLi's HID over-the-air updater): research.
 5. **macOS**: blue (DualShock 4) mode for games untested; receiver and Bluetooth untested there;
-   update mode in the app needs a root helper (the CLI runs under sudo; steps need `--restart`,
-   see PROTOCOL.md). macOS support ships
+   the app's install and restore are tested from the CLI path only (the app's one-go backup is
+   confirmed); the receiver's firmware untested there; the disk-access prompt names "Python".
+   macOS support ships
    with the next release (PyPI 0.1.3 has none, so the installer gets it only after a release).
 
 ## Next steps (as of 2026-10-24)

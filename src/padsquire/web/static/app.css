@@ -251,8 +251,13 @@ input[type="color"] {
   content: ""; width: 1rem; height: 1rem; flex: none; border-radius: 50%;
   border: 2px solid var(--line-strong); border-top-color: var(--accent);
 }
+/* a button whose work is under way: disabled, a spinner and a label saying what happens */
+.button.working::before {
+  content: ""; width: .9em; height: .9em; flex: none; margin-right: var(--space-2); border-radius: 50%;
+  border: 2px solid currentColor; border-top-color: transparent; opacity: .8;
+}
 @media (prefers-reduced-motion: no-preference) {
-  .busy::before { animation: spin .8s linear infinite; }
+  .busy::before, .button.working::before { animation: spin .8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 }
 

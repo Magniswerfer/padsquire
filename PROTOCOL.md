@@ -71,6 +71,30 @@ device, macOS takes it back and resets it, and the controller leaves download mo
 (within seconds to minutes). So on macOS a step and the restart run in one session
 (`--restart`); a separate `uboot restart` can find it gone, or half gone (`fb06` I/O error).
 
+**Stuck after taking the disk too early (seen once, 2026-10-25, the settings app's helper).** The
+helper took the disk within a second of it appearing, while macOS was still attaching its disk
+driver: libusb's detach/claim failed with "Other error", and afterwards **every** libusb program
+saw no USB devices at all (`darwin_device_from_service ... out of resources`). The controller sat
+in download mode; that mode runs from ROM, so the buttons do nothing, and on battery it stays on
+when unplugged. Plugging it back in cleared it: it enumerated as `BR23UBOOT1.00` again, libusb
+saw it normally, and within about a minute it restarted into normal mode by itself (firmware and
+settings unchanged; nothing had been sent). Since then `macos_helper` leaves a new download-mode
+disk to macOS for 2 s and retries, and `UsbBotDevice` hands a half-taken device back to macOS.
+
+**The settings app on macOS (2026-10-25).** Three things decided how it works:
+- *Who else has the device.* On macOS every libusb lookup opens each device it lists and keeps
+  it open. While the app polled for download mode with libusb, its administrator helper's
+  detach/claim failed (`IOCreatePlugInInterfaceForService: out of resources`). The app now looks
+  in the device registry (`ioreg`), and only the helper uses libusb.
+- *How the helper is started.* Started from `osascript ... with administrator privileges` it is
+  root but outside the user's login session, and claiming failed the same way; started with
+  `sudo` from a terminal, or through `launchctl asuser <uid>` from the password dialog, it works.
+  The dialog comes from a small `osacompile` applet named PadSquire, so it names PadSquire.
+- *The chip doesn't wait.* In download mode the BR23 restarts into its firmware by itself after a
+  short while, even while the helper holds the disk. So on macOS each app action runs in one go
+  (switch, identify, step, restart), and the helper sends an INQUIRY every 2 s between steps.
+  Confirmed: a backup through the app, password to restart in about 10 s.
+
 **`0xF4` state report layout (confirmed 2026-10-25, firmware 8201, by cable, mode Mapped 2).** About
 66 a second once switched on; all zero at rest apart from the fixed bytes. Byte 0 `F4`, 1 `00`,
 2 `17` (length 23), 3 `00` (seen so far). **Buttons** as bits: byte 4 A `01`, B `02`, X `08`,

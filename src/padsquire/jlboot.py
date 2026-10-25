@@ -21,7 +21,9 @@ from __future__ import annotations
 import ctypes
 import hashlib
 import os
+import plistlib
 import struct
+import subprocess
 import sys
 import urllib.request
 from dataclasses import dataclass
@@ -187,6 +189,12 @@ class UsbBotDevice:
                 self.detached = True
             usb.util.claim_interface(device, self.intf)
         except usb.core.USBError as e:
+            if self.detached:                  # don't leave it half taken: give it back to macOS
+                try:
+                    device.attach_kernel_driver(self.intf)
+                except usb.core.USBError:
+                    pass
+            usb.util.dispose_resources(device)
             if e.errno == 13 or "Access denied" in str(e):
                 raise JLBootError("macOS lets only the administrator take the update-mode disk from its "
                                   "disk driver: run this with sudo") from None
@@ -235,6 +243,23 @@ class UsbBotDevice:
         usb.util.dispose_resources(self.dev)
 
 
+def _registry_devices() -> list[tuple[str, int]]:
+    """JieLi USB devices from macOS's device registry: (usb:<bus>:<address>, product ID).
+
+    Not libusb: on macOS every libusb lookup opens each device and keeps it open, and while the
+    settings app held the download-mode disk like that, its administrator helper couldn't take
+    it ("Other error", 2026-10-25). The registry opens nothing. Bus and address are worked out
+    the way libusb does (bus = locationID >> 24), so the paths match _usb_path()."""
+    try:
+        out = subprocess.run(["ioreg", "-a", "-r", "-c", "IOUSBHostDevice", "-d", "1"],
+                             capture_output=True, check=False, timeout=10).stdout
+        devices = plistlib.loads(out) if out.strip() else []
+    except (OSError, subprocess.SubprocessError, plistlib.InvalidFileException, ValueError):
+        return []
+    return [(f"usb:{d.get('locationID', 0) >> 24}:{d.get('USB Address', 0)}", d.get("idProduct", 0))
+            for d in devices if d.get("idVendor") == JIELI_VID]
+
+
 def _usb_devices():
     libusb_package, _ = _usb()
     return list(libusb_package.find(find_all=True, idVendor=JIELI_VID))
@@ -271,12 +296,8 @@ def disks(sys_root: Path = Path("/sys"), dev_root: Path = Path("/dev")) -> list[
     """Every SCSI generic node with its INQUIRY strings, as the kernel cached them (no I/O).
     On macOS: every JieLi USB device, from its USB IDs (also no I/O, and no root needed)."""
     if MACOS:
-        try:
-            found = _usb_devices()
-        except JLBootError:
-            return []
-        return [UbootDevice(_usb_path(d), UBOOT_PIDS.get(d.idProduct, f"{d.idProduct:04x}"),
-                            "UBOOT1.00" if d.idProduct in UBOOT_PIDS else "unknown") for d in found]
+        return [UbootDevice(path, UBOOT_PIDS.get(pid, f"{pid:04x}"), "UBOOT1.00" if pid in UBOOT_PIDS else "unknown")
+                for path, pid in _registry_devices()]
     out = []
     for node in sorted((sys_root / "class" / "scsi_generic").glob("sg*")):
         try:

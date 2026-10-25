@@ -19,6 +19,20 @@ def _private_xdg(tmp_path_factory, monkeypatch):
     monkeypatch.setenv("XDG_CACHE_HOME", str(root / "cache"))
 
 
+@pytest.fixture(autouse=True)
+def _no_real_devices(monkeypatch):
+    """Tests run the Linux code paths with fakes, on any machine. On macOS the real ones would
+    read the device registry and start the administrator helper, whose password dialog would
+    pop up on the desktop. The macOS tests switch MACOS on themselves, without running jobs."""
+    from padsquire import hid, jlboot, macos_helper
+
+    def no_helper(*args, **kwargs):
+        raise RuntimeError("tests never start the administrator helper")
+    monkeypatch.setattr(jlboot, "MACOS", False)
+    monkeypatch.setattr(hid, "MACOS", False)
+    monkeypatch.setattr(macos_helper, "start", no_helper)
+
+
 def write_asar(path: Path, files: dict[str, bytes]) -> None:
     """Write a minimal Electron asar archive."""
     tree, blob, off = {"files": {}}, b"", 0

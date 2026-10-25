@@ -73,7 +73,14 @@ def find_path(path: str | None = None) -> str:
     return found[0].path
 
 
-def open_device(path: str | None = None) -> tuple[jlboot.SgDevice | jlboot.UsbBotDevice, jlboot.JLBoot]:
+def open_device(path: str | None = None):
+    """(device, JLBoot) for the download-mode chip. On macOS, through the settings app's
+    administrator helper when it runs (macos_helper), else directly (the CLI, under sudo)."""
+    if jlboot.MACOS and path is None:
+        from . import macos_helper
+        if macos_helper.running():
+            dev = macos_helper.HelperDevice()
+            return dev, jlboot.JLBoot(dev.execute)
     dev = jlboot.open_device(find_path(path))
     return dev, jlboot.JLBoot(dev.execute)
 

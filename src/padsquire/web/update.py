@@ -25,9 +25,10 @@ from ..gcm import ProtocolError
 class Job:
     _ids = itertools.count(1)
 
-    def __init__(self, kind: str):
+    def __init__(self, kind: str, one_go: bool = False):
         self.id = next(self._ids)
         self.kind = kind
+        self.one_go = one_go            # macOS: switch, step and restart in one job (/api/update/run)
         self.state = "running"          # running | done | failed
         self.label, self.done, self.total = "", 0, 0
         self.log: list[str] = []
@@ -49,7 +50,7 @@ class Job:
             log = list(self.log)
         return {"id": self.id, "kind": self.kind, "state": self.state, "label": self.label,
                 "done": self.done, "total": self.total, "log": log, "result": self.result,
-                "error": self.error, "stay": self.stay}
+                "error": self.error, "stay": self.stay, "one_go": self.one_go}
 
 
 class UpdateState:
@@ -63,11 +64,11 @@ class UpdateState:
     def busy(self) -> bool:
         return self.job is not None and self.job.state == "running"
 
-    def start(self, kind: str, work: Callable[[Job], object]) -> Job:
+    def start(self, kind: str, work: Callable[[Job], object], one_go: bool = False) -> Job:
         if self.busy():
             raise web.HTTPConflict(text='{"ok": false, "error": "another step is still running"}',
                                    content_type="application/json")
-        job = self.job = Job(kind)
+        job = self.job = Job(kind, one_go)
 
         def run():
             try:
@@ -131,8 +132,11 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
         return match
 
     def with_device(work):
-        """Open the download-mode disk for one job and close it afterwards."""
+        """Open the download-mode disk for one job and close it afterwards (on macOS through the
+        administrator helper, started first if it isn't running: the page may have been opened
+        with the controller already in update mode)."""
         def run(job: Job):
+            admin_helper(job)
             dev, boot = updatemode.open_device()
             try:
                 return work(job, boot)
@@ -147,8 +151,26 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
                 + (f", {ident.flash_size // 1024} KB." if ident.flash_size else "."))
         return st.identity
 
-    # The controller would leave as a USB disk that this computer can't send commands to.
-    MACOS_NO_UPDATE_MODE = "update mode isn't available on macOS yet; use a Linux computer for this"
+    def admin_helper(job: Job) -> None:
+        """macOS: the administrator helper, started through macOS's password dialog before the
+        controller switches, so it doesn't sit in update mode while the password is typed."""
+        if not hid.MACOS:
+            return
+        from .. import macos_helper
+        if macos_helper.running():
+            return
+        job.progress("Waiting for your password in macOS's dialog", 0, 1)
+        job.add("macOS asks for your password, so the helper may take the update-mode disk from macOS.")
+        try:
+            macos_helper.start()
+        except macos_helper.HelperError as e:
+            raise updatemode.Failed(str(e)) from None
+        job.add("The helper runs as administrator for this update session.")
+
+    def admin_helper_done() -> None:
+        if hid.MACOS:
+            from .. import macos_helper
+            macos_helper.stop()
 
     @routes.get("/api/update")
     async def status(_):
@@ -158,7 +180,7 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
         receiver = any(d.pid == RECEIVER_PID for d in found)
         mode = "download" if download else "normal" if cable or receiver else "none"
         return ok({
-            "mode": mode, "sg_missing": not Path("/sys/class/scsi_generic").exists(),
+            "mode": mode, "sg_missing": not hid.MACOS and not Path("/sys/class/scsi_generic").exists(),
             "device": in_update_mode(), "cable": cable, "receiver": receiver,
             "job": st.job.snapshot() if st.job else None,
             "installed_version": st.installed_version, "identity": st.identity if download else None,
@@ -170,8 +192,6 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
     @routes.post("/api/update/enter")
     async def enter(request):
         d = await body(request)
-        if hid.MACOS:
-            return fail(MACOS_NO_UPDATE_MODE, 409)
         if d.get("confirm") is not True:
             return fail("confirmation required")
         device = d.get("target", "controller")
@@ -201,6 +221,7 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
         name = "Controller" if device == "controller" else "Receiver"
 
         def work(job: Job):
+            admin_helper(job)
             job.add(f"{name} on firmware {info.firmware_version}. Sending the update-mode command.")
             job.progress("Waiting for update mode", 0, 1)
             dev = updatemode.enter(path)
@@ -215,11 +236,9 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
         """Restart the connected controller (by cable) or receiver, through update mode and straight
         out again. Nothing is erased or written; it takes a few seconds."""
         d = await body(request)
-        if hid.MACOS:
-            return fail(MACOS_NO_UPDATE_MODE, 409)
         if d.get("confirm") is not True:
             return fail("confirmation required")
-        if not Path("/sys/class/scsi_generic").exists():
+        if not hid.MACOS and not Path("/sys/class/scsi_generic").exists():
             return fail("restarting needs the sg kernel module; see Setup and help", 409)
         path = session.address if session.mode == "usb" else None
         if path is None:
@@ -229,6 +248,7 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
             await session.disconnect()
 
         def work(job: Job):
+            admin_helper(job)
             job.progress("Switching to update mode", 0, 3)
             updatemode.enter(path)
             job.progress("Restarting", 1, 3)
@@ -237,6 +257,7 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
                 updatemode.restart(boot, st.loader_cache)
             finally:
                 dev.close()
+                admin_helper_done()
             job.progress("Waiting for it to come back", 2, 3)
             updatemode.wait_for_normal_mode(25, receiver=device == "receiver")
             job.add(f"The {device} restarted.")
@@ -256,11 +277,27 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
             return {"backup": image.name}
         return ok(st.start("backup", with_device(work)).snapshot())
 
+    async def read_installed_version() -> None:
+        """The firmware version of the controller connected by cable, before switching (macOS's
+        one-go actions check and install without a separate switch step)."""
+        if st.installed_version is not None or not (session.connected and session.mode == "usb"):
+            return
+        try:
+            async with session.lock:
+                info = await session.client.info()
+        except (hid.HidError, ProtocolError, asyncio.TimeoutError):
+            return
+        if session.via != "dongle" and info.firmware_version.isdigit():
+            st.installed_version = int(info.firmware_version)
+
     @routes.post("/api/update/check")
     async def check(request):
         """Dry run, no device I/O: would this firmware go onto the device in this backup?"""
         d = await body(request)
         device = in_update_mode()
+        if device is None and hid.MACOS:          # macOS checks before switching (see /run)
+            device = "controller"
+            await read_installed_version()
         fw, b = firmware_named(d.get("file"), device), backup_named(d.get("backup"))
         errors, warnings = [], []
         if st.installed_version is None:
@@ -279,6 +316,75 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
         errors += choice.errors
         return ok({"allowed": not errors, "errors": errors, "warnings": warnings, "version": fw.version,
                    "partition": choice.partition, "start": choice.start, "end": choice.end})
+
+    @routes.post("/api/update/run")
+    async def run_all(request):
+        """macOS: one action in one go. On a Mac the controller leaves update mode by itself soon
+        after nothing is sent to it, so separate clicks race against it: password (the helper),
+        switch, identify, the step, restart. A write that fails stops before the restart."""
+        d = await body(request)
+        action = d.get("action")
+        if action not in ("backup", "install", "restore"):
+            return fail("action must be backup, install or restore")
+        if action != "backup" and d.get("confirm") is not True:
+            return fail("confirmation required")
+        paths = [x.path for x in find_usb() if x.link == "cable"]
+        if len(paths) != 1:
+            return fail("connect exactly one Nova 2 Lite by cable, in PC/Xbox mode (Home light green)")
+        path = paths[0]
+        fw = firmware_named(d.get("file"), "controller") if action == "install" else None
+        b = backup_named(d.get("backup")) if action != "backup" else None
+        try:
+            async with session.lock:
+                if session.connected and session.address == path:
+                    info = await session.client.info()
+                    await session.disconnect()
+                else:
+                    await session.disconnect()
+                    async with hid.connect(path) as transport:
+                        info = await NovaClient(transport).info()
+        except (hid.HidError, ProtocolError, asyncio.TimeoutError) as e:
+            return fail(f"the controller did not answer: {e}", 422)
+        st.installed_version = int(info.firmware_version) if info.firmware_version.isdigit() else None
+        if action == "install" and st.installed_version is None:
+            return fail("the controller didn't say which firmware it has; can't check the update")
+        version = st.installed_version
+
+        def work(job: Job):
+            admin_helper(job)
+            job.add(f"Controller on firmware {info.firmware_version}. Sending the update-mode command.")
+            job.progress("Waiting for update mode", 0, 1)
+            updatemode.enter(path)
+            dev, boot = updatemode.open_device()
+            restarted = False
+            try:
+                identify(job, boot)
+                result: dict = {}
+                if action == "backup":
+                    ident = jlboot.start(boot, st.loader_cache)
+                    image = updatemode.backup(boot, ident, st.backup_dir, None, job.add, job.progress)
+                    result["backup"] = image.name
+                elif action == "restore":
+                    updatemode.restore(boot, b.path, st.loader_cache, job.add, job.progress)
+                    result["backup"] = b.name
+                else:
+                    result["version"] = updatemode.flash(boot, fw_dir / fw.file, b.path, version, fw_dir,
+                                                         cache_dir=st.loader_cache, log=job.add,
+                                                         progress=job.progress)
+                    st.installed_version = result["version"]
+                job.progress("Restarting", 0, 1)
+                updatemode.restart(boot, st.loader_cache)
+                restarted = True
+            finally:
+                dev.close()
+                if restarted:
+                    admin_helper_done()
+                # else: a write failed; the helper keeps the controller so it can be run again
+            found = updatemode.wait_for_normal_mode(25)
+            job.add("Back in normal mode" + (f" on {found[0].path}." if found else "."))
+            st.identity = None
+            return {**result, "restarted": True}
+        return ok(st.start(action, work, one_go=True).snapshot())
 
     @routes.post("/api/update/restore")
     async def do_restore(request):
@@ -317,12 +423,14 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
         device = in_update_mode()
 
         def work(job: Job):
+            admin_helper(job)
             dev, boot = updatemode.open_device()
             try:
                 job.progress("Restarting", 0, 1)
                 updatemode.restart(boot, st.loader_cache)
             finally:
                 dev.close()
+                admin_helper_done()
             job.add(f"Asked the {device or 'device'} to restart.")
             found = updatemode.wait_for_normal_mode(20, receiver=device == "receiver")
             job.add("Back in normal mode" + (f" on {found[0].path}." if found else "."))
