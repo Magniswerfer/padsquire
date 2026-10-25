@@ -17,32 +17,20 @@
 <script src="/static/app.js" defer></script>
 </head>
 <body>
-<header class="app-bar">
-  <span class="app-title"><span class="logo" id="logo" aria-hidden="true"></span>PadSquire <span class="app-device">Nova 2 Lite</span></span>
-  <div class="app-status" id="status" aria-live="polite"></div>
+<header class="top">
+  <div class="app-bar">
+    <span class="app-title"><span class="logo" id="logo" aria-hidden="true"></span>PadSquire <span class="app-device">Nova 2 Lite</span></span>
+    <div class="app-status" id="status" aria-live="polite"></div>
+  </div>
+  <nav class="tabs" aria-label="Settings">
+    <ul class="navlist" id="nav"></ul>
+  </nav>
 </header>
 
 <main class="layout">
-  <aside class="side" aria-label="Controller">
-    <pad-model id="pad" src="/static/models/nova-2-lite.glb" role="img" aria-label="Your controller">
-      <img class="pad-drawing" src="/static/img/nova-2-lite-angle.svg" width="640" height="480" alt="">
-    </pad-model>
-
-    <nav aria-label="Settings">
-      <ul class="navlist" id="nav"></ul>
-    </nav>
-
-    <div class="side-foot">
-      <div class="segmented" role="radiogroup" aria-label="Theme" id="theme">
-        <input type="radio" name="theme" id="theme-auto" value="auto" checked><label for="theme-auto">System</label>
-        <input type="radio" name="theme" id="theme-light" value="light"><label for="theme-light">Light</label>
-        <input type="radio" name="theme" id="theme-dark" value="dark"><label for="theme-dark">Dark</label>
-      </div>
-      <p class="source">PadSquire, free software under the AGPL.
-        <a href="https://github.com/Magniswerfer/padsquire" target="_blank" rel="noopener">Source code</a></p>
-    </div>
-  </aside>
-
+  <pad-model id="pad" src="/static/models/nova-2-lite.glb" role="img" aria-label="Your controller">
+    <img class="pad-drawing" src="/static/img/nova-2-lite-angle.svg" width="640" height="480" alt="">
+  </pad-model>
   <section class="panel sheet" id="panel" tabindex="-1" aria-live="polite"></section>
 </main>
 

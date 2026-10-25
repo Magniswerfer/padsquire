@@ -84,7 +84,7 @@ const SECTIONS = [
   { id: "lighting", label: "Home light" },
   { id: "profiles", label: "Profiles" },
   { id: "power", label: "Power" },
-  { id: "firmware", label: "Firmware", offline: true },
+  { id: "firmware", label: "Firmware", offline: true, apart: true },   // firmware and help, set apart
   { id: "guide", label: "Button guide", offline: true },
   { id: "setup", label: "Setup and help", offline: true },
 ];
@@ -281,7 +281,7 @@ function renderChrome() {
   nav.replaceChildren();
   for (const sec of SECTIONS) {
     const usable = app.status.connected || sec.offline || sec.id === "controller";
-    nav.append(h("li", {}, h("a", {
+    nav.append(h("li", { class: sec.apart ? "apart" : null }, h("a", {
       href: usable ? `#${sec.id}` : null,
       "aria-current": app.section === sec.id ? "page" : null,
       "aria-disabled": usable ? null : "true",
@@ -2103,6 +2103,9 @@ async function panelSetup() {
     qa("Starting this app",
       command("padsquire gui"),
       "It runs on this computer only (127.0.0.1) and opens your browser with a one-time link. Stop it with Ctrl+C in its terminal.")));
+  wrap.append(h("h2", {}, "Appearance"), h("div", { class: "appearance" }, themeControl(),
+    h("p", { class: "source" }, "PadSquire, free software under the AGPL. ",
+      h("a", { href: "https://github.com/Magniswerfer/padsquire", target: "_blank", rel: "noopener" }, "Source code"))));
   return wrap;
 }
 
@@ -2116,14 +2119,31 @@ async function restore(button) {
 
 // ---------------------------------------------------------------------------
 
-// Light and dark follow the system; choosing one pins it with data-theme on <html>.
-function wireTheme() {
-  for (const input of document.querySelectorAll("#theme input")) {
-    input.addEventListener("change", () => {
-      if (input.value === "auto") delete document.documentElement.dataset.theme;
-      else document.documentElement.dataset.theme = input.value;
-    });
+// Light and dark follow the system; choosing one pins it with data-theme on <html>. The choice is
+// remembered in this browser (and only there; the page works without it).
+const THEME_KEY = "padsquire-theme";
+
+function setTheme(value) {
+  if (value === "light" || value === "dark") document.documentElement.dataset.theme = value;
+  else delete document.documentElement.dataset.theme;
+}
+
+function savedTheme() {
+  try { return localStorage.getItem(THEME_KEY) || "auto"; } catch { return "auto"; }
+}
+
+function themeControl() {
+  const now = savedTheme();
+  const group = h("div", { class: "segmented", role: "radiogroup", "aria-label": "Theme" });
+  for (const [value, label] of [["auto", "System"], ["light", "Light"], ["dark", "Dark"]]) {
+    const input = h("input", { type: "radio", name: "theme", id: `theme-${value}`, value, checked: value === now,
+      onchange: () => {
+        setTheme(value);
+        try { localStorage.setItem(THEME_KEY, value); } catch { /* not remembered, still applied */ }
+      } });
+    group.append(input, h("label", { for: `theme-${value}` }, label));
   }
+  return group;
 }
 
 // The logo is padsquire.com's icon, inlined so its colours follow the theme tokens (as an
@@ -2137,7 +2157,7 @@ async function showLogo() {
 }
 
 async function start() {
-  wireTheme();
+  setTheme(savedTheme());
   showLogo();
   startModel();
   window.addEventListener("hashchange", render);
