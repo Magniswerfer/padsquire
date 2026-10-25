@@ -216,9 +216,10 @@ def _macos_checks() -> list[dict]:
                      _doc("hidapi", "https://github.com/trezor/cython-hidapi")]))})
 
     out.append({"id": "play", "title": "Playing games on a Mac", "ok": True, "need": "optional",
-                "detail": "Change settings in PC/Xbox mode (light green), then hold Menu + View until the "
-                          "light is blue to play: macOS supports that mode, a DualShock 4, without a driver. "
-                          "The settings stay on the controller. macOS has no driver for PC/Xbox mode itself.",
+                "detail": "In PC/Xbox mode (light green) Steam recognises the controller as an Xbox controller: "
+                          "Steam brings its own driver, macOS has none for that mode. For games outside Steam, "
+                          "hold Menu + View until the light is blue: macOS supports that mode, a DualShock 4, "
+                          "without a driver. Change settings in green; they stay on the controller.",
                 **_cmd(None)})
 
     out.append({"id": "updates", "title": "Firmware updates", "ok": False, "need": "optional",

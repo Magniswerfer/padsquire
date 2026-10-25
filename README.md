@@ -26,7 +26,7 @@ controller talks over USB and Bluetooth.
 |---|---|---|---|
 | Read and change settings | yes | yes | built, not tested on hardware yet |
 | Remap every button | yes | yes | back buttons only, not tested |
-| Live sticks, triggers and buttons | yes | yes | no |
+| Live sticks, triggers and buttons | yes (macOS too) | yes | no |
 | Controller firmware update | yes | no (use the cable) | no |
 | Receiver firmware update | | yes | |
 
@@ -85,13 +85,15 @@ internet.
 Settings work on macOS by cable: macOS's own driver serves the controller's settings channel, so
 there's nothing to set up and no `sudo`. The same installer works on a Mac.
 
-- **Works:** every setting and remap by cable, tested on one controller. The receiver and
-  Bluetooth should work the same way but aren't tested on a Mac yet.
+- **Works:** every setting and remap by cable, and the live sticks, triggers and buttons view,
+  tested on one controller. The receiver and Bluetooth should work the same way but aren't
+  tested on a Mac yet.
 - **Not yet:** firmware updates, backups and the restart button (they need update mode, which
-  only Linux can talk to so far), and the live sticks and buttons view.
-- **Playing games:** macOS has no driver for PC/Xbox mode (green). Change settings in green, then
-  hold Menu + View until the light is blue: macOS sees a DualShock 4 there and supports it
-  without a driver. The settings stay on the controller.
+  only Linux can talk to so far).
+- **Playing games:** in PC/Xbox mode (green) Steam recognises it as an Xbox controller, because
+  Steam brings its own driver; macOS itself has none for that mode. For games outside Steam, hold
+  Menu + View until the light is blue: macOS sees a DualShock 4 there and supports it without a
+  driver. The settings stay on the controller either way.
 
 ## Connect the controller
 

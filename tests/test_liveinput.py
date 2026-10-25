@@ -55,3 +55,28 @@ def test_state_scales_to_fractions():
     assert (st["lx"], st["ly"], st["lt"], st["rt"]) == (-1.0, 1.0, 0.0, 1.0)
     assert st["pressed"] == ["A", "LEFT", "RT"]                   # RT pulled all the way
     assert abs(st["rx"]) < 0.001 and str(st["ry"]) != "-0.0"
+
+
+# 0xF4 state reports captured from a real Nova 2 Lite (firmware 8201) by cable, "mapped" mode.
+LEFT_STICK_RIGHT = bytes.fromhex("f400170000000000f97f15fb00000000000000ff820115")
+LEFT_STICK_UP = bytes.fromhex("f400170000000000a403fc7f00000000000000ff8201af")
+LT_FULL = bytes.fromhex("f4001700000100000000000000000000ff0000ff82018d")
+A_HELD = bytes.fromhex("f4001700010000000000000000000000000000ff82018e")
+DPAD_RIGHT = bytes.fromhex("f4001700000008000000000000000000000000ff820195")
+
+
+def test_state_from_a_report():
+    st = liveinput.state_from_report(LEFT_STICK_RIGHT)
+    assert st["lx"] == 1.0 and abs(st["ly"]) < 0.05 and st["pressed"] == []
+    assert liveinput.state_from_report(LEFT_STICK_UP)["ly"] == -1.0          # up is negative, as evdev
+    lt = liveinput.state_from_report(LT_FULL)
+    assert (lt["lt"], lt["rt"], lt["pressed"]) == (1.0, 0.0, ["LT"])
+    assert liveinput.state_from_report(A_HELD)["pressed"] == ["A"]
+    assert liveinput.state_from_report(DPAD_RIGHT)["pressed"] == ["RIGHT"]
+    assert str(liveinput.state_from_report(A_HELD)["rx"]) == "0.0"
+
+
+def test_state_from_a_report_refuses_others():
+    assert liveinput.state_from_report(A_HELD[:-1] + b"\x00") is None          # bad checksum
+    assert liveinput.state_from_report(bytes.fromhex("070106000510")) is None
+    assert liveinput.state_from_report(b"") is None

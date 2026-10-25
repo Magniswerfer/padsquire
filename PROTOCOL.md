@@ -53,8 +53,23 @@ report ID 0 goes out as 64 bytes, and every read and write so far behaves as ove
 info, battery, all ten dead zones, a vibration write read back and restored). hidapi opens it
 **exclusively** on macOS: a second program can't open it while one has it. if00 (`ff/5d/01`,
 Xbox 360) has no macOS driver, so green mode is no gamepad for macOS games; blue mode
-(DualShock 4) should be, through macOS's own support (not yet tried). The update-mode disk
-(section 3) needs raw SCSI commands, which macOS has no `SG_IO` for: not attempted.
+(DualShock 4) should be, through macOS's own support (not yet tried). **Steam** brings its own
+Xbox 360 driver on macOS: with Steam running, if00 has `UsbExclusiveOwner = steam_osx` and Steam
+sees an Xbox controller, so green mode works for Steam games; libusb gets "access denied" on that
+interface then. The update-mode disk (section 3) needs raw SCSI commands, which macOS has no
+`SG_IO` for: not attempted.
+
+**`0xF4` state report layout (confirmed 2026-10-25, firmware 8201, by cable, mode Mapped 2).** About
+66 a second once switched on; all zero at rest apart from the fixed bytes. Byte 0 `F4`, 1 `00`,
+2 `17` (length 23), 3 `00` (seen so far). **Buttons** as bits: byte 4 A `01`, B `02`, X `08`,
+Y `10`, LB `40`, RB `80`; byte 5 LT `01` and RT `02` (digital, set from a light pull), View `04`,
+Menu `08`, L3 `20`, R3 `40`; byte 6 the D-pad, up `01`, down `02`, left `04`, right `08`. Not
+seen yet: Home, Capture, and the byte 4 `04` / 5 `10` / 5 `80` bits. **Sticks** int16
+little-endian, up and right positive, full range ±32767: 8 LX, 10 LY, 12 RX, 14 RY. **Triggers**
+0–255 at 16 (LT) and 17 (RT). 18 `00`, 19 `FF`, 20–21 the firmware version, **22 = sum of bytes
+0–21**. In Mapped mode the buttons come after remapping (L4 and R4 mapped to B report B), the
+same as the gamepad interface. The settings app reads these for its live view on macOS
+(`liveinput.state_from_report`), while settings commands keep working on the same channel.
 
 ## Three ways to talk to it
 

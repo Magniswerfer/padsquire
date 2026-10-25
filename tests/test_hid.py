@@ -83,6 +83,29 @@ def test_client_reads_over_hidapi():
     assert asyncio.run(client.dead_zone(DeadZone.LEFT_STICK_INNER)) == 5
 
 
+STATE = _report("f4001700010000000000000000000000000000ff82018e")   # A held
+
+
+def test_live_state_switches_reports_on_and_keeps_the_newest():
+    on, off = gcm.state_report_set(gcm.StateReport.MAPPED), gcm.state_report_set(gcm.StateReport.OFF)
+    fake = FakeHidapiDevice({on: [on.ljust(64, b"\0"), STATE], off: [off.ljust(64, b"\0")],
+                             gcm.basic_info_query(): [STATE, INFO_REPLY]})
+    t = hid.HidapiTransport(fake, timeout=0.01, attempts=2)
+
+    async def go():
+        await t.live_state(on=True)
+        await t.live_state(on=True)                      # a second viewer: no second command
+        assert await t.live_state() == STATE
+        # a settings read in between skips the state report and keeps it
+        assert (await NovaClient(t).info()).firmware_version == "7701"
+        await t.live_state(on=False)
+        assert fake.writes.count(off.ljust(64, b"\0")) == 0     # one viewer is still watching
+        await t.live_state(on=False)
+
+    asyncio.run(go())
+    assert fake.writes.count(on.ljust(64, b"\0")) == 1 and fake.writes.count(off.ljust(64, b"\0")) == 1
+
+
 def test_trim_handles_both_reply_shapes():
     assert hid._trim(BATTERY_REPLY) == bytes.fromhex("240105527c")   # framed: own checksum
     assert hid._trim(DEAD_ZONE_REPLY) == DEAD_ZONE_REPLY             # whole-report checksum

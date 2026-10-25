@@ -5,6 +5,9 @@ Over the cable in PC/Xbox mode the kernel's xpad driver turns the controller int
 node ("GameSir Nova 2 Lite"). Its values come after the controller's own dead zones, which is
 what the settings app wants to show. No extra dependency: axis ranges come from EVIOCGABS and
 events are plain `struct input_event`s.
+
+macOS has no xpad (and Steam may own the Xbox interface there), so it reads the controller's own
+0xF4 state reports on the settings channel instead: `state_from_report`.
 """
 
 from __future__ import annotations
@@ -28,6 +31,33 @@ KEY_BYTES = 96                                             # (KEY_MAX + 1) / 8
 
 EVENT = struct.Struct("llHHi")          # struct input_event (timeval, type, code, value)
 ABSINFO = struct.Struct("6i")           # value, minimum, maximum, fuzz, flat, resolution
+
+
+# 0xF4 state reports, "mapped" mode (after remapping, like xpad sees it). Confirmed on firmware 8201
+# by cable, 2026-10-25: (byte, bit) -> button; sticks are int16 little-endian at 8 (LX), 10 (LY),
+# 12 (RX), 14 (RY) with up positive; triggers 0-255 at 16 and 17; byte 22 = sum of bytes 0-21.
+REPORT_BUTTONS = {(4, 0x01): "A", (4, 0x02): "B", (4, 0x08): "X", (4, 0x10): "Y",
+                  (4, 0x40): "LB", (4, 0x80): "RB", (5, 0x04): "SELECT", (5, 0x08): "START",
+                  (5, 0x20): "L3", (5, 0x40): "R3",
+                  (6, 0x01): "UP", (6, 0x02): "DOWN", (6, 0x04): "LEFT", (6, 0x08): "RIGHT"}
+REPORT_STICKS = {"lx": (8, 1), "ly": (10, -1), "rx": (12, 1), "ry": (14, -1)}   # evdev: up is negative
+
+
+def state_from_report(report: bytes) -> dict | None:
+    """The same shape as LiveInput.state(), from one 0xF4 state report; None if it isn't one."""
+    if len(report) < 23 or report[0] != 0xF4 or sum(report[:22]) & 0xFF != report[22]:
+        return None
+    out: dict = {}
+    for name, (at, sign) in REPORT_STICKS.items():
+        value = int.from_bytes(report[at:at + 2], "little", signed=True) / 32767
+        out[name] = round(max(-1.0, min(1.0, sign * value)), 3) + 0.0                    # no -0.0
+    out["lt"], out["rt"] = round(report[16] / 255, 3), round(report[17] / 255, 3)
+    pressed = {name for (byte, bit), name in REPORT_BUTTONS.items() if report[byte] & bit}
+    for trigger in ("lt", "rt"):
+        if out[trigger] >= TRIGGER_PRESSED:
+            pressed.add(trigger.upper())
+    out["pressed"] = sorted(pressed)
+    return out
 
 
 class Unavailable(RuntimeError):

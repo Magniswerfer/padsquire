@@ -132,6 +132,8 @@ class HidTransport:
         self.timeout = timeout
         self.attempts = attempts
         self._lock = asyncio.Lock()
+        self.last_state: bytes | None = None   # the newest 0xF4 state report seen
+        self._state_users = 0                  # live views that want the reports on
 
     def _read(self, timeout: float) -> bytes | None:
         ready, _, _ = select.select([self.fd], [], [], timeout)
@@ -143,15 +145,19 @@ class HidTransport:
     def _exchange(self, frame: bytes, accept: Callable[[bytes], bool]) -> bytes:
         if len(frame) > REPORT_SIZE:
             raise HidError(f"command longer than one report ({len(frame)} bytes)")
-        while self._read(0.001) is not None:
-            pass
+        while (queued := self._read(0.001)) is not None:
+            if queued and queued[0] == STATE_REPORT:
+                self.last_state = queued
         # Report ID 0 first: the kernel strips it, since the interface has no report IDs.
         log.debug("send %s", frame.hex(" "))
         self._write(b"\x00" + frame + bytes(REPORT_SIZE - len(frame)))
         last = b""
         for _ in range(self.attempts):
             report = self._read(self.timeout)
-            if report is None or not report or report[0] == STATE_REPORT:
+            if report and report[0] == STATE_REPORT:
+                self.last_state = report
+                continue
+            if report is None or not report:
                 continue
             last = _trim(report)
             if accept(last):
@@ -163,9 +169,18 @@ class HidTransport:
         async with self._lock:
             return await asyncio.to_thread(self._exchange, frame, accept or (lambda _r: True))
 
+    def _set_state_reports(self, mode: gcm.StateReport) -> None:
+        self._exchange(gcm.state_report_set(mode), lambda r: r[:2] == bytes([gcm.CMD_STATE_REPORT, 0x01]))
+
     def _state_report(self) -> bytes:
-        echo = lambda r: r[:2] == bytes([gcm.CMD_STATE_REPORT, 0x01])
-        self._exchange(gcm.state_report_set(gcm.StateReport.MAPPED), echo)
+        if self._state_users:                  # a live view has them on already
+            self.last_state = None
+            for _ in range(self.attempts):
+                self._pump()
+                if self.last_state is not None:
+                    return self.last_state
+            raise HidError("no state report arrived")
+        self._set_state_reports(gcm.StateReport.MAPPED)
         try:
             for _ in range(self.attempts):
                 report = self._read(self.timeout)
@@ -173,7 +188,15 @@ class HidTransport:
                     return report
             raise HidError("no state report arrived")
         finally:
-            self._exchange(gcm.state_report_set(gcm.StateReport.OFF), echo)
+            self._set_state_reports(gcm.StateReport.OFF)
+
+    def _pump(self) -> None:
+        """Take every queued report, keeping the newest state report."""
+        report = self._read(self.timeout if self.last_state is None else 0.001)
+        while report is not None:
+            if report and report[0] == STATE_REPORT:
+                self.last_state = report
+            report = self._read(0.001)
 
     def _send(self, frame: bytes) -> None:
         log.debug("send %s", frame.hex(" "))
@@ -188,6 +211,23 @@ class HidTransport:
         """One 0xF4 state report: switched on for the moment it takes, then off again."""
         async with self._lock:
             return await asyncio.to_thread(self._state_report)
+
+    async def live_state(self, on: bool | None = None) -> bytes | None:
+        """The newest state report, for a live view. on=True switches the reports on for one more
+        viewer, on=False switches them off once the last one has gone; None just reads."""
+        async with self._lock:
+            if on is True:
+                self._state_users += 1
+                if self._state_users == 1:
+                    self.last_state = None
+                    await asyncio.to_thread(self._set_state_reports, gcm.StateReport.MAPPED)
+            elif on is False:
+                self._state_users = max(0, self._state_users - 1)
+                if not self._state_users:
+                    await asyncio.to_thread(self._set_state_reports, gcm.StateReport.OFF)
+                return None
+            await asyncio.to_thread(self._pump)
+            return self.last_state
 
 
 class HidapiTransport(HidTransport):

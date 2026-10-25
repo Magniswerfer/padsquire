@@ -5,13 +5,14 @@ main interface) and a CLI, for configuration by cable, through the 2.4 GHz recei
 Bluetooth, and firmware updates of the controller and the receiver. Built for interoperability
 by studying GameSir Connect 1.14.5/1.16.7 (Windows) and the GameSir Android app 5.8.20. Tested on one
 controller (firmware 7701 and 8201) and its receiver (2800); Bluetooth is not yet tested on hardware.
-Settings by cable also work on macOS (hidapi; confirmed 2026-10-25); firmware updates there don't yet.
+Settings and the live view by cable also work on macOS (hidapi, `0xF4` state reports; confirmed
+2026-10-25); firmware updates there don't yet. Steam on macOS owns the Xbox interface (own driver).
 
 ## Commands
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -e '.[gui,test]'   # no system pip on this box; 7zip for update/extract
-pytest                                   # 205 tests; PADSQUIRE_INSTALLER=<setup.exe> adds a real-installer test,
+pytest                                   # 208 tests; PADSQUIRE_INSTALLER=<setup.exe> adds a real-installer test,
                                          # PADSQUIRE_BACKUP=<dump.bin> PADSQUIRE_UFW=<.ufw> a real layout check
 padsquire probe --guided             # read-only report of the controller in every mode -> JSON
 padsquire ble scan | info | deadzone | feature | vibration | sleep | restore
@@ -29,7 +30,7 @@ padsquire uboot test-write | restore | flash ... --confirm        # writes (need
 - `ble.py`: bleak transport (write 0x865F, wait 60 ms, read 0x865F). `simulator.py`: fake device.
 - `hid.py`: USB transport, GCM in 64-byte reports on the `0xFF7A` hidraw interface (confirmed).
   On macOS (`hid.MACOS`) it goes through hidapi instead (`HidapiTransport`); the app then hides
-  update mode (`/api/meta` `update_mode`), live input and the Linux setup checks.
+  update mode (`/api/meta` `update_mode`) and the Linux setup checks.
 - `web/server.py` + `web/static/`: aiohttp GUI (no build step; vanilla JS, strict CSP). Connects
   over BLE or USB; over USB it skips the reads in `USB_UNSUPPORTED` (no reply, 2.2 s timeout each).
   `app.js` + `app.css` are the app's own; `static/ds/` (design system), `pad-model.js` (3D model),
@@ -52,7 +53,8 @@ padsquire uboot test-write | restore | flash ... --confirm        # writes (need
   the window comes from a browser in /Applications. `install.sh`: the curl installer for Linux and
   macOS (own venv in ~/.local/share/padsquire/venv). Releases: push a `v*` tag (PyPI).
 - `paths.py`: data and cache folders; moves the folders of the old project name once at startup.
-- `liveinput.py`: sticks, triggers and buttons from the xpad evdev node.
+- `liveinput.py`: sticks, triggers and buttons from the xpad evdev node; on macOS from the
+  controller's `0xF4` state reports instead (`state_from_report`, read through `HidTransport.live_state`).
 - `probe.py`: read-only hardware probe. `PROTOCOL.md`: all protocol notes (CC BY-SA 4.0).
 
 ## Status and open questions
@@ -72,7 +74,8 @@ Open:
    frame) and an evdev events-per-second monitor; by cable it didn't happen in 19 remaps.
 3. **Recovery if the firmware no longer starts**: TBD (PROTOCOL.md section 3, "Recovery").
 4. Controller firmware updates through the receiver (JieLi's HID over-the-air updater): research.
-5. **macOS**: blue (DualShock 4) mode for games untested; receiver and Bluetooth untested there;
+5. **macOS**: blue (DualShock 4) mode for games untested; Home, Capture and M in the state
+   reports not yet identified; receiver and Bluetooth untested there;
    update mode would need raw SCSI over libusb (no `SG_IO`), not attempted. macOS support ships
    with the next release (PyPI 0.1.3 has none, so the installer gets it only after a release).
 

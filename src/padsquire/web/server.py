@@ -370,7 +370,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
         if session.mode != "usb":
             return fail("live input is only available by cable", 409)
         if hid.MACOS:
-            return fail("live input isn't available on macOS yet", 409)
+            return await report_stream(request)
         try:
             live = liveinput.LiveInput(liveinput.event_node_for(session.address))
         except liveinput.Unavailable as e:
@@ -397,6 +397,39 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
         finally:
             loop.remove_reader(live.fd)
             live.close()
+        return resp
+
+    async def report_stream(request):
+        """The same stream from the controller's own state reports (macOS: no xpad there)."""
+        transport = session.client.t if session.client else None
+        if not hasattr(transport, "live_state"):
+            return fail("live input is only available by cable", 409)
+        resp = web.StreamResponse(headers={
+            "Content-Type": "application/x-ndjson", "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff"})
+        try:
+            await transport.live_state(on=True)
+        except (hid.HidError, OSError) as e:
+            return fail(f"the controller sends no live input: {e}", 409)
+        try:
+            await resp.prepare(request)
+            loop = asyncio.get_running_loop()
+            last, sent = None, 0.0
+            while session.client is not None and session.client.t is transport:
+                st = liveinput.state_from_report(await transport.live_state() or b"") or last
+                # a change, or once a second as a keepalive: a write is how a closed page shows
+                if st is not None and (st != last or loop.time() - sent > 1.0):
+                    await resp.write(json.dumps(st).encode() + b"\n")
+                    last, sent = st, loop.time()
+                await asyncio.sleep(1 / 30)
+        except (ConnectionResetError, hid.HidError, OSError):
+            pass
+        finally:
+            if session.client is not None and session.client.t is transport:
+                try:
+                    await transport.live_state(on=False)
+                except (hid.HidError, OSError):
+                    pass
         return resp
 
     @routes.get("/api/devices")
