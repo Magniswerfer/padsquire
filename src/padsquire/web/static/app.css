@@ -74,7 +74,7 @@ pad-model.offline { opacity: .55; filter: grayscale(1); }
 /* Help's two tabs (ds's segmented control), and the theme at the end of Setup and help */
 .help-tabs { justify-self: start; }
 /* Setup and help ends with the theme */
-.appearance { display: grid; gap: var(--space-3); justify-items: start; }
+.appearance, .app-update { display: grid; gap: var(--space-3); justify-items: start; max-width: 46rem; }
 .source { color: var(--ink-faint); font-size: var(--text-xs); }
 
 /* -- the page's sheet ------------------------------------------------------------ */

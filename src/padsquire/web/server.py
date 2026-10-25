@@ -21,7 +21,8 @@ from pathlib import Path
 
 from aiohttp import web
 
-from .. import __version__, ble, gcm, hid, installer, liveinput, paths, profiles, settingsfile, stickcheck, updater
+from .. import (__version__, appupdate, ble, gcm, hid, installer, liveinput, paths, profiles, settingsfile,
+               stickcheck, updater)
 from ..client import NotApplied, NovaClient
 from ..gcm import DeadZone, Feature, Key, ProtocolError, Vibration
 from ..simulator import LINKS, SimulatedSticks, simulated
@@ -238,7 +239,8 @@ PRESENCE = web.AppKey("presence", Presence)
 def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
               simulate: str | None = None, scanner=None, usb_finder=None,
               backup_dir: Path | None = None, loader_cache: Path | None = None,
-              live_open=None, profiles_dir: Path | None = None) -> web.Application:
+              live_open=None, profiles_dir: Path | None = None,
+              app_update_url: str = appupdate.PYPI) -> web.Application:
     session = Session()
     store = profiles.Store(profiles_dir or paths.PROFILES_DIR)
     presence = Presence()
@@ -801,6 +803,38 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
             except ERRORS:
                 pass
         return ok({**_firmware_status(fw_dir, version), "dongle_version": dongle})
+
+    # -- PadSquire's own updates (appupdate.py) --------------------------------------------------
+
+    @routes.get("/api/app-update")
+    async def app_update_status(_):
+        try:
+            return ok(await asyncio.to_thread(appupdate.status, app_update_url))
+        except appupdate.UpdateError as e:
+            return fail(str(e), 502)
+
+    @routes.post("/api/app-update/install")
+    async def app_update_install(request):
+        d = await body(request)
+        if d.get("confirm") is not True:
+            return fail("confirmation required")
+        version = d.get("version")
+        if not isinstance(version, str):
+            return fail("version required")
+        try:
+            latest = await asyncio.to_thread(appupdate.newest, app_update_url)
+            if version != latest:            # only ever the newest release, as the page showed it
+                return fail(f"{version} isn't the newest release ({latest}); check again", 409)
+            await asyncio.to_thread(appupdate.install, version)
+        except appupdate.UpdateError as e:
+            return fail(str(e), 502)
+        return ok({"installed": version})
+
+    @routes.post("/api/app-update/restart")
+    async def app_update_restart(_):
+        """Start the newly installed version; it stops this one (unless a firmware step runs)."""
+        asyncio.get_running_loop().call_later(0.5, appupdate.restart)
+        return ok({"restarting": True})
 
     @routes.post("/api/firmware/check")
     async def firmware_check(_):

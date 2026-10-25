@@ -2040,6 +2040,54 @@ function setupNotice(only) {
 
 const NEEDS = { settings: "Needed for everything", updates: "Needed for firmware updates and backups", optional: "Optional" };
 
+// PadSquire's own updates: asked of PyPI when this section shows, and on "Check again". An
+// installation made by the installer updates itself in place; others get their own command.
+function appUpdates() {
+  const box = h("div", { class: "app-update" }, h("p", { class: "busy" }, "Looking for a newer PadSquire…"));
+  const again = () => h("button", { class: "button", onclick: (e) => working(e.currentTarget, "Checking…", check) }, "Check again");
+  const show = (st) => {
+    if (!st.newer) {
+      box.replaceChildren(h("p", { class: "note ok" }, `You have PadSquire ${st.current}, the newest.`),
+        h("div", { class: "button-row" }, again()));
+      return;
+    }
+    const intro = h("p", {}, `PadSquire ${st.latest} is out; you have ${st.current}. `,
+      h("a", { href: `https://github.com/Magniswerfer/padsquire/releases/tag/v${st.latest}`, target: "_blank", rel: "noopener" }, "What's new"), ".");
+    if (st.install !== "installer") {
+      box.replaceChildren(intro, h("p", { class: "note" }, st.install === "source"
+        ? "This PadSquire runs from a copy of its source code, so update that copy:"
+        : "This PadSquire wasn't installed with its installer, so update it the way it was installed:"),
+        command(st.command), h("div", { class: "button-row" }, again()));
+      return;
+    }
+    const update = h("button", { class: "button primary", onclick: () => updateApp(st, update) }, `Update to ${st.latest}`);
+    box.replaceChildren(intro, h("div", { class: "button-row" }, update, again()),
+      h("p", { class: "note" }, "It downloads the new version from PyPI into PadSquire's own Python environment, as the installer does, and nothing else. Your settings stay on the controller, and your firmware downloads and backups stay where they are."));
+  };
+  const updateApp = async (st, button) => {
+    const yes = await confirmDialog(`Update PadSquire to ${st.latest}?`,
+      `It downloads PadSquire ${st.latest} from PyPI into PadSquire's own Python environment (~/.local/share/padsquire/venv), the same way the installer does. Then you restart PadSquire to use it.`, "Update");
+    if (!yes) return;
+    await working(button, "Updating…", async () => {
+      try { await api("/api/app-update/install", { version: st.latest, confirm: true }); }
+      catch (e) { toast(e.message, "error"); return; }
+      const restart = h("button", { class: "button primary", onclick: () => working(restart, "Restarting…", async () => {
+        try { await api("/api/app-update/restart", {}); }
+        catch (e) { toast(e.message, "error"); return; }
+        box.replaceChildren(h("p", { class: "note ok" }, `PadSquire ${st.latest} is starting in a new window; this one stops. You can close it.`));
+      }) }, "Restart PadSquire");
+      box.replaceChildren(h("p", { class: "note ok" }, `PadSquire ${st.latest} is installed. Restart it to use it.`),
+        h("div", { class: "button-row" }, restart));
+    });
+  };
+  async function check() {
+    try { show(await api("/api/app-update")); }
+    catch (e) { box.replaceChildren(h("p", { class: "note" }, e.message), h("div", { class: "button-row" }, again())); }
+  }
+  check();
+  return box;
+}
+
 // Help has two tabs: what this computer needs (and what to do when something goes wrong), and
 // the button guide. Each is its own page (#setup, #guide), so links to either keep working.
 function helpTabs(current) {
@@ -2116,7 +2164,8 @@ async function panelSetup() {
     qa("Starting this app",
       command("padsquire gui"),
       "It runs on this computer only (127.0.0.1) and opens your browser with a one-time link. Stop it with Ctrl+C in its terminal.")));
-  wrap.append(h("h2", {}, "Appearance"), h("div", { class: "appearance" }, themeControl()));
+  wrap.append(h("h2", {}, "PadSquire updates"), appUpdates(),
+    h("h2", {}, "Appearance"), h("div", { class: "appearance" }, themeControl()));
   return wrap;
 }
 
