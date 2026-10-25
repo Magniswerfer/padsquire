@@ -81,8 +81,8 @@ Open:
 3. **Recovery if the firmware no longer starts**: TBD (PROTOCOL.md section 3, "Recovery").
 4. Controller firmware updates through the receiver (JieLi's HID over-the-air updater): research.
 5. **macOS**: blue (DualShock 4) mode for games untested; receiver and Bluetooth untested there;
-   the app's install and restore are tested from the CLI path only (the app's one-go backup is
-   confirmed); the receiver's firmware untested there; the disk-access prompt names "Python".
+   the app's one-go backup, restore and reinstall are confirmed on hardware; the receiver's
+   firmware is untested there; the disk-access prompt names "Python".
    macOS support ships
    with the next release (PyPI 0.1.3 has none, so the installer gets it only after a release).
 

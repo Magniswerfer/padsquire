@@ -308,13 +308,18 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
                 pid, vid = jlflash.identity(dump, jlflash.find(dump, key).base)
             except (OSError, ValueError, KeyError, jlflash.FlashError) as e:
                 return ok({"allowed": False, "errors": [f"cannot use the backup: {e}"], "warnings": []})
-            plan = safety.plan_update(safety.DeviceState(TARGET[device], pid, vid, st.installed_version),
-                                      fw, fw_dir / fw.file, bundled=installer.load_manifest(fw_dir))
+            state = safety.DeviceState(TARGET[device], pid, vid, st.installed_version)
+            plan = safety.plan_update(state, fw, fw_dir / fw.file, bundled=installer.load_manifest(fw_dir))
+            # The same version again is refused unless asked for: say whether that's the only reason.
+            again = safety.plan_update(state, fw, fw_dir / fw.file, bundled=installer.load_manifest(fw_dir),
+                                       reinstall=True)
             errors += plan.errors
             warnings += plan.warnings
         choice = safety.choose_flash_image(fw_dir / fw.file, b.path)
         errors += choice.errors
+        reinstall = bool(errors) and st.installed_version is not None and not again.errors and not choice.errors
         return ok({"allowed": not errors, "errors": errors, "warnings": warnings, "version": fw.version,
+                   "reinstall": reinstall,
                    "partition": choice.partition, "start": choice.start, "end": choice.end})
 
     @routes.post("/api/update/run")
@@ -349,6 +354,7 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
         if action == "install" and st.installed_version is None:
             return fail("the controller didn't say which firmware it has; can't check the update")
         version = st.installed_version
+        reinstall = d.get("reinstall") is True
 
         def work(job: Job):
             admin_helper(job)
@@ -369,7 +375,7 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
                     result["backup"] = b.name
                 else:
                     result["version"] = updatemode.flash(boot, fw_dir / fw.file, b.path, version, fw_dir,
-                                                         cache_dir=st.loader_cache, log=job.add,
+                                                         reinstall=reinstall, cache_dir=st.loader_cache, log=job.add,
                                                          progress=job.progress)
                     st.installed_version = result["version"]
                 job.progress("Restarting", 0, 1)
@@ -407,9 +413,10 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
         if st.installed_version is None:
             return fail("the firmware version on it is unknown; connect it normally first")
         version = st.installed_version
+        reinstall = d.get("reinstall") is True        # the same version again, asked for on the page
 
         def work(job: Job, boot):
-            new = updatemode.flash(boot, fw_dir / fw.file, b.path, version, fw_dir,
+            new = updatemode.flash(boot, fw_dir / fw.file, b.path, version, fw_dir, reinstall=reinstall,
                                    cache_dir=st.loader_cache, log=job.add, progress=job.progress)
             st.installed_version = new
             return {"version": new}

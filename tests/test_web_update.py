@@ -106,6 +106,16 @@ def test_backup_restore_and_install(env):
         assert d["installed_version"] == 8201
         expected = jlwrite.connect_record(make_image(key=CHIP_KEY, app_len=0x5F000), bytes(6))
         assert bytes(chip.flash[0x1000:0x64000]) == expected and bytes(chip.flash[0x64000:]) == OLD[0x64000:]
+
+        # the same version again: refused, but the page may offer it as a reinstall
+        status, body = await post(c, "/api/update/check", {"file": "ctrl.ufw", "backup": b["name"]})
+        assert body["data"]["allowed"] is False and body["data"]["reinstall"] is True
+        assert "already installed" in body["data"]["errors"][0]
+        assert (await post(c, "/api/update/install", {"file": "ctrl.ufw", "backup": b["name"], "confirm": True}))[0] == 200
+        assert (await finish(c))["job"]["state"] == "failed"          # not without asking for it
+        assert (await post(c, "/api/update/install", {"file": "ctrl.ufw", "backup": b["name"], "confirm": True,
+                                                      "reinstall": True}))[0] == 200
+        assert (await finish(c))["job"]["state"] == "done"
     run(env, go)
 
 

@@ -1247,18 +1247,23 @@ function updateView() {
     else if (!check) install.append(h("p", { class: "note" }, "Checking…"));
     else if (check.allowed) {
       install.append(h("p", { class: "note ok" }, `Fits this ${thing}: ${check.partition} goes to ${addr(check.start)}–${addr(check.end - 1)}. ${thing === "receiver" ? "The pairing with your controller is kept." : "Settings, Bluetooth address and calibration are kept."}`));
+    } else if (check.reinstall) {
+      install.append(h("p", { class: "note" }, `Firmware ${check.version} is already on this ${thing}. Reinstalling writes the same firmware again, which can help when the firmware seems not to work right; otherwise there's no need. Settings, Bluetooth address and calibration are kept.`));
     } else install.append(h("ul", { class: "problems" }, check.errors.map((e) => h("li", {}, e))));
     if (check && check.warnings.length) install.append(h("ul", { class: "warnings" }, check.warnings.map((w) => h("li", {}, w))));
     const f = files.find((x) => x.file === upd.file);
     install.append(h("div", { class: "button-row" },
-      jobButton(job, ["install"], "Installing…", h("button", { class: "button primary", disabled: running || !(inUpdate || oneGo(d)) || !(check && check.allowed), onclick: () => inUpdate
+      jobButton(job, ["install"], "Installing…", h("button", { class: "button primary", disabled: running || !(inUpdate || oneGo(d)) || !(check && (check.allowed || check.reinstall)), onclick: () => inUpdate
         ? runStep("/api/update/install",
-          { file: upd.file, backup: upd.backup, confirm: true }, `Install firmware ${f && f.version}?`,
+          { file: upd.file, backup: upd.backup, confirm: true, reinstall: !!check.reinstall },
+          `${check.reinstall ? "Reinstall" : "Install"} firmware ${f && f.version}?`,
           `The firmware area of the ${thing} is erased and rewritten. Keep it plugged in until it finishes. If anything fails, it stays in update mode and you can run it again or write the backup back.`,
-          "Install")
-        : runAll("install", { file: upd.file, backup: upd.backup, confirm: true }, `Install firmware ${f && f.version}?`,
+          check.reinstall ? "Reinstall" : "Install")
+        : runAll("install", { file: upd.file, backup: upd.backup, confirm: true, reinstall: !!check.reinstall },
+          `${check.reinstall ? "Reinstall" : "Install"} firmware ${f && f.version}?`,
           "The controller switches to update mode, its firmware area is erased and rewritten and checked, and it restarts. Keep it plugged in until it finishes. If the write fails it doesn't restart: run it again straight away, or write the backup back.",
-          "Install") }, `Install firmware ${f ? f.version : ""}`))));
+          check && check.reinstall ? "Reinstall" : "Install") },
+        `${check && check.reinstall ? "Reinstall" : "Install"} firmware ${f ? f.version : ""}`))));
   }
   install.append(h("p", { class: "note" }, thing === "receiver"
       ? "To go back to the firmware in a backup, write the backup back. The pairing stays as it is."
