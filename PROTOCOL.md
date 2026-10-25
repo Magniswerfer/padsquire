@@ -63,8 +63,9 @@ interface then. The update-mode disk (section 3) needs raw SCSI commands, which 
 66 a second once switched on; all zero at rest apart from the fixed bytes. Byte 0 `F4`, 1 `00`,
 2 `17` (length 23), 3 `00` (seen so far). **Buttons** as bits: byte 4 A `01`, B `02`, X `08`,
 Y `10`, LB `40`, RB `80`; byte 5 LT `01` and RT `02` (digital, set from a light pull), View `04`,
-Menu `08`, L3 `20`, R3 `40`; byte 6 the D-pad, up `01`, down `02`, left `04`, right `08`. Not
-seen yet: Home, Capture, and the byte 4 `04` / 5 `10` / 5 `80` bits. **Sticks** int16
+Menu `08`, Home `10`, L3 `20`, R3 `40`, Capture `80`; byte 6 the D-pad, up `01`, down `02`,
+left `04`, right `08`; byte 7 the M button `40` (it has no remap key). Not seen yet: byte 4 `04`
+and the rest of byte 7. **Sticks** int16
 little-endian, up and right positive, full range ±32767: 8 LX, 10 LY, 12 RX, 14 RY. **Triggers**
 0–255 at 16 (LT) and 17 (RT). 18 `00`, 19 `FF`, 20–21 the firmware version, **22 = sum of bytes
 0–21**. In Mapped mode the buttons come after remapping (L4 and R4 mapped to B report B), the

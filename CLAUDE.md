@@ -74,8 +74,7 @@ Open:
    frame) and an evdev events-per-second monitor; by cable it didn't happen in 19 remaps.
 3. **Recovery if the firmware no longer starts**: TBD (PROTOCOL.md section 3, "Recovery").
 4. Controller firmware updates through the receiver (JieLi's HID over-the-air updater): research.
-5. **macOS**: blue (DualShock 4) mode for games untested; Home, Capture and M in the state
-   reports not yet identified; receiver and Bluetooth untested there;
+5. **macOS**: blue (DualShock 4) mode for games untested; receiver and Bluetooth untested there;
    update mode would need raw SCSI over libusb (no `SG_IO`), not attempted. macOS support ships
    with the next release (PyPI 0.1.3 has none, so the installer gets it only after a release).
 

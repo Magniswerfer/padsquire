@@ -397,7 +397,7 @@ function regionName(fw) {
 const KEY_PARTS = {
   A: "a", B: "b", X: "x", Y: "y", LB: "lb", RB: "rb", LT: "lt", RT: "rt", UP: "up", DOWN: "down",
   LEFT: "left", RIGHT: "right", L4: "l4", R4: "r4", L3: "ls", R3: "rs", SELECT: "view", START: "menu",
-  CAPTURE: "share", HOME: "home",
+  CAPTURE: "share", HOME: "home", M: "m",   // M only from the macOS live view (state reports)
 };
 
 // The Buttons page: pick a button on the controller, change what it does beside it. The same

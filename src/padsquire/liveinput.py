@@ -38,7 +38,8 @@ ABSINFO = struct.Struct("6i")           # value, minimum, maximum, fuzz, flat, r
 # 12 (RX), 14 (RY) with up positive; triggers 0-255 at 16 and 17; byte 22 = sum of bytes 0-21.
 REPORT_BUTTONS = {(4, 0x01): "A", (4, 0x02): "B", (4, 0x08): "X", (4, 0x10): "Y",
                   (4, 0x40): "LB", (4, 0x80): "RB", (5, 0x04): "SELECT", (5, 0x08): "START",
-                  (5, 0x20): "L3", (5, 0x40): "R3",
+                  (5, 0x10): "HOME", (5, 0x20): "L3", (5, 0x40): "R3", (5, 0x80): "CAPTURE",
+                  (7, 0x40): "M",                     # the M button: no gcm.Key, never remappable
                   (6, 0x01): "UP", (6, 0x02): "DOWN", (6, 0x04): "LEFT", (6, 0x08): "RIGHT"}
 REPORT_STICKS = {"lx": (8, 1), "ly": (10, -1), "rx": (12, 1), "ry": (14, -1)}   # evdev: up is negative
 

@@ -74,6 +74,7 @@ def test_state_from_a_report():
     assert liveinput.state_from_report(A_HELD)["pressed"] == ["A"]
     assert liveinput.state_from_report(DPAD_RIGHT)["pressed"] == ["RIGHT"]
     assert str(liveinput.state_from_report(A_HELD)["rx"]) == "0.0"
+    assert liveinput.state_from_report(bytes.fromhex("f4001700000000400000000000000000000000ff8201cd"))["pressed"] == ["M"]
 
 
 def test_state_from_a_report_refuses_others():
