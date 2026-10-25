@@ -81,3 +81,45 @@ def test_state_from_a_report_refuses_others():
     assert liveinput.state_from_report(A_HELD[:-1] + b"\x00") is None          # bad checksum
     assert liveinput.state_from_report(bytes.fromhex("070106000510")) is None
     assert liveinput.state_from_report(b"") is None
+
+
+def test_report_input_for_the_stick_check():
+    import asyncio
+
+    class Transport:
+        def __init__(self):
+            self.on = 0
+        async def live_state(self, on=None):
+            if on is not None:
+                self.on += 1 if on else -1
+                return None
+            return LEFT_STICK_RIGHT
+
+    t = Transport()
+    live = liveinput.ReportInput(t)
+    assert live.state()["lx"] == 0.0                       # at rest until a report arrived
+
+    async def go():
+        await live.start()
+        assert t.on == 1
+        assert await live.pump() is True
+        await live.aclose()
+    asyncio.run(go())
+    assert live.state()["lx"] == 1.0 and t.on == 0
+
+
+def test_stick_check_samples_an_async_reader():
+    import asyncio
+    from padsquire import stickcheck
+
+    class Reader:
+        def __init__(self):
+            self.pumps = 0
+        async def pump(self):
+            self.pumps += 1
+        def state(self):
+            return {"lx": 0.01, "ly": 0.0, "rx": 0.0, "ry": -0.02}
+
+    r = Reader()
+    samples = asyncio.run(stickcheck.sample(r, 0.05, interval=0.01))
+    assert r.pumps >= 2 and samples["left"][0] == (0.01, 0.0)

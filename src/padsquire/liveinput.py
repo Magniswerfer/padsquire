@@ -61,6 +61,33 @@ def state_from_report(report: bytes) -> dict | None:
     return out
 
 
+class ReportInput:
+    """LiveInput's pump() and state(), from the controller's 0xF4 state reports (macOS, where there is
+    no gamepad device to read): for the stick check. pump() is a coroutine here; start() switches the
+    reports on for this reader and aclose() off again (HidTransport.live_state counts viewers)."""
+
+    REST = {"lx": 0.0, "ly": 0.0, "rx": 0.0, "ry": 0.0, "lt": 0.0, "rt": 0.0, "pressed": []}
+
+    def __init__(self, transport):
+        self.transport = transport
+        self.st: dict | None = None
+
+    async def start(self) -> None:
+        await self.transport.live_state(on=True)
+
+    async def pump(self) -> bool:
+        st = state_from_report(await self.transport.live_state() or b"")
+        if st is not None:
+            self.st = st
+        return st is not None
+
+    def state(self) -> dict:
+        return dict(self.st or self.REST)
+
+    async def aclose(self) -> None:
+        await self.transport.live_state(on=False)
+
+
 class Unavailable(RuntimeError):
     pass
 

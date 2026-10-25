@@ -287,6 +287,10 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
             raise liveinput.Unavailable("live input is only available by cable or through the receiver")
         if session.simulated:
             return SimulatedSticks(session.client.t)
+        if hid.MACOS:                      # no gamepad device there: the controller's own state reports
+            if not hasattr(session.client.t, "live_state"):
+                raise liveinput.Unavailable("live input is only available by cable or through the receiver")
+            return liveinput.ReportInput(session.client.t)
         return liveinput.LiveInput(liveinput.event_node_for(session.address))
 
     async def state_of(nova: NovaClient) -> dict:
@@ -628,8 +632,12 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
         nova = need_client()
         try:
             live = open_live()
+            if hasattr(live, "start"):     # the state-report reader (macOS) switches the reports on
+                await live.start()
         except liveinput.Unavailable as e:
             return fail(str(e), 409)
+        except (hid.HidError, OSError) as e:
+            return fail(f"the controller sends no live input: {e}", 409)
         try:
             return ok(await stickcheck.run(nova, live, d.get("test"), float(seconds)))
         except liveinput.Unavailable as e:
@@ -637,7 +645,13 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
         except RuntimeError as e:          # a dead zone couldn't be put back
             return fail(str(e), 500)
         finally:
-            live.close()
+            if hasattr(live, "aclose"):
+                try:
+                    await live.aclose()
+                except (hid.HidError, OSError):
+                    pass
+            else:
+                live.close()
 
     # -- settings file ------------------------------------------------------------
     def file_scope() -> dict:

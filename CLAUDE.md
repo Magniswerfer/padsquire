@@ -62,7 +62,8 @@ padsquire uboot test-write | restore | flash ... --confirm        # writes (need
   macOS (own venv in ~/.local/share/padsquire/venv). Releases: push a `v*` tag (PyPI).
 - `paths.py`: data and cache folders; moves the folders of the old project name once at startup.
 - `liveinput.py`: sticks, triggers and buttons from the xpad evdev node; on macOS from the
-  controller's `0xF4` state reports instead (`state_from_report`, read through `HidTransport.live_state`).
+  controller's `0xF4` state reports instead (`state_from_report`, read through `HidTransport.live_state`;
+  `ReportInput` gives the stick check the same pump/state from them).
 - `stickcheck.py`: the Sticks page's check: drift and reach from the live input, with the dead
   zones it measures set to 0 for the test and put back (`zeroed`), and suggested dead zones.
 - `settingsfile.py`: save and load settings files (JSON, `padsquire-settings` version 1): checks

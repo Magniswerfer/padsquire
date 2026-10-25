@@ -108,7 +108,9 @@ async def sample(live, seconds: float, interval: float = SAMPLE_INTERVAL) -> dic
     loop = asyncio.get_running_loop()
     end = loop.time() + seconds
     while loop.time() < end:
-        live.pump()
+        pumped = live.pump()
+        if asyncio.iscoroutine(pumped):          # the state-report reader (macOS) reads asynchronously
+            await pumped
         st = live.state()
         for side, (ax, ay) in STICKS.items():
             out[side].append((st[ax], st[ay]))

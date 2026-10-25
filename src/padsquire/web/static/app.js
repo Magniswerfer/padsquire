@@ -569,7 +569,8 @@ function fileLoadView() {
   if (cannot.length) box.append(h("p", { class: "note" }, "These can't be changed over this connection, so they stay as they are:"),
     changeList(cannot, (c) => h("span", { class: "hint" }, c.why_not)));
   box.append(h("div", { class: "button-row" },
-    can.length ? h("button", { class: "button primary", onclick: applyFile }, `Load ${can.length} setting${can.length === 1 ? "" : "s"}`) : null,
+    can.length ? h("button", { class: "button primary", onclick: (e) => working(e.currentTarget, "Loading…", applyFile) },
+      `Load ${can.length} setting${can.length === 1 ? "" : "s"}`) : null,
     close));
   return box;
 }
@@ -960,8 +961,7 @@ function stickTest(test) {
   const box = h("div", { class: "check well" }, h("h3", {}, t.title), h("p", { class: "note" }, t.how));
   const result = app.stickCheck[test];
   const status = h("p", { class: "note", "aria-live": "polite" });
-  const btn = h("button", { class: "button", onclick: async () => {
-    btn.disabled = true;
+  const btn = h("button", { class: "button", onclick: () => working(btn, "Checking…", async () => {
     let left = t.seconds;
     status.replaceChildren(h("span", { class: "busy" }, `${t.running} ${left} s`));
     const timer = setInterval(() => {
@@ -973,7 +973,7 @@ function stickTest(test) {
     } catch (e) { toast(e.message, "error"); }
     clearInterval(timer);
     if (app.section === "sticks") render();
-  } }, result ? "Check again" : `${t.button} (${t.seconds} seconds)`);
+  }) }, result ? "Check again" : `${t.button} (${t.seconds} seconds)`);
   box.append(h("div", { class: "button-row" }, btn), status);
   if (result) {
     for (const [side, name] of [["left", "Left stick"], ["right", "Right stick"]]) {
@@ -985,8 +985,8 @@ function stickTest(test) {
 
 // a "use N%" button that writes the suggestion like the slider would
 function useButton(zone, value) {
-  return h("button", { class: "button small", onclick: () =>
-    save("/api/dead-zone", { zone, value }, (got) => { app.dev.dead_zones[zone] = { value: got }; render(); toast(`Set to ${got}%`); }, null) },
+  return h("button", { class: "button small", onclick: (e) => working(e.currentTarget, "Setting…", () =>
+    save("/api/dead-zone", { zone, value }, (got) => { app.dev.dead_zones[zone] = { value: got }; render(); toast(`Set to ${got}%`); }, null)) },
   `Use ${value}%`);
 }
 
@@ -1299,7 +1299,7 @@ function profileRow(p) {
     h("div", { class: "profile-head" }, title,
       h("p", { class: "note" }, status, saved ? ` Saved ${saved}${p.firmware ? `, firmware ${p.firmware}` : ""}.` : null)),
     h("div", { class: "button-row" },
-      p.active ? null : h("button", { class: "button primary small", onclick: () => switchProfile(p) }, "Switch"),
+      p.active ? null : h("button", { class: "button primary small", onclick: (e) => working(e.currentTarget, "Switching…", () => switchProfile(p)) }, "Switch"),
       more));
 }
 

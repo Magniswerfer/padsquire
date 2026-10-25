@@ -35,7 +35,7 @@ controller talks over USB and Bluetooth.
 | Read and change settings | yes | yes | built, not tested on hardware yet |
 | Remap every button | yes | yes | back buttons only, not tested |
 | Live sticks, triggers and buttons | yes (macOS too) | yes | no |
-| Stick check | yes | yes | no |
+| Stick check | yes (macOS too) | yes | no |
 | Save and load settings files | yes | yes | built, not tested |
 | Profiles | yes | yes | built, not tested |
 | Controller firmware update | yes | no (use the cable) | no |
