@@ -363,7 +363,9 @@ function panelController() {
   const fact = (term, value, small) => h("div", { class: "fact well" }, h("dt", {}, term), h("dd", {}, value ?? "Unknown", small ? h("small", {}, small) : null));
   const dongle = app.status.mode === "usb" && app.status.via === "dongle";
   const where = app.status.mode !== "usb" ? `Connected to ${app.status.address}`
-    : dongle ? `Connected through the 2.4 GHz receiver (${app.status.address})` : `Connected by cable (${app.status.address})`;
+    : (dongle ? "Connected through the 2.4 GHz receiver" : "Connected by cable")
+      // the hidraw node on Linux; macOS's own device IDs mean nothing to anyone
+      + (app.status.address.startsWith("/dev/") ? ` (${app.status.address})` : "");
   // Through the receiver the firmware version in the basic info is the receiver's own.
   const own = val(d.controller_firmware);
   const firmware = dongle
@@ -551,12 +553,13 @@ function restartBox() {
   const box = notice("",
     h("p", {}, h("strong", {}, "If the controller stops responding after a change. "),
       "This happens now and then, mostly through the receiver; the change itself is kept. A restart fixes it."),
-    app.status.mode === "usb" && sg
+    !app.meta.update_mode ? null
+    : app.status.mode === "usb" && sg
       ? h("div", { class: "button-row" }, h("button", { class: "button", onclick: restartDevice }, receiver ? "Restart the receiver" : "Restart the controller"))
       : app.status.mode === "usb" ? h("p", {}, "The restart button needs a one-time setup: ", h("a", { href: "#setup" }, "see Setup and help"), ".") : null,
     h("p", { class: "note" }, receiver
       ? "If restarting the receiver doesn't help, turn the controller off and on: hold Home for about 5 seconds, turn it on, and hold Menu and View until the light is green."
-      : "Or by hand: hold Home for about 5 seconds, turn it on, and hold Menu and View until the light is green."));
+      : `${app.meta.update_mode ? "Or by hand" : "To restart it"}: hold Home for about 5 seconds, turn it on, and hold Menu and View until the light is green.`));
   return box;
 }
 
@@ -1064,6 +1067,12 @@ async function runStep(path, body, title, text, okLabel) {
 
 const addr = (n) => `0x${n.toString(16)}`;
 
+function macosNote() {
+  return notice("",
+    h("p", {}, h("strong", {}, "Firmware updates aren't available on macOS yet. "),
+      "Backups, updates and restarts use the controller's update mode, which PadSquire can only talk to on Linux so far. Every setting works here."));
+}
+
 function updateView() {
   const d = upd.data;
   if (d.error) return [h("p", { class: "note" }, d.error)];
@@ -1072,6 +1081,7 @@ function updateView() {
   const inUpdate = d.mode === "download";
   const out = [];
 
+  if (!app.meta.update_mode) return [macosNote()];
   const notice = setupNotice(true);
   if (notice) out.push(notice);
   const device = d.device || "controller";
@@ -1547,18 +1557,22 @@ async function panelSetup() {
     qa("The controller isn't found",
       "Check the Home light is green: hold Menu and View for 2 seconds; each press moves to the next mode (green, red, blue). In blue mode it pretends to be a PlayStation controller and can't be configured.",
       "By cable, try another cable or port: some cables only charge. Through the receiver, turn the controller on and wait for it to link before switching to green.",
-      "If it shows up but can't be opened, the device permissions above aren't in place yet, or the controller was plugged in before they were: unplug it and plug it in again."),
-    qa("The live view or the controller stops responding",
+      app.meta.update_mode
+        ? "If it shows up but can't be opened, the device permissions above aren't in place yet, or the controller was plugged in before they were: unplug it and plug it in again."
+        : "If it shows up but can't be opened, another program has it: macOS lets only one program use it at a time. Close other PadSquire windows and GameSir software, or unplug it and plug it in again."),
+    app.meta.update_mode ? qa("The live view or the controller stops responding",
       "This has been seen right after a change, mostly through the receiver. Use Restart on the Buttons page: by cable it restarts the controller, through the receiver it restarts the receiver. Nothing is changed or erased, and settings are kept.",
-      "If that doesn't help, turn the controller off and on: hold Home for about 5 seconds, turn it on, and switch to green."),
+      "If that doesn't help, turn the controller off and on: hold Home for about 5 seconds, turn it on, and switch to green.")
+    : qa("The controller stops responding",
+      "This has been seen right after a change, mostly through the receiver; settings are kept. Turn the controller off and on: hold Home for about 5 seconds, turn it on, and switch to green."),
     qa("Bluetooth doesn't find it",
       "Put the controller in Android mode: hold Home and A for 2 seconds until the light flashes yellow. Pair it once in your system's Bluetooth settings, then use Find controllers here."),
-    qa("Switching to update mode doesn't work",
+    !app.meta.update_mode ? null : qa("Switching to update mode doesn't work",
       "The sg module must be loaded (see above). Use a USB port on the computer itself or a powered USB 2 hub; some hubs disturb the controller's update mode.",
       "Nothing has been written at that point. To get the controller back: unplug it, hold Home for about 5 seconds, and turn it on again. The receiver: unplug it and plug it back in."),
-    qa("A firmware write fails",
+    !app.meta.update_mode ? null : qa("A firmware write fails",
       "The controller or receiver stays in update mode on purpose. Don't unplug it and don't restart it: run the same step again. If it keeps failing, write your backup back the same way. Every write is checked block by block, and nothing outside the firmware area is ever touched."),
-    qa("Where are my backups?",
+    !app.meta.update_mode ? null : qa("Where are my backups?",
       "In ~/.local/share/padsquire/backups, one file per backup with a .json next to it. They hold the firmware and your controller's Bluetooth pairing and calibration: copy them somewhere safe, and don't share them."),
     qa("Starting this app",
       command("padsquire gui"),

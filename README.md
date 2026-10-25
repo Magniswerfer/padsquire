@@ -74,6 +74,21 @@ reach it: the server rejects requests without the link's session cookie, request
 host name, and API calls without a custom header. Fonts are bundled, so nothing loads from the
 internet.
 
+### On a Mac (early)
+
+Settings work on macOS by cable: macOS's own driver serves the controller's settings channel, so
+there's nothing to set up and no sudo. The installer above is for Linux; on a Mac use pipx
+(`pipx install 'padsquire[gui]'`, then `padsquire gui`) or the from-source steps, with Python
+3.11 or newer ([Homebrew](https://brew.sh/): `brew install python`).
+
+- **Works:** every setting and remap by cable, tested on one controller. The receiver and
+  Bluetooth should work the same way but aren't tested on a Mac yet.
+- **Not yet:** firmware updates, backups and the restart button (they need update mode, which
+  only Linux can talk to so far), and the live sticks and buttons view.
+- **Playing games:** macOS has no driver for PC/Xbox mode (green). Change settings in green, then
+  hold Menu + View until the light is blue: macOS sees a DualShock 4 there and supports it
+  without a driver. The settings stay on the controller.
+
 ## Connect the controller
 
 - **By cable:** plug it in and hold **View + Menu** for 2 seconds until the Home light is

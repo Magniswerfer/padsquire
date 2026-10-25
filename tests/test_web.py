@@ -195,14 +195,35 @@ def test_remap_every_key(tmp_path):
     run(go, tmp_path)
 
 
-def test_setup_checks_explain_their_commands(tmp_path):
+@pytest.mark.parametrize("macos, ids", [
+    (False, {"udev", "sg", "7zip", "firmware", "bluetooth", "device"}),
+    (True, {"hidapi", "play", "updates", "bluetooth", "device"}),
+])
+def test_setup_checks_explain_their_commands(tmp_path, monkeypatch, macos, ids):
+    from padsquire import hid
+    monkeypatch.setattr(hid, "MACOS", macos)
+
     async def go(c):
         await login(c)
         checks = (await (await c.get("/api/setup", headers=API)).json())["data"]
-        assert {x["id"] for x in checks} >= {"udev", "sg", "7zip", "firmware", "bluetooth", "device"}
+        assert {x["id"] for x in checks} >= ids
         for x in checks:
             if x["command"]:                         # every command says what it does
                 assert x["explain"] and all(d["url"].startswith("https://") for d in x["docs"])
+        meta = (await (await c.get("/api/meta", headers=API)).json())["data"]
+        assert meta["update_mode"] is not macos
+    run(go, tmp_path)
+
+
+def test_macos_refuses_update_mode(tmp_path, monkeypatch):
+    from padsquire import hid
+    monkeypatch.setattr(hid, "MACOS", True)
+
+    async def go(c):
+        await login(c)
+        for path in ("/api/update/enter", "/api/update/reboot"):
+            r = await c.post(path, json={"confirm": True}, headers=API)
+            assert r.status == 409 and "macOS" in (await r.json())["error"]
     run(go, tmp_path)
 
 

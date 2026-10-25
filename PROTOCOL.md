@@ -44,6 +44,18 @@ which does not match the descriptor literally). Its report descriptor:
 `0x2106` is in neither Connect's table nor the DLL's PID list. The dongle through green mode
 (expected `0x1098`) has not been seen yet.
 
+**macOS (confirmed 2026-10-25, macOS 26.6, Apple silicon, firmware 8201, by cable).** The cable in
+green mode enumerates the same: `3537:100F`, manufacturer "2.4G", the same three interfaces. Apple's
+own HID driver (`AppleUserUSBHostHIDDevice`) binds if01 and if02; if02 shows the same descriptor,
+`PrimaryUsagePage` 65402 (`0xFF7A`), 64-byte input and output reports. hidapi (IOHIDManager)
+reaches it with no driver, no root and no permission prompt; a report written with a leading
+report ID 0 goes out as 64 bytes, and every read and write so far behaves as over hidraw (basic
+info, battery, all ten dead zones, a vibration write read back and restored). hidapi opens it
+**exclusively** on macOS: a second program can't open it while one has it. if00 (`ff/5d/01`,
+Xbox 360) has no macOS driver, so green mode is no gamepad for macOS games; blue mode
+(DualShock 4) should be, through macOS's own support (not yet tried). The update-mode disk
+(section 3) needs raw SCSI commands, which macOS has no `SG_IO` for: not attempted.
+
 ## Three ways to talk to it
 
 ### 1. Bluetooth LE: "GCM" protocol (easiest, fully readable)

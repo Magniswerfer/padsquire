@@ -147,6 +147,9 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
                 + (f", {ident.flash_size // 1024} KB." if ident.flash_size else "."))
         return st.identity
 
+    # The controller would leave as a USB disk that this computer can't send commands to.
+    MACOS_NO_UPDATE_MODE = "update mode isn't available on macOS yet; use a Linux computer for this"
+
     @routes.get("/api/update")
     async def status(_):
         download = jlboot.find()
@@ -167,6 +170,8 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
     @routes.post("/api/update/enter")
     async def enter(request):
         d = await body(request)
+        if hid.MACOS:
+            return fail(MACOS_NO_UPDATE_MODE, 409)
         if d.get("confirm") is not True:
             return fail("confirmation required")
         device = d.get("target", "controller")
@@ -210,6 +215,8 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
         """Restart the connected controller (by cable) or receiver, through update mode and straight
         out again. Nothing is erased or written; it takes a few seconds."""
         d = await body(request)
+        if hid.MACOS:
+            return fail(MACOS_NO_UPDATE_MODE, 409)
         if d.get("confirm") is not True:
             return fail("confirmation required")
         if not Path("/sys/class/scsi_generic").exists():

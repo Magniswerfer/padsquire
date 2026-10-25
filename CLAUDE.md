@@ -5,12 +5,13 @@ main interface) and a CLI, for configuration by cable, through the 2.4 GHz recei
 Bluetooth, and firmware updates of the controller and the receiver. Built for interoperability
 by studying GameSir Connect 1.14.5/1.16.7 (Windows) and the GameSir Android app 5.8.20. Tested on one
 controller (firmware 7701 and 8201) and its receiver (2800); Bluetooth is not yet tested on hardware.
+Settings by cable also work on macOS (hidapi; confirmed 2026-10-25); firmware updates there don't yet.
 
 ## Commands
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -e '.[gui,test]'   # no system pip on this box; 7zip for update/extract
-pytest                                   # 196 tests; PADSQUIRE_INSTALLER=<setup.exe> adds a real-installer test,
+pytest                                   # 203 tests; PADSQUIRE_INSTALLER=<setup.exe> adds a real-installer test,
                                          # PADSQUIRE_BACKUP=<dump.bin> PADSQUIRE_UFW=<.ufw> a real layout check
 padsquire probe --guided             # read-only report of the controller in every mode -> JSON
 padsquire ble scan | info | deadzone | feature | vibration | sleep | restore
@@ -27,6 +28,8 @@ padsquire uboot test-write | restore | flash ... --confirm        # writes (need
 - `gcm.py`: GCM protocol frames (pure functions). `client.py`: NovaClient, write then read back.
 - `ble.py`: bleak transport (write 0x865F, wait 60 ms, read 0x865F). `simulator.py`: fake device.
 - `hid.py`: USB transport, GCM in 64-byte reports on the `0xFF7A` hidraw interface (confirmed).
+  On macOS (`hid.MACOS`) it goes through hidapi instead (`HidapiTransport`); the app then hides
+  update mode (`/api/meta` `update_mode`), live input and the Linux setup checks.
 - `web/server.py` + `web/static/`: aiohttp GUI (no build step; vanilla JS, strict CSP). Connects
   over BLE or USB; over USB it skips the reads in `USB_UNSUPPORTED` (no reply, 2.2 s timeout each).
   `app.js` + `app.css` are the app's own; `static/ds/` (design system), `pad-model.js` (3D model),
@@ -67,6 +70,9 @@ Open:
    frame) and an evdev events-per-second monitor; by cable it didn't happen in 19 remaps.
 3. **Recovery if the firmware no longer starts**: TBD (PROTOCOL.md section 3, "Recovery").
 4. Controller firmware updates through the receiver (JieLi's HID over-the-air updater): research.
+5. **macOS**: blue (DualShock 4) mode for games untested; receiver and Bluetooth untested there;
+   update mode would need raw SCSI over libusb (no `SG_IO`), not attempted; `padsquire menu` and
+   the own app window are Linux-only.
 
 ## Next steps (as of 2026-10-24)
 

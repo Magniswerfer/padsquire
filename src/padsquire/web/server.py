@@ -321,6 +321,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
             "usb_readonly_features": [f.name for f in USB_READONLY_FEATURES],
             "remap_targets": [k.name for k in gcm.NOVA_REMAP_TARGETS],
             "remap_max_targets": gcm.REMAP_MAX_TARGETS,
+            "update_mode": not hid.MACOS,
         })
 
     @routes.get("/api/status")
@@ -368,6 +369,8 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
         stops reading. Not `guarded`: it must not hold the session lock while it runs."""
         if session.mode != "usb":
             return fail("live input is only available by cable", 409)
+        if hid.MACOS:
+            return fail("live input isn't available on macOS yet", 409)
         try:
             live = liveinput.LiveInput(liveinput.event_node_for(session.address))
         except liveinput.Unavailable as e:

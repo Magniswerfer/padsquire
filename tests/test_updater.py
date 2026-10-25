@@ -132,6 +132,7 @@ def test_update_finds_installer_in_releases_dir(server, tmp_path):
     assert updater.update(tmp_path / "fw", feed_url=feed).updated
 
 
+@needs_7z
 def test_tampered_download_is_refused_and_old_firmware_kept(server, tmp_path):
     root, feed = server
     fw = tmp_path / "firmware"

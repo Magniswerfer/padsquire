@@ -12,6 +12,9 @@ Replies come in two shapes, both confirmed on hardware: a GCM frame with its own
 and checksum (host info), or the request echoed back with the value filled in and a checksum
 over the whole 64-byte report in its last byte (dead zones). `_trim` turns the first shape into
 the bare frame, so gcm.verify() checks the right byte in both cases.
+
+On Linux the interface is a hidraw node found through sysfs. On macOS the system's own HID driver
+serves it, and we reach it through hidapi (IOHIDManager underneath): no driver, no sudo.
 """
 
 from __future__ import annotations
@@ -20,6 +23,7 @@ import asyncio
 import logging
 import os
 import select
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -38,6 +42,8 @@ REPORT_SIZE = 64
 READ_TIMEOUT = 0.2
 READ_ATTEMPTS = 11
 STATE_REPORT = 0xF4
+USAGE_PAGE = 0xFF7A
+MACOS = sys.platform == "darwin"
 
 
 class HidError(RuntimeError):
@@ -46,7 +52,7 @@ class HidError(RuntimeError):
 
 @dataclass
 class HidDevice:
-    path: str          # /dev/hidrawN
+    path: str          # /dev/hidrawN, or hidapi's path on macOS
     pid: int
     name: str
 
@@ -57,6 +63,8 @@ class HidDevice:
 
 def find(sys_root: Path = Path("/sys"), dev_root: Path = Path("/dev")) -> list[HidDevice]:
     """Every Nova 2 Lite config interface currently plugged in."""
+    if MACOS:
+        return _find_hidapi()
     base = sys_root / "class" / "hidraw"
     found = []
     if not base.exists():
@@ -75,6 +83,29 @@ def find(sys_root: Path = Path("/sys"), dev_root: Path = Path("/dev")) -> list[H
         if vid == VENDOR_ID and pid in CONFIG_PIDS and descriptor.startswith(DESCRIPTOR_PREFIX):
             found.append(HidDevice(str(dev_root / node.name), pid, fields.get("HID_NAME", "")))
     return found
+
+
+def _hidapi():
+    try:
+        import hid as hidapi
+    except ImportError:
+        raise HidError("USB on macOS needs the hidapi package: pip install hidapi") from None
+    return hidapi
+
+
+def _find_hidapi(lister=None) -> list[HidDevice]:
+    if lister is None:
+        try:
+            lister = _hidapi().enumerate
+        except HidError:
+            return []
+    found = {}
+    for d in lister(VENDOR_ID, 0):
+        if d["product_id"] in CONFIG_PIDS and d["usage_page"] == USAGE_PAGE:
+            path = d["path"].decode() if isinstance(d["path"], bytes) else d["path"]
+            name = " ".join(x for x in (d.get("manufacturer_string"), d.get("product_string")) if x)
+            found.setdefault(path, HidDevice(path, d["product_id"], name))
+    return sorted(found.values(), key=lambda d: d.path)
 
 
 def _trim(reply: bytes) -> bytes:
@@ -106,6 +137,9 @@ class HidTransport:
         ready, _, _ = select.select([self.fd], [], [], timeout)
         return os.read(self.fd, REPORT_SIZE) if ready else None
 
+    def _write(self, report: bytes) -> None:
+        os.write(self.fd, report)
+
     def _exchange(self, frame: bytes, accept: Callable[[bytes], bool]) -> bytes:
         if len(frame) > REPORT_SIZE:
             raise HidError(f"command longer than one report ({len(frame)} bytes)")
@@ -113,7 +147,7 @@ class HidTransport:
             pass
         # Report ID 0 first: the kernel strips it, since the interface has no report IDs.
         log.debug("send %s", frame.hex(" "))
-        os.write(self.fd, b"\x00" + frame + bytes(REPORT_SIZE - len(frame)))
+        self._write(b"\x00" + frame + bytes(REPORT_SIZE - len(frame)))
         last = b""
         for _ in range(self.attempts):
             report = self._read(self.timeout)
@@ -143,7 +177,7 @@ class HidTransport:
 
     def _send(self, frame: bytes) -> None:
         log.debug("send %s", frame.hex(" "))
-        os.write(self.fd, b"\x00" + frame + bytes(REPORT_SIZE - len(frame)))
+        self._write(b"\x00" + frame + bytes(REPORT_SIZE - len(frame)))
 
     async def send(self, frame: bytes) -> None:
         """One report that gets no reply (the vibration test)."""
@@ -154,6 +188,34 @@ class HidTransport:
         """One 0xF4 state report: switched on for the moment it takes, then off again."""
         async with self._lock:
             return await asyncio.to_thread(self._state_report)
+
+
+class HidapiTransport(HidTransport):
+    """The same over a hidapi device (macOS). hidapi drops the leading report ID 0, as the
+    kernel does."""
+
+    def __init__(self, device, timeout: float = READ_TIMEOUT, attempts: int = READ_ATTEMPTS):
+        super().__init__(-1, timeout, attempts)
+        self.device = device
+
+    def _read(self, timeout: float) -> bytes | None:
+        report = self.device.read(REPORT_SIZE, max(1, round(timeout * 1000)))
+        return bytes(report) if report else None
+
+    def _write(self, report: bytes) -> None:
+        if self.device.write(report) < 0:
+            raise HidError(f"could not write to the controller: {self.device.error()}")
+
+
+def _open_hidapi(path: str):
+    device = _hidapi().device()
+    try:
+        device.open_path(path.encode())
+    except OSError:
+        # macOS opens HID devices exclusively: one program at a time.
+        raise HidError("could not open the controller. Close other programs using it (another "
+                       "PadSquire window, GameSir software), or unplug it and plug it in again") from None
+    return device
 
 
 # GameSir's UpdateFirmware for PID 0x100F (sapjoyuniapis_t4n2, SAPJoyUniDevice_UpdateFirmware):
@@ -168,6 +230,9 @@ def send_update_mode(fd: int) -> None:
 
 def enter_update_mode(path: str) -> None:
     """Switch the controller on `path` into its USB download (firmware update) mode."""
+    if MACOS:
+        # Nothing here can talk to the update-mode disk yet (no SG_IO): don't strand the controller.
+        raise HidError("update mode isn't available on macOS yet; use a Linux computer for this")
     try:
         fd = os.open(path, os.O_RDWR)
     except PermissionError:
@@ -190,6 +255,9 @@ class connect:
         self.path = path
 
     async def __aenter__(self) -> HidTransport:
+        if MACOS:
+            self._device = _open_hidapi(self.path)
+            return HidapiTransport(self._device)
         try:
             self._fd = os.open(self.path, os.O_RDWR | os.O_NONBLOCK)
         except PermissionError:
@@ -200,4 +268,7 @@ class connect:
         return HidTransport(self._fd)
 
     async def __aexit__(self, *exc) -> None:
-        os.close(self._fd)
+        if MACOS:
+            self._device.close()
+        else:
+            os.close(self._fd)

@@ -103,6 +103,8 @@ def _with(c: tuple[str, list[str], list[dict]], why: str, doc: dict) -> tuple[st
 def checks(fw_dir: Path) -> list[dict]:
     """Each check: id, title, ok, need ("settings", "updates" or "optional"), detail, and for
     anything missing a command with a plain explanation of each part and links to its documentation."""
+    if hid.MACOS:
+        return _macos_checks()
     out = []
     rules = next((d / RULES_NAME for d in RULES_DIRS if (d / RULES_NAME).exists()), None)
     devices = hid.find()
@@ -178,14 +180,69 @@ def checks(fw_dir: Path) -> list[dict]:
                         [_doc("pip install", "https://pip.pypa.io/en/stable/cli/pip_install/"),
                          _doc("bleak", "https://bleak.readthedocs.io/")]))})
 
-    download = jlboot.find()
-    out.append({"id": "device", "title": "Controller connected", "ok": bool(devices or download),
-                "need": "optional",
-                "detail": ("Found " + " and ".join("by cable" if d.link == "cable" else "through the 2.4 GHz receiver"
-                                                   for d in devices) + "." if devices else
-                           "In update mode." if download else
-                           "Plug in the cable or the 2.4 GHz receiver and hold Menu + View until the light is green."),
+    out.append(_device_check(devices, jlboot.find()))
+    return out
+
+
+def _device_check(devices, download=()) -> dict:
+    return {"id": "device", "title": "Controller connected", "ok": bool(devices or download),
+            "need": "optional",
+            "detail": ("Found " + " and ".join("by cable" if d.link == "cable" else "through the 2.4 GHz receiver"
+                                               for d in devices) + "." if devices else
+                       "In update mode." if download else
+                       "Plug in the cable or the 2.4 GHz receiver and hold Menu + View until the light is green."),
+            **_cmd(None)}
+
+
+def _macos_checks() -> list[dict]:
+    """On macOS the system's own HID driver serves the settings channel: nothing to set up for
+    settings. Firmware updates need the update-mode disk, which only works on Linux so far."""
+    out = []
+    try:
+        import hid as _hidapi  # noqa: F401
+        hidapi = True
+    except ImportError:
+        hidapi = False
+    out.append({"id": "hidapi", "title": "USB access (hidapi)", "ok": hidapi, "need": "settings",
+                "detail": "Ready. macOS's own driver serves the controller's settings channel; no sudo needed."
+                          if hidapi else "The hidapi Python package is missing.",
+                **_cmd(None if hidapi else (
+                    f"{sys.executable} -m pip install hidapi",
+                    ["This runs pip from PadSquire's own Python environment and installs hidapi, the "
+                     "library PadSquire uses to talk to USB devices on macOS. It only changes PadSquire's "
+                     "own environment, not the system.",
+                     f"To undo it: {sys.executable} -m pip uninstall hidapi"],
+                    [_doc("pip install", "https://pip.pypa.io/en/stable/cli/pip_install/"),
+                     _doc("hidapi", "https://github.com/trezor/cython-hidapi")]))})
+
+    out.append({"id": "play", "title": "Playing games on a Mac", "ok": True, "need": "optional",
+                "detail": "Change settings in PC/Xbox mode (light green), then hold Menu + View until the "
+                          "light is blue to play: macOS supports that mode, a DualShock 4, without a driver. "
+                          "The settings stay on the controller. macOS has no driver for PC/Xbox mode itself.",
                 **_cmd(None)})
+
+    out.append({"id": "updates", "title": "Firmware updates", "ok": False, "need": "optional",
+                "detail": "Not available on macOS yet: backups, updates and the restart button use the "
+                          "controller's update mode, which PadSquire can only talk to on Linux so far.",
+                **_cmd(None)})
+
+    try:
+        import bleak  # noqa: F401
+        ble = True
+    except ImportError:
+        ble = False
+    out.append({"id": "bluetooth", "title": "Bluetooth", "ok": ble, "need": "optional",
+                "detail": "Ready. macOS asks once whether PadSquire's Python may use Bluetooth." if ble else
+                          "The bleak Python package is missing: reinstall with the gui extra.",
+                **_cmd(None if ble else (
+                    f"{sys.executable} -m pip install 'padsquire[gui]'",
+                    ["This runs pip from PadSquire's own Python environment and installs PadSquire again "
+                     "with its gui extras, which include bleak, the Bluetooth library it uses. It only "
+                     "changes PadSquire's own environment, not the system."],
+                    [_doc("pip install", "https://pip.pypa.io/en/stable/cli/pip_install/"),
+                     _doc("bleak", "https://bleak.readthedocs.io/")]))})
+
+    out.append(_device_check(hid.find()))
     return out
 
 
