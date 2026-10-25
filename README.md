@@ -96,8 +96,8 @@ internet.
 Settings work on macOS by cable: macOS's own driver serves the controller's settings channel, so
 there's nothing to set up and no `sudo`. The same installer works on a Mac.
 
-- **Works:** every setting and remap by cable, and the live sticks, triggers and buttons view,
-  tested on one controller. The receiver and Bluetooth should work the same way but aren't
+- **Works:** every setting and remap by cable, the live sticks, triggers and buttons view, the
+  stick check and profiles, tested on one controller. The receiver and Bluetooth should work the same way but aren't
   tested on a Mac yet.
 - **Firmware updates, backups and restarts** work by cable too (tested on one controller). In
   update mode the controller is a USB disk, and macOS lets only an administrator take a disk
