@@ -76,6 +76,7 @@ def test_macos_app_installs_and_removes(capsys, monkeypatch, tmp_path):
     monkeypatch.setattr(desktop, "MACOS", True)
     monkeypatch.setattr(desktop, "applications_dir", lambda: tmp_path / "Applications")
     monkeypatch.setattr(desktop, "_mac_icon", lambda icns: False)
+    monkeypatch.setattr(desktop, "_hide_extension", lambda app: None)   # its own test below
     monkeypatch.setattr(desktop.subprocess, "run", lambda argv, **kw: None)
     cli.main(["menu"])
     app = tmp_path / "Applications" / "PadSquire.app"
