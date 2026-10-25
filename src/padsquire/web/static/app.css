@@ -287,19 +287,60 @@ input[type="color"] {
 .dialog p { color: var(--ink-soft); }
 .dialog .actions { display: flex; justify-content: flex-end; gap: var(--space-3); margin-top: var(--space-3); }
 
-/* -- narrow screens: the controller and nav go above the page ---------------------------- */
+.app-status .short { display: none; }
+
+/* -- narrow screens: the controller, then the nav as one row that stays at the top, then the
+      page, and the theme and footer last ------------------------------------------------ */
 @media (max-width: 54rem) {
+  .app-bar { position: static; }
   .layout { grid-template-columns: minmax(0, 1fr); gap: var(--space-4); padding-top: var(--space-4); }
-  .side { position: static; }
-  pad-model { max-width: 22rem; justify-self: center; }
-  .navlist { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-  .navlist a { padding: .4rem .8rem; border: var(--hairline) solid var(--line); }
+  .side { display: contents; }          /* its parts become rows of .layout, so the footer can go last */
+  pad-model { width: min(100%, 22rem); justify-self: center; }
+  .side > nav {
+    position: sticky; top: 0; z-index: 4;
+    margin: 0 calc(-1 * var(--gutter));
+    background: var(--paper);
+    border-bottom: var(--hairline) solid var(--line);
+  }
+  .navlist {
+    display: flex; gap: var(--space-2);
+    padding: var(--space-2) var(--gutter);
+    overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity;
+    scroll-padding-inline: var(--gutter); scrollbar-width: none;
+  }
+  .navlist::-webkit-scrollbar { display: none; }
+  .navlist li { flex: none; scroll-snap-align: start; }
+  .navlist a { padding: .4rem .85rem; white-space: nowrap; border: var(--hairline) solid var(--line); border-radius: var(--radius-pill); }
   .navlist a[aria-current="page"] { border-color: var(--accent-line); }
   .navlist small { display: none; }
-  .side-foot { order: 9; }
-  .panel { padding: var(--space-5) var(--space-4) var(--space-6); border-radius: var(--radius-md); }
+  .side-foot { order: 9; justify-items: center; text-align: center; }
+  .side-foot .segmented { justify-self: center; }
+  .panel { padding: var(--space-5) var(--space-4) var(--space-6); }
 }
+
+/* phones: a two-line app bar, a smaller controller, tighter sheet */
 @media (max-width: 34rem) {
-  .app-bar { position: static; }
-  .app-status { width: 100%; }
+  .app-bar { gap: var(--space-2); padding-block: var(--space-2); }
+  .app-title { font-size: var(--text-lg); }
+  .logo { width: 1.6rem; height: 1.6rem; }
+  .app-status { width: 100%; gap: var(--space-2) var(--space-3); }
+  .app-status .long { display: none; }
+  .app-status .short { display: inline; }
+  .app-status .button { margin-left: auto; }
+  .layout { gap: var(--space-3); padding-top: var(--space-2); }
+  pad-model { width: min(100%, 15rem); }
+  .panel { padding: var(--space-4) var(--space-4) var(--space-5); }
+  .panel h1 { font-size: var(--text-xl); }
+  .lede { font-size: var(--text-md); }
+  .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+  .fact { padding: var(--space-3); }
+  .fact dd { font-size: var(--text-md); }
+  .fact dd small { display: block; margin: 0; }
+  .steps > li { padding-left: 2.5rem; }
+  /* "Saved" goes to the row's corner, beside the label, so the slider keeps the whole width */
+  .setting { position: relative; }
+  .setting .saved { position: absolute; top: var(--space-3); right: 0; min-width: 0; }
+  .range-row { gap: var(--space-3); }
+  .setting .input { min-width: 0; width: 100%; }
+  .toasts { left: var(--space-3); right: var(--space-3); bottom: var(--space-3); max-width: none; }
 }

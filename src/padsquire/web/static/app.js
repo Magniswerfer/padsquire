@@ -224,7 +224,11 @@ function renderChrome() {
     const via = app.status.mode === "simulated" ? "Simulated controller"
       : app.status.mode === "usb" ? (app.status.via === "dongle" ? "Connected through the 2.4 GHz receiver" : "Connected by cable")
       : "Connected over Bluetooth";
-    st.append(h("span", { class: "chip ok" }, icon("check"), via));
+    // phones get the short label (app.css); the full one stays for screen readers and as a tooltip
+    const short = app.status.mode === "simulated" ? "Simulated"
+      : app.status.mode === "usb" ? (app.status.via === "dongle" ? "Receiver" : "Cable") : "Bluetooth";
+    st.append(h("span", { class: "chip ok", title: via }, icon("check"),
+      h("span", { class: "long" }, via), h("span", { class: "short", "aria-hidden": "true" }, short)));
     const bat = app.dev && val(app.dev.battery);
     if (bat) {
       st.append(h("span", { class: "battery", title: bat.charging ? "Charging" : "Battery" },
@@ -232,7 +236,8 @@ function renderChrome() {
     }
     st.append(h("button", { class: "button small", onclick: disconnect }, "Disconnect"));
   } else {
-    st.append(h("span", { class: "chip" }, icon("plug"), "No controller connected"));
+    st.append(h("span", { class: "chip" }, icon("plug"), h("span", { class: "long" }, "No controller connected"),
+      h("span", { class: "short", "aria-hidden": "true" }, "Not connected")));
   }
 
   const nav = $("#nav");
@@ -246,6 +251,8 @@ function renderChrome() {
     }, sec.label, sectionHint(sec.id))));
   }
 
+  navToCurrent();
+
   $("#pad").classList.toggle("offline", !app.status.connected);
   // The Home light colour is the user's own: it colours the preview and the model's Home light.
   const light = app.dev && val(app.dev.light);
@@ -257,6 +264,18 @@ function renderChrome() {
     model.el.look = { light: { color: colour || "accent" } };
   }
 }
+
+// On narrow screens the nav is one row that scrolls sideways: keep the current page in view,
+// scrolling only the row, never the page. Run again when the width or the fonts change.
+function navToCurrent() {
+  const nav = $("#nav");
+  const li = nav.querySelector('[aria-current="page"]')?.parentElement;
+  if (!li || nav.scrollWidth <= nav.clientWidth) return;
+  const left = li.getBoundingClientRect().left - nav.getBoundingClientRect().left;
+  if (left < 0 || left + li.offsetWidth > nav.clientWidth) nav.scrollLeft += left - (nav.clientWidth - li.offsetWidth) / 2;
+}
+window.addEventListener("resize", navToCurrent);
+document.fonts?.ready.then(navToCurrent);
 
 // A battery drawn to scale: the fill is the charge, inside the outline with an even gap.
 // Low (15% and under, when the Home light flashes red) is shown in the warning colour.
