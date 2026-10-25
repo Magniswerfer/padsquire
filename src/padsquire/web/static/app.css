@@ -71,8 +71,8 @@ pad-model.offline { opacity: .55; filter: grayscale(1); }
 /* the licence line under the page (the AGPL asks that users can find the source) */
 .app-foot { grid-column: 2; margin: 0; text-align: center; }
 
-/* Help's two tabs (ds's segmented control), and the theme at the end of Setup and help */
-.help-tabs { justify-self: start; }
+/* the tabs of pages that share a sidebar entry (ds's segmented control), and the theme */
+.page-tabs { justify-self: start; }
 /* Setup and help ends with the theme */
 .appearance, .app-update { display: grid; gap: var(--space-3); justify-items: start; max-width: 46rem; }
 .source { color: var(--ink-faint); font-size: var(--text-xs); }
@@ -188,12 +188,10 @@ pad-model.offline { opacity: .55; filter: grayscale(1); }
 .profile-new .input { flex: 1 1 14rem; }
 .profile-rename .input { flex: 1 1 12rem; }
 
-/* settings files */
-.settings-file { display: grid; gap: var(--space-3); margin-top: var(--space-6); }
-.settings-file h2 { margin-bottom: 0; }
-.file-load { display: grid; gap: var(--space-3); max-width: 46rem; padding: var(--space-4); }
-.file-load h3 { margin: 0; overflow-wrap: anywhere; }
-.file-load p { margin: 0; }
+/* what switching to a profile changed, as a list of settings */
+.switch-result { display: grid; gap: var(--space-3); max-width: 46rem; padding: var(--space-4); }
+.switch-result h3 { margin: 0; overflow-wrap: anywhere; }
+.switch-result p { margin: 0; }
 .change-list { list-style: none; margin: 0; padding: 0; border-top: var(--hairline) solid var(--line); font-size: var(--text-sm); }
 .change-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1) var(--space-4); padding: var(--space-2) 0; border-bottom: var(--hairline) solid var(--line); }
 .change-list .label { font-weight: var(--weight-bold); }
@@ -343,6 +341,19 @@ input[type="color"] {
 .faq { padding: var(--space-3) 0; border-bottom: var(--hairline) solid var(--line); }
 .faq > :not(summary) { margin-top: var(--space-3); color: var(--ink-soft); }
 
+
+/* -- loading: the page's shape in placeholders while the settings are read ------------------ */
+.loading { display: grid; gap: var(--space-4); }
+.loading .busy { font-size: var(--text-lg); color: var(--ink); }
+.bones { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--space-3); }
+.bones.rows { grid-template-columns: minmax(0, 1fr); border-top: 0; }
+.bone { display: block; border-radius: var(--radius-sm); background: var(--paper-sunken); }
+.bone.fact { height: 4.75rem; }
+.bone.line { height: 2.75rem; }
+@media (prefers-reduced-motion: no-preference) {
+  .bone { animation: bone-pulse 1.6s var(--ease-out) infinite alternate; }
+  @keyframes bone-pulse { from { opacity: 1; } to { opacity: .45; } }
+}
 
 /* -- toasts and the confirm dialog ------------------------------------------------------ */
 .toasts { position: fixed; right: var(--space-4); bottom: var(--space-4); z-index: 10; display: grid; gap: var(--space-2); max-width: min(26rem, calc(100vw - 2rem)); }

@@ -127,7 +127,7 @@ def _firmware_check(fw_dir: Path) -> dict:
         bundled = []
     return {"id": "firmware", "title": "Firmware downloaded", "ok": bool(bundled), "need": "updates",
             "detail": f"{len(bundled)} files in {fw_dir}." if bundled else
-                      "Use Download firmware on the Firmware page. It fetches GameSir Connect and extracts it.",
+                      "Use Download firmware under Controller, Firmware. It fetches GameSir Connect and extracts it.",
             **_cmd(None)}
 
 

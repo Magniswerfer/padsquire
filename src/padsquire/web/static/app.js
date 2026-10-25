@@ -84,8 +84,8 @@ const SECTIONS = [
   { id: "lighting", label: "Home light" },
   { id: "profiles", label: "Profiles" },
   { id: "power", label: "Power" },
-  { id: "firmware", label: "Firmware", offline: true, apart: true },   // firmware and help, set apart
-  { id: "setup", label: "Help", offline: true },
+  { id: "firmware", label: "Firmware", offline: true, under: "controller" },   // a tab of Controller
+  { id: "setup", label: "Help", offline: true, apart: true },             // set apart from the settings
   { id: "guide", label: "Button guide", offline: true, under: "setup" },   // a tab of Help, not in the list
 ];
 
@@ -106,7 +106,6 @@ const app = {
   renaming: null,         // the id of the profile whose name is being edited
   switched: null,         // the last switch: the profile's name and what was skipped or failed       // the connection the simulator imitates
   stickCheck: {},         // the last stick check results, per test
-  fileLoad: null,         // a settings file being loaded: its name, contents, preview and result
 };
 
 const val = (entry) => (entry && "value" in entry ? entry.value : undefined);
@@ -386,6 +385,7 @@ async function startModel() {
 function panelConnect() {
   const wrap = h("div", {},
     h("h1", {}, "Connect your controller"),
+    app.section === "controller" ? pageTabs("controller", "controller") : null,
     setupNotice(),
     h("p", { class: "note" }, "Plug it in by cable or through the 2.4 GHz receiver and it's found and connected automatically."),
     h("p", { class: "lede" }, "Settings are read from the controller and written back to it, by cable, through the 2.4 GHz receiver or over Bluetooth. Nothing is stored on this computer."),
@@ -436,10 +436,10 @@ function panelController() {
     ? [fact("Firmware", own, own ? regionName(own) : "not reported"), fact("Receiver firmware", info && info.firmware_version)]
     : [fact("Firmware", info && info.firmware_version, info ? regionName(info.firmware_version) : null)];
   return h("div", {},
-    h("h1", {}, app.status.name || "Nova 2 Lite"),
+    h("h1", {}, "Controller"), pageTabs("controller", "controller"),
     h("p", { class: "lede" }, app.status.simulated
-      ? "This is the simulator: changes behave like the real controller on this connection, but go nowhere."
-      : `${where}. Every value shown here was read back from the controller.`),
+      ? `${app.status.name || "Nova 2 Lite"}. This is the simulator: changes behave like the real controller on this connection, but go nowhere.`
+      : `${app.status.name || "Nova 2 Lite"}, ${where[0].toLowerCase()}${where.slice(1)}. Every value shown here was read back from the controller.`),
     h("dl", { class: "facts" },
       fact("Battery", bat ? `${bat.level}%` : null, bat && bat.charging ? "charging" : null),
       ...firmware,
@@ -449,32 +449,12 @@ function panelController() {
       fact("Protocol", info && `GCM ${info.gcm_version}`)),
     h("div", { class: "button-row" },
       h("button", { class: "button", onclick: (e) => working(e.currentTarget, "Reading…", () => reload(true)) }, "Read settings again")),
-    settingsFile(),
   );
 }
 
 // ---------------------------------------------------------------------------
-// settings files: every setting saved to a file, and loaded back after a preview of what changes
+// files for profiles: writing one, and how a list of setting changes reads
 
-function settingsFile() {
-  const input = h("input", { type: "file", accept: ".json,application/json", class: "visually-hidden", tabindex: "-1",
-    "aria-hidden": "true", onchange: () => { if (input.files[0]) previewFile(input.files[0]); input.value = ""; } });
-  const wrap = h("div", { class: "settings-file" }, h("h2", {}, "Save or load settings"),
-    h("p", { class: "note" }, "Keep every setting in a file, to put back later, share with someone, or copy to another Nova 2 Lite. Loading a file shows what it changes before anything is written."),
-    h("div", { class: "button-row" },
-      h("button", { class: "button", onclick: saveFile }, "Save to a file"),
-      h("button", { class: "button", onclick: () => input.click() }, "Load from a file"), input));
-  if (app.fileLoad) wrap.append(fileLoadView());
-  return wrap;
-}
-
-async function saveFile() {
-  let doc;
-  try { doc = await api("/api/settings/export"); } catch (e) { toast(e.message, "error"); return; }
-  await writeJson(doc, `nova-2-lite-settings-${new Date().toISOString().slice(0, 10)}.json`, "Settings");
-}
-
-// A settings document to a file: a save dialog where there is one, a download otherwise.
 async function writeJson(doc, name, what) {
   const text = JSON.stringify(doc, null, 2) + "\n";
   if (window.showSaveFilePicker) {
@@ -498,31 +478,6 @@ async function writeJson(doc, name, what) {
   toast(`${what} saved as ${name} in your downloads`);
 }
 
-async function previewFile(file) {
-  let doc;
-  try { doc = JSON.parse(await file.text()); }
-  catch { toast(`${file.name} isn't a settings file (not valid JSON).`, "error"); return; }
-  try {
-    const preview = await api("/api/settings/import", { file: doc });
-    app.fileLoad = { name: file.name, doc, preview, result: null };
-  } catch (e) { toast(e.message, "error"); return; }
-  render();
-}
-
-async function applyFile() {
-  const f = app.fileLoad;
-  try {
-    const result = await api("/api/settings/import", { file: f.doc, apply: true });
-    app.dev = result.state;
-    f.result = result;
-    const n = result.applied.length;
-    toast(result.failed.length ? `${n} setting${n === 1 ? "" : "s"} loaded, ${result.failed.length} failed` : `${n} setting${n === 1 ? "" : "s"} loaded`,
-      result.failed.length ? "error" : "info");
-  } catch (e) { toast(e.message, "error"); }
-  render();
-}
-
-// A setting's value in words, as the pages show it.
 function settingValue(section, v) {
   const labels = app.meta.keys;
   if (v === null || v === undefined) return "not read";
@@ -542,39 +497,6 @@ function changeList(list, extra) {
     h("span", { class: "label" }, ["remaps", "mappings"].includes(c.section) ? `What ${app.meta.keys[c.name] || c.name} does` : c.label),
     h("span", {}, `${settingValue(c.section, c.from)} → ${settingValue(c.section, c.to)}`),
     extra ? extra(c) : null)));
-}
-
-function fileLoadView() {
-  const f = app.fileLoad;
-  const close = h("button", { class: "button small quiet", onclick: () => { app.fileLoad = null; render(); } }, f.result ? "Close" : "Cancel");
-  const box = h("div", { class: "file-load well" }, h("h3", {}, f.name));
-  const saved = f.doc.saved ? f.doc.saved.slice(0, 16).replace("T", " ") : null;
-  const from = f.doc.controller && f.doc.controller.firmware;
-  if (saved || from) box.append(h("p", { class: "note" }, [saved ? `Saved ${saved}` : null, from ? `from firmware ${from}` : null].filter(Boolean).join(", ") + "."));
-  if (f.result) {
-    const r = f.result;
-    box.append(h("p", {}, `${r.applied.length} setting${r.applied.length === 1 ? "" : "s"} loaded, each read back from the controller.`));
-    if (r.failed.length) box.append(notice("danger", h("p", {}, "These didn't take:"),
-      changeList(r.failed, (c) => h("span", { class: "hint" }, c.error))));
-    if (r.skipped.length) box.append(notice("", h("p", {}, "Left as they are:"),
-      changeList(r.skipped, (c) => h("span", { class: "hint" }, c.why))));
-    box.append(h("div", { class: "button-row" }, close));
-    return box;
-  }
-  const changes = f.preview.changes;
-  const can = changes.filter((c) => !c.why_not), cannot = changes.filter((c) => c.why_not);
-  if (!changes.length) {
-    box.append(notice("ok", "The controller already has these settings. Nothing to change."), h("div", { class: "button-row" }, close));
-    return box;
-  }
-  if (can.length) box.append(h("p", {}, `Loading this file changes ${can.length} setting${can.length === 1 ? "" : "s"}:`), changeList(can));
-  if (cannot.length) box.append(h("p", { class: "note" }, "These can't be changed over this connection, so they stay as they are:"),
-    changeList(cannot, (c) => h("span", { class: "hint" }, c.why_not)));
-  box.append(h("div", { class: "button-row" },
-    can.length ? h("button", { class: "button primary", onclick: (e) => working(e.currentTarget, "Loading…", applyFile) },
-      `Load ${can.length} setting${can.length === 1 ? "" : "s"}`) : null,
-    close));
-  return box;
 }
 
 function regionName(fw) {
@@ -1320,7 +1242,7 @@ function switchedView() {
   const r = app.switched;
   if (!r.failed.length && !r.skipped.length) return null;
   const close = h("button", { class: "button small quiet", onclick: () => { app.switched = null; render(); } }, "Close");
-  return h("div", { class: "file-load well" }, h("h3", {}, `Switched to ${r.name}`),
+  return h("div", { class: "switch-result well" }, h("h3", {}, `Switched to ${r.name}`),
     h("p", {}, `${r.applied.length} setting${r.applied.length === 1 ? "" : "s"} written, each read back from the controller.`),
     r.failed.length ? notice("danger", h("p", {}, "These didn't take:"), changeList(r.failed, (c) => h("span", { class: "hint" }, c.error))) : null,
     r.skipped.length ? h("details", { class: "explain" }, h("summary", {}, `${r.skipped.length} left as they are over this connection`),
@@ -1389,7 +1311,7 @@ function panelPower() {
 }
 
 async function panelFirmware() {
-  const wrap = h("div", {}, h("h1", {}, "Firmware"));
+  const wrap = h("div", {}, h("h1", {}, "Controller"), pageTabs("controller", "firmware"));
   let fw;
   try { fw = await api("/api/firmware"); } catch (e) { wrap.append(h("p", { class: "note" }, e.message)); return wrap; }
   const device = fw.device_version;
@@ -1849,7 +1771,7 @@ async function panelGuide() {
         h("figcaption", {}, "From the back")));
   } catch (e) { pic = h("p", { class: "note" }, e.message); }
   return h("div", {},
-    h("h1", {}, "Help"), helpTabs("guide"),
+    h("h1", {}, "Help"), pageTabs("setup", "guide"),
     h("p", { class: "lede" }, "Every button on the Nova 2 Lite, the modes and what the Home light means, and the shortcuts built into the controller."),
     pic,
     h("h2", {}, "What the buttons do"),
@@ -1911,6 +1833,19 @@ const PANELS = {
 };
 
 let renderSeq = 0;
+// While the settings are read: the page's heading, what's happening, and placeholders shaped
+// like a page of settings, so the page keeps its place when the values arrive.
+function loadingView(def) {
+  const parent = def.under ? SECTIONS.find((x) => x.id === def.under) : def;
+  const via = app.status.via === "dongle" ? "through the receiver, a little slower" : "a few seconds";
+  return h("div", { class: "loading", "aria-busy": "true" },
+    h("h1", {}, parent.label),
+    h("p", { class: "busy" }, "Reading the settings from the controller…"),
+    h("p", { class: "note" }, `Every value shown here is read from the controller itself, one setting at a time; that takes ${via}.`),
+    h("div", { class: "bones", "aria-hidden": "true" }, ...Array.from({ length: 3 }, () => h("span", { class: "bone fact" }))),
+    h("div", { class: "bones rows", "aria-hidden": "true" }, ...Array.from({ length: 3 }, () => h("span", { class: "bone line" }))));
+}
+
 async function render() {
   app.section = sectionFromHash();
   stopWatch();
@@ -1922,7 +1857,7 @@ async function render() {
   let content;
   const def = SECTIONS.find((x) => x.id === app.section);
   if (!app.status.connected && !def.offline) content = panelConnect();
-  else if (app.status.connected && !app.dev) content = h("p", { class: "busy" }, "Reading settings from the controller…");
+  else if (app.status.connected && !app.dev) content = loadingView(def);
   else content = await PANELS[app.section]();
   if (seq !== renderSeq) return;
   panel.replaceChildren(content);
@@ -1956,7 +1891,7 @@ async function connect(target) {
     app.userDisconnected = false;
   } catch (e) { toast(e.message, "error"); return; }
   finally { app.connecting = false; }
-  app.dev = null; app.stickCheck = {}; app.fileLoad = null; app.profiles = null; app.switched = null; render();
+  app.dev = null; app.stickCheck = {}; app.profiles = null; app.switched = null; render();
   await reload(false);
 }
 
@@ -2088,19 +2023,25 @@ function appUpdates() {
   return box;
 }
 
-// Help has two tabs: what this computer needs (and what to do when something goes wrong), and
-// the button guide. Each is its own page (#setup, #guide), so links to either keep working.
-function helpTabs(current) {
-  const group = h("div", { class: "segmented help-tabs", role: "radiogroup", "aria-label": "Help" });
-  for (const [id, label] of [["setup", "Setup and help"], ["guide", "Button guide"]]) {
-    group.append(h("input", { type: "radio", name: "help-tab", id: `help-${id}`, value: id, checked: id === current,
-      onchange: () => { location.hash = `#${id}`; } }), h("label", { for: `help-${id}` }, label));
+// Pages that share a sidebar entry, as tabs at the top (ds's segmented control): Controller has
+// its overview and the firmware, Help what this computer needs and the button guide. Each tab
+// is its own page (#firmware, #guide, ...), so links to any of them keep working.
+const PAGE_TABS = {
+  controller: [["controller", "Overview"], ["firmware", "Firmware"]],
+  setup: [["setup", "Setup and help"], ["guide", "Button guide"]],
+};
+
+function pageTabs(group, current) {
+  const tabs = h("div", { class: "segmented page-tabs", role: "radiogroup", "aria-label": "Pages" });
+  for (const [id, label] of PAGE_TABS[group]) {
+    tabs.append(h("input", { type: "radio", name: `tab-${group}`, id: `tab-${id}`, value: id, checked: id === current,
+      onchange: () => { location.hash = `#${id}`; } }), h("label", { for: `tab-${id}` }, label));
   }
-  return group;
+  return tabs;
 }
 
 async function panelSetup() {
-  const wrap = h("div", {}, h("h1", {}, "Help"), helpTabs("setup"),
+  const wrap = h("div", {}, h("h1", {}, "Help"), pageTabs("setup", "setup"),
     h("p", { class: "lede" }, "What this computer needs to work with the controller, checked just now. Each command comes with what it does and links to its documentation: read that first, run it in a terminal, then check again."));
   try { app.setup = await api("/api/setup"); }
   catch (e) { wrap.append(h("p", { class: "note" }, e.message)); return wrap; }
@@ -2115,11 +2056,14 @@ async function panelSetup() {
         c.file ? [h("p", {}, `The file, ${c.file.path}:`), h("pre", { class: "file" }, c.file.content)] : null,
         c.docs.length ? h("p", {}, "Documentation: ", c.docs.map((d, i) => [i ? ", " : "",
           h("a", { href: d.url, target: "_blank", rel: "noopener noreferrer" }, d.title)])) : null) : null,
-      c.id === "firmware" && !c.ok ? h("div", { class: "button-row" }, h("button", { class: "button", onclick: () => go("firmware") }, "Go to Firmware")) : null));
+      c.id === "firmware" && !c.ok ? h("div", { class: "button-row" }, h("button", { class: "button", onclick: () => go("firmware") }, "Go to Controller, Firmware")) : null));
   }
   wrap.append(list, h("div", { class: "button-row" }, h("button", { class: "button", onclick: render }, "Check again")));
 
   const qa = (q, ...a) => h("details", { class: "faq" }, h("summary", {}, q), ...a.map((x) => typeof x === "string" ? h("p", {}, x) : x));
+  // an answer that names a place in the app links to it
+  const p = (...parts) => h("p", {}, ...parts);
+  const to = (id, text) => h("a", { href: `#${id}` }, text);
   wrap.append(h("h2", {}, "If something doesn't work"), h("div", { class: "faqs" },
     qa("The controller isn't found",
       "Check the Home light is green: hold Menu and View for 2 seconds; each press moves to the next mode (green, red, blue). In blue mode it pretends to be a PlayStation controller and can't be configured.",
@@ -2128,22 +2072,23 @@ async function panelSetup() {
         ? "If it shows up but can't be opened, the device permissions above aren't in place yet, or the controller was plugged in before they were: unplug it and plug it in again."
         : "If it shows up but can't be opened, another program has it: macOS lets only one program use it at a time. Close other PadSquire windows and GameSir software, or unplug it and plug it in again."),
     qa("The live view or the controller stops responding",
-      "This has been seen right after a change, mostly through the receiver. Use Restart on the Buttons page: by cable it restarts the controller, through the receiver it restarts the receiver. Nothing is changed or erased, and settings are kept.",
+      p("This has been seen right after a change, mostly through the receiver. Use Restart on the ", to("buttons", "Buttons page"),
+        ": by cable it restarts the controller, through the receiver it restarts the receiver. Nothing is changed or erased, and settings are kept."),
       "If that doesn't help, turn the controller off and on: hold Home for about 5 seconds, turn it on, and switch to green."),
     qa("A stick moves by itself, or doesn't reach full tilt",
-      "Use Check your sticks on the Sticks page, by cable or through the receiver. It measures how far each stick wanders when left alone and how far it gets in every direction, and suggests an inner and an outer dead zone to cover it.",
-      "During a check the dead zones it measures are set to 0 for a few seconds, then put back. If PadSquire was closed in the middle of one, look at the dead zones on the Sticks page and set them again.",
-      "If a stick still falls short at the largest outer dead zone (25%), calibrate it: see Calibration in the Button guide."),
-    qa("Saving and loading settings",
-      "Save to a file on the Controller page keeps every setting the controller reported in a small text file (JSON). Load from a file lists what would change and writes nothing until you choose Load.",
+      p("Use Check your sticks on the ", to("sticks", "Sticks page"), ", by cable or through the receiver. It measures how far each stick wanders when left alone and how far it gets in every direction, and suggests an inner and an outer dead zone to cover it."),
+      p("During a check the dead zones it measures are set to 0 for a few seconds, then put back. If PadSquire was closed in the middle of one, look at the dead zones on the ", to("sticks", "Sticks page"), " and set them again."),
+      p("If a stick still falls short at the largest outer dead zone (25%), calibrate it: see Calibration in the ", to("guide", "Button guide"), ".")),
+    qa("Keeping settings in a file, or passing them on",
+      p("Save every setting as a profile on the ", to("profiles", "Profiles page"), ", then use Save to a file on it: a small text file (JSON). Add a profile from a file puts it back, on this computer or another, and switching to it writes only what differs."),
       "Some settings only change over some connections: a few toggles and sleep time not by cable or receiver, remapping of every button not over Bluetooth. Those stay as they are and the list says why.",
       "Each setting is written and read back on its own, so if one fails the others still load. The file holds no Bluetooth address or pairing, so it's safe to share."),
     qa("Profiles",
-      "A profile is a full set of settings kept on this computer, in ~/.local/share/padsquire/profiles. Switching writes only what's different and reads each setting back; the controller then keeps those settings, also on other devices, until something changes them.",
+      p("A profile, on the ", to("profiles", "Profiles page"), ", is a full set of settings kept on this computer, in ~/.local/share/padsquire/profiles. Switching writes only what's different and reads each setting back; the controller then keeps those settings, also on other devices, until something changes them."),
       "A profile saved over one connection can hold settings another can't change: sleep time and the back buttons' Bluetooth mapping aren't available by cable or receiver, and six toggles can't be changed there. A switch leaves those as they are and lists them; the profile still counts as on the controller.",
       "If a profile shows settings different right after a switch, one of them didn't take: the switch says which. Try once more; if the controller stopped responding, see the answer above about restarting it."),
     qa("Bluetooth doesn't find it",
-      "Put the controller in Android mode: hold Home and A for 2 seconds until the light flashes yellow. Pair it once in your system's Bluetooth settings, then use Find controllers here."),
+      p("Put the controller in Android mode: hold Home and A for 2 seconds until the light flashes yellow. Pair it once in your system's Bluetooth settings, then use Find controllers on the ", to("controller", "Controller page"), " (it shows while no controller is connected).")),
     onMac() ? qa("Why does my Mac ask for my password?",
       "In update mode the controller shows up as a USB disk, and macOS lets only an administrator take a disk away from its own disk driver. Firmware backups, updates and the restart button all need update mode, so they ask for your password in macOS's own dialog, once per session; PadSquire never sees it.",
       "With it, a small PadSquire helper runs as administrator and holds the controller's update-mode disk until the controller restarts, then quits. It only passes on PadSquire's update commands, the same ones the Linux version sends, and can't send the one command that would change the chip for good. If you cancel the dialog, nothing happens and the controller stays as it was.") : null,
@@ -2154,13 +2099,13 @@ async function panelSetup() {
       "Nothing has been written at that point. To get the controller back: unplug it, hold Home for about 5 seconds, and turn it on again. The receiver: unplug it and plug it back in."),
     qa("The controller stays on and the buttons do nothing",
       "It's in update mode. That mode is built into the chip and doesn't run the firmware, so Home can't turn it off, and on battery it stays on when unplugged. Your firmware and settings are still there.",
-      "Plug it in by cable. " + (onMac()
-        ? "On a Mac it restarts by itself within about a minute; or use Restart on the Firmware page."
-        : "Then use Restart on the Firmware page, or run: padsquire uboot restart")),
+      onMac()
+        ? p("Plug it in by cable. On a Mac it restarts by itself within about a minute; or use Restart under ", to("firmware", "Controller, Firmware"), ".")
+        : p("Plug it in by cable, then use Restart under ", to("firmware", "Controller, Firmware"), ", or run: padsquire uboot restart")),
     qa("A firmware write fails",
-      "The controller or receiver stays in update mode on purpose. Don't unplug it and don't restart it: run the same step again. If it keeps failing, write your backup back the same way. Every write is checked block by block, and nothing outside the firmware area is ever touched."),
+      p("The controller or receiver stays in update mode on purpose. Don't unplug it and don't restart it: run the same step again under ", to("firmware", "Controller, Firmware"), ". If it keeps failing, write your backup back the same way. Every write is checked block by block, and nothing outside the firmware area is ever touched.")),
     qa("Where are my backups?",
-      "In ~/.local/share/padsquire/backups, one file per backup with a .json next to it. They hold the firmware and your controller's Bluetooth pairing and calibration: copy them somewhere safe, and don't share them."),
+      p("In ~/.local/share/padsquire/backups, one file per backup with a .json next to it; ", to("firmware", "Controller, Firmware"), " lists them. They hold the firmware and your controller's Bluetooth pairing and calibration: copy them somewhere safe, and don't share them.")),
     qa("Starting this app",
       command("padsquire gui"),
       "It runs on this computer only (127.0.0.1) and opens your browser with a one-time link. Stop it with Ctrl+C in its terminal.")));

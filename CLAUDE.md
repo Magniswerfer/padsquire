@@ -66,8 +66,11 @@ padsquire uboot test-write | restore | flash ... --confirm        # writes (need
   `ReportInput` gives the stick check the same pump/state from them).
 - `stickcheck.py`: the Sticks page's check: drift and reach from the live input, with the dead
   zones it measures set to 0 for the test and put back (`zeroed`), and suggested dead zones.
-- `settingsfile.py`: save and load settings files (JSON, `padsquire-settings` version 1): checks
-  the whole file, lists what differs, writes each change with read-back; the Controller page.
+- `settingsfile.py`: the settings file format (JSON, `padsquire-settings` version 1) that profiles
+  are kept in: checks the whole file, lists what differs, writes each change with read-back. The
+  page has no section of its own for it any more (profiles save to and add from files);
+  `/api/settings/export|import` stay.
+- `appupdate.py`: PadSquire's own updates (PyPI; the installer's venv updates itself), Help page.
 - `profiles.py`: profiles kept on the computer (`paths.PROFILES_DIR`), each a settings file with a
   name; switching loads it like a settings file. The Profiles page; the controller's own slots
   (`0x29`, Bluetooth only, untested) are a section of it.

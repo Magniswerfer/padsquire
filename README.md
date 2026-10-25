@@ -20,15 +20,14 @@ controller talks over USB and Bluetooth.
   outer dead zones for your controller, to apply with one click.
 - **Profiles**, as many as you like, kept on your computer: save the controller's settings under
   a name and switch with one click. Only what differs is written, and the controller keeps it on
-  any device.
-- **Settings files.** Save every setting to a file and load it back later or on another Nova 2
-  Lite. Loading shows what changes before anything is written.
+  any device. A profile saves to a file and adds from one, to keep it or pass it on to another
+  Nova 2 Lite.
 - **Firmware updates**, for the controller and its 2.4 GHz receiver. The app installs GameSir's
   own firmware exactly as GameSir Connect does, after a full backup of the device. See
   [Firmware updates](#firmware-updates).
-- **Setup and help** inside the app. It checks what your computer still needs and gives the
-  command for each item, with what every part does and links to its documentation, plus
-  answers for when something doesn't work.
+- **Help** inside the app. It checks what your computer still needs and gives the command for
+  each item, with what every part does and links to its documentation, plus answers for when
+  something doesn't work, a guide to every button, and PadSquire's own updates.
 
 | | Cable | 2.4 GHz receiver | Bluetooth |
 |---|---|---|---|
@@ -36,7 +35,6 @@ controller talks over USB and Bluetooth.
 | Remap every button | yes | yes | back buttons only, not tested |
 | Live sticks, triggers and buttons | yes (macOS too) | yes | no |
 | Stick check | yes (macOS too) | yes | no |
-| Save and load settings files | yes | yes | built, not tested |
 | Profiles | yes | yes | built, not tested |
 | Controller firmware update | yes | no (use the cable) | no |
 | Receiver firmware update | | yes | |
