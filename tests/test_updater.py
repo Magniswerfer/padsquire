@@ -5,11 +5,10 @@ import hashlib
 import http.server
 import shutil
 import threading
-import urllib.parse
 
 import pytest
-
 from conftest import fake_installer
+
 from padsquire import updater
 from padsquire.updater import Release, UpdateError
 

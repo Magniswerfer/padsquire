@@ -15,7 +15,7 @@ otherwise, NOTIFY_REPLIES switches to notification mode.
 from __future__ import annotations
 
 import asyncio
-from typing import Callable
+from collections.abc import Callable
 
 SERVICE_UUID = "00008650-0000-1000-8000-00805f9b34fb"
 COMMAND_UUID = "0000865f-0000-1000-8000-00805f9b34fb"

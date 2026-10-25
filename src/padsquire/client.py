@@ -9,10 +9,20 @@ then reads the value back and raises if the controller did not take it.
 from __future__ import annotations
 
 import asyncio
-from typing import Callable, Protocol
+from collections.abc import Callable
+from typing import Protocol
 
 from . import gcm
-from .gcm import Battery, BasicInfo, ButtonLight, DeadZone, Feature, Mapping, ProtocolError, Vibration
+from .gcm import (
+    BasicInfo,
+    Battery,
+    ButtonLight,
+    DeadZone,
+    Feature,
+    Mapping,
+    ProtocolError,
+    Vibration,
+)
 
 
 class Transport(Protocol):

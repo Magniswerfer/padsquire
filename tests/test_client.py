@@ -95,7 +95,7 @@ def test_invalid_slot_is_reported():
 def test_remap_every_key_on_the_simulator():
     from padsquire.client import NotApplied, NovaClient
     from padsquire.gcm import Key
-    from padsquire.simulator import SimulatedNova, simulated
+    from padsquire.simulator import SimulatedNova
     nova = NovaClient(SimulatedNova())
 
     async def go():

@@ -10,8 +10,8 @@ NovaClient; a setting this connection can't change is skipped and said so.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import asdict, fields
-from typing import Callable
 
 from . import gcm
 from .gcm import DeadZone, Feature, Key, Vibration

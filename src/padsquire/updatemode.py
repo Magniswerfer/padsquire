@@ -15,10 +15,10 @@ import hashlib
 import json
 import os
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable
 
 from . import __version__, hid, installer, jlboot, jlflash, jlwrite, paths, safety
 
@@ -212,7 +212,7 @@ def backup(boot: jlboot.JLBoot, ident: jlboot.Identity, out_dir: Path = BACKUP_D
         else "The controller's CRC differs in every sector (likely another CRC variant).")
 
     digest = hashlib.sha256(data).hexdigest()
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     paths.make_dirs(out_dir)
     base = out_dir / f"nova2lite-{ident.vendor.lower()}-flash-{stamp}"
     image, manifest = base.with_suffix(".bin"), base.with_suffix(".json")
@@ -225,7 +225,7 @@ def backup(boot: jlboot.JLBoot, ident: jlboot.Identity, out_dir: Path = BACKUP_D
     with os.fdopen(os.open(manifest, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as f:
         json.dump({
             "tool": f"padsquire {__version__}",
-            "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "created": datetime.now(UTC).isoformat(timespec="seconds"),
             "file": image.name, "size": size, "sha256": digest,
             "chip": {"vendor": ident.vendor, "product": ident.product, "revision": ident.revision,
                      "chip_key": f"{ident.chip_key:#06x}"},

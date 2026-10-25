@@ -12,8 +12,8 @@ import asyncio
 import itertools
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from aiohttp import web
 
@@ -214,7 +214,7 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
                     await session.disconnect()
                     async with hid.connect(path) as transport:
                         info = await NovaClient(transport).info()
-        except (hid.HidError, ProtocolError, asyncio.TimeoutError) as e:
+        except (TimeoutError, hid.HidError, ProtocolError) as e:
             return fail(f"the {device} did not answer: {e}", 422)
         st.installed_version = int(info.firmware_version) if info.firmware_version.isdigit() else None
         st.identity = None
@@ -287,7 +287,7 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
         try:
             async with session.lock:
                 info = await session.client.info()
-        except (hid.HidError, ProtocolError, asyncio.TimeoutError):
+        except (TimeoutError, hid.HidError, ProtocolError):
             return
         if session.via != "dongle" and info.firmware_version.isdigit():
             st.installed_version = int(info.firmware_version)
@@ -350,7 +350,7 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
                     await session.disconnect()
                     async with hid.connect(path) as transport:
                         info = await NovaClient(transport).info()
-        except (hid.HidError, ProtocolError, asyncio.TimeoutError) as e:
+        except (TimeoutError, hid.HidError, ProtocolError) as e:
             return fail(f"the controller did not answer: {e}", 422)
         st.installed_version = int(info.firmware_version) if info.firmware_version.isdigit() else None
         if action == "install" and st.installed_version is None:

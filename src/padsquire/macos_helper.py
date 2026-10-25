@@ -252,7 +252,7 @@ def serve(sock_path: Path, owner: tuple[int, int], log=print) -> int:
             server.settimeout(1)
             try:
                 conn, _ = server.accept()
-            except socket.timeout:
+            except TimeoutError:
                 # Left alone, the chip leaves update mode by itself after a short while (seen on
                 # macOS, 2026-10-25). An INQUIRY now and then, which only reads its name, may
                 # keep it there between the app's steps.

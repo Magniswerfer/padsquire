@@ -7,10 +7,10 @@ import pytest
 
 pytest.importorskip("aiohttp")
 from aiohttp.test_utils import TestClient, TestServer  # noqa: E402
-
 from test_jlboot import CHIP_KEY, LOADER, LOADER_BLOB, FakeUboot  # noqa: E402
 from test_jlflash import _ufw, make_dump, make_image  # noqa: E402
-from padsquire import hid, jlboot, jlwrite, ufw, updatemode  # noqa: E402
+
+from padsquire import jlboot, jlwrite, ufw, updatemode  # noqa: E402
 from padsquire.web import update  # noqa: E402
 from padsquire.web.server import build_app  # noqa: E402
 

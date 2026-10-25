@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Checks that run on each commit. Set up once with: .venv/bin/pre-commit install
+# Run on every file: .venv/bin/pre-commit run --all-files
+# Copies from the website repo (vendor/, ds/) and the license texts are left as they are.
+exclude: ^(src/padsquire/web/static/(vendor|ds)/|LICENSES/)
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.2
+    hooks:
+      - id: ruff-check
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=1000"]
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+        args: ["--shell=sh"]
+
+  - repo: local
+    hooks:
+      - id: no-vendor-firmware
+        name: no GameSir firmware, installers or flash dumps
+        entry: GameSir files and flash dumps stay out of the repo (see .gitignore)
+        language: fail
+        files: \.(ufw|exe|bin)$
+      - id: app-js-syntax
+        name: app.js parses
+        entry: node --check
+        language: system
+        files: ^src/padsquire/web/static/app\.js$

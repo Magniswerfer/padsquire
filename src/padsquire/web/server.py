@@ -21,8 +21,20 @@ from pathlib import Path
 
 from aiohttp import web
 
-from .. import (__version__, appupdate, ble, gcm, hid, installer, liveinput, paths, profiles, settingsfile,
-               stickcheck, updater)
+from .. import (
+    __version__,
+    appupdate,
+    ble,
+    gcm,
+    hid,
+    installer,
+    liveinput,
+    paths,
+    profiles,
+    settingsfile,
+    stickcheck,
+    updater,
+)
 from ..client import NotApplied, NovaClient
 from ..gcm import DeadZone, Feature, Key, ProtocolError, Vibration
 from ..simulator import LINKS, SimulatedSticks, simulated
@@ -308,9 +320,9 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     async def body(request) -> dict:
         try:
             data = await request.json()
-        except (json.JSONDecodeError, ValueError):
+        except (json.JSONDecodeError, ValueError) as e:
             raise web.HTTPBadRequest(text=json.dumps({"ok": False, "error": "invalid JSON"}),
-                                     content_type="application/json")
+                                     content_type="application/json") from e
         if not isinstance(data, dict):
             raise web.HTTPBadRequest(text=json.dumps({"ok": False, "error": "expected an object"}),
                                      content_type="application/json")
@@ -415,7 +427,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
                 if fd is not None:
                     try:
                         await asyncio.wait_for(ready.wait(), timeout=1.0)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         pass       # nothing moved; send the same state as a keepalive
                     ready.clear()
                 live.pump()
@@ -856,8 +868,8 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
             return fail(str(e), 502)
         return ok({"updated": r.updated, "latest": r.latest})
 
-    from . import update
     from .. import updatemode
+    from . import update
     app[update.KEY] = update.add_routes(routes, session, fw_dir, find_usb, ok, fail, body,
                                         backup_dir or updatemode.BACKUP_DIR,
                                         loader_cache or updatemode.LOADER_CACHE)

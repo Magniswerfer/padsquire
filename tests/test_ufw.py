@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 import pytest
+from conftest import make_ufw
 
 from padsquire import ufw
-from conftest import make_ufw
 
 
 def test_roundtrip():

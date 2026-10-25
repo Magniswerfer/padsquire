@@ -110,6 +110,7 @@ def test_report_input_for_the_stick_check():
 
 def test_stick_check_samples_an_async_reader():
     import asyncio
+
     from padsquire import stickcheck
 
     class Reader:

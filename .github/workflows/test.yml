@@ -10,6 +10,20 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: pip install ruff==0.17.2
+      - run: ruff check --output-format=github src tests tools
+      - name: Shell scripts (the installer runs under plain sh)
+        run: shellcheck --shell=sh install.sh tools/*.sh
+      - name: The settings app's script parses
+        run: node --check src/padsquire/web/static/app.js
+
   test:
     runs-on: ubuntu-latest
     strategy:
