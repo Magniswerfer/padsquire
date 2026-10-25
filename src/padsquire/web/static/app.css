@@ -47,6 +47,10 @@ body { min-height: 100vh; }
 .side {
   position: sticky; top: 4.5rem;
   display: grid; gap: var(--space-4); align-content: start;
+  /* never taller than the window: a column that doesn't fit scrolls by itself, instead of its
+     bottom staying out of reach until the page has scrolled to its end */
+  max-height: calc(100vh - 4.5rem - var(--space-4)); max-height: calc(100dvh - 4.5rem - var(--space-4));
+  overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
 }
 .side-foot { display: grid; gap: var(--space-3); padding: var(--space-2) var(--space-2) 0; }
 .side-foot .segmented { justify-self: start; }
