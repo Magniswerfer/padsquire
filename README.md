@@ -120,6 +120,10 @@ driver serves the controller's settings channel, so settings need nothing set up
   (PlayStation). In blue mode it pretends to be a DualShock 4 and can't be configured.
 - **Through the 2.4 GHz receiver:** plug the receiver in, turn the controller on, wait for it to
   link, then switch it to green the same way.
+  On Linux, Steam and games then call it "Generic X-Box pad": the kernel's Xbox driver doesn't
+  know the receiver's USB ID yet, so it gives a default name. It works the same as by cable.
+  You can rename it in Steam under Settings → Controller. A one-line fix for the kernel is
+  noted in [PROTOCOL.md](PROTOCOL.md#the-gamepads-name-through-the-dongle-generic-x-box-pad-linux).
 - **Over Bluetooth:** hold **Home + A** for 2 seconds until the light flashes **yellow** (Android
   mode), pair it in your system's Bluetooth settings, then use **Find controllers** in the app.
 
@@ -219,6 +223,8 @@ controller, and include a fake chip in update mode for the firmware writer.
   GameSir Connect doesn't use for this controller): research.
 - Macros on the back buttons: the command is known (`0x53` over Bluetooth, `f6` by cable) but
   its frames aren't decoded yet.
+- Send the kernel's Xbox driver (`xpad`) the receiver's USB ID, so it isn't called "Generic
+  X-Box pad" on Linux (see PROTOCOL.md).
 - Other GameSir controllers.
 
 ## Contributing

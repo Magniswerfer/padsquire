@@ -199,7 +199,7 @@ def test_remap_every_key(tmp_path):
 
 
 @pytest.mark.parametrize("macos, ids", [
-    (False, {"udev", "sg", "7zip", "firmware", "bluetooth", "device"}),
+    (False, {"udev", "sg", "play", "7zip", "firmware", "bluetooth", "device"}),
     (True, {"hidapi", "play", "updates", "7zip", "firmware", "bluetooth", "device"}),
 ])
 def test_setup_checks_explain_their_commands(tmp_path, monkeypatch, macos, ids):
