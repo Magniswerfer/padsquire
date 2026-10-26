@@ -26,9 +26,9 @@ import struct
 import subprocess
 import sys
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 from . import jlcrypt, paths
 
@@ -128,7 +128,7 @@ class SgDevice:
             buf, hdr.dxfer_direction = None, SG_DXFER_NONE
         if buf is not None:
             hdr.dxferp = ctypes.addressof(buf)
-        import fcntl                       # Linux only, like SG_IO itself
+        import fcntl  # Linux only, like SG_IO itself
         try:
             fcntl.ioctl(self.fd, SG_IO, hdr)
         except OSError as e:

@@ -6,7 +6,7 @@ import pytest
 
 from padsquire import gcm, hid
 from padsquire.client import NotApplied, NovaClient
-from padsquire.gcm import DeadZone, Feature, Key, Vibration
+from padsquire.gcm import DeadZone, Key, Vibration
 from padsquire.simulator import SimulatedNova, SimulatedSticks, SimulatedUsbNova, simulated
 
 

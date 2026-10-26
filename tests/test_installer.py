@@ -4,8 +4,8 @@ import os
 import shutil
 
 import pytest
-
 from conftest import fake_installer, write_asar
+
 from padsquire import installer, ufw
 
 HAVE_7Z = any(shutil.which(n) for n in ("7zz", "7z", "7za"))

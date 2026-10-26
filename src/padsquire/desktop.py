@@ -13,7 +13,6 @@ import plistlib
 import shutil
 import subprocess
 import sys
-import tempfile
 import webbrowser
 from dataclasses import dataclass
 from importlib.resources import files

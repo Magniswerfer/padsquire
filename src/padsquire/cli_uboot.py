@@ -28,7 +28,7 @@ from pathlib import Path
 from . import hid, jlboot, jlwrite, updatemode
 from .client import NovaClient
 from .gcm import ProtocolError
-from .updatemode import BACKUP_DIR, LOADER_CACHE, REPO_ROOT   # noqa: F401 (tests patch these here)
+from .updatemode import BACKUP_DIR, LOADER_CACHE, REPO_ROOT  # noqa: F401 (tests patch these here)
 
 ENTER_WARNING = """\
 This switches the controller into its USB download mode, the one GameSir Connect uses to update

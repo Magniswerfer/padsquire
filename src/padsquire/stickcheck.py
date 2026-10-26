@@ -18,8 +18,8 @@ from __future__ import annotations
 
 import asyncio
 import math
+from collections.abc import Iterable
 from contextlib import asynccontextmanager
-from typing import Iterable
 
 from . import gcm
 from .gcm import DeadZone

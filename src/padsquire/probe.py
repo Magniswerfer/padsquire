@@ -21,7 +21,7 @@ import os
 import platform
 import re
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from . import __version__, gcm
@@ -72,7 +72,7 @@ def _interface(path: Path) -> dict:
             "max_packet": _read(ep / "wMaxPacketSize"),
             "interval": _read(ep / "bInterval"),
         })
-    for d, dirnames in _walk(path):
+    for d, _dirnames in _walk(path):
         if (d / "report_descriptor").exists() and d.name.count(":") == 2:
             desc = None
             try:
@@ -322,7 +322,7 @@ def system_info() -> dict:
 def snapshot(label: str, *, usb: bool = True, bluetooth: bool = False,
              address: str | None = None, sys_root: Path = Path("/sys"),
              proc_root: Path = Path("/proc"), extra_ids=()) -> dict:
-    snap = {"label": label, "time": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    snap = {"label": label, "time": datetime.now(UTC).isoformat(timespec="seconds")}
     if usb:
         snap["usb"] = probe_usb(sys_root, extra_ids)
         snap["input"] = probe_input(proc_root, extra_ids=extra_ids)

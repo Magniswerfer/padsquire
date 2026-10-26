@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import math
 import random
-from typing import Callable
+from collections.abc import Callable
 
 from . import gcm, hid
 
@@ -21,7 +21,7 @@ LINKS = ("cable", "receiver", "bluetooth")
 RECEIVER_FIRMWARE = "2800"
 
 
-def simulated(link: str = "bluetooth", **kw) -> "SimulatedNova":
+def simulated(link: str = "bluetooth", **kw) -> SimulatedNova:
     """A simulated controller on `link`: "cable", "receiver" or "bluetooth"."""
     if link not in LINKS:
         raise ValueError(f"link must be one of {', '.join(LINKS)}")

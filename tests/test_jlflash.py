@@ -2,14 +2,13 @@
 import hashlib
 import json
 import os
+import random
 import struct
 from pathlib import Path
 
-import random
-
 import pytest
-
 from conftest import ISD_TEMPLATE
+
 from padsquire import cli, jlcrypt, jlflash, safety, ufw
 
 KEY = 0x3496

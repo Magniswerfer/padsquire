@@ -17,6 +17,8 @@ helper started via a PadSquire-named osacompile applet and `launchctl asuser`; o
 python3 -m venv .venv && .venv/bin/pip install -e '.[gui,test]'   # no system pip on this box; 7zip for update/extract
 pytest                                   # 303 tests; PADSQUIRE_INSTALLER=<setup.exe> adds a real-installer test,
                                          # PADSQUIRE_BACKUP=<dump.bin> PADSQUIRE_UFW=<.ufw> a real layout check
+ruff check src tests tools               # lint (config in pyproject.toml; CI runs it, shellcheck and node --check)
+pre-commit install                       # with '.[dev]': ruff, shellcheck, whitespace, blocks *.ufw/*.exe/*.bin
 padsquire probe --guided             # read-only report of the controller in every mode -> JSON
 padsquire ble scan | info | deadzone | feature | vibration | sleep | restore
 padsquire usb ...                    # same actions over the cable (green LED mode), via hid.py

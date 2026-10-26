@@ -14,7 +14,7 @@ sector against the loader's own CRC (FC13).
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 from . import jlboot, jlcrypt
 
