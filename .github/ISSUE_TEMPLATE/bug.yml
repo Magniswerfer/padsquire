@@ -1,0 +1,59 @@
+name: Something doesn't work
+description: A problem with the settings app, the command line or the installer.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please don't attach flash backups: they hold your controller's Bluetooth pairing and calibration.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: PadSquire version
+      description: The output of `padsquire --version`.
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: Linux distribution and version, or macOS version.
+    validations:
+      required: true
+  - type: dropdown
+    id: connection
+    attributes:
+      label: Connection
+      options:
+        - Cable
+        - 2.4 GHz receiver
+        - Bluetooth
+        - Update mode (firmware)
+        - No controller (simulator or installer)
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Controller firmware
+      description: From `padsquire usb info` (or `ble info`), if you can get it. Also the light colour.
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: |
+        What the command or the app printed. For a problem talking to the controller, run the command again with `PADSQUIRE_DEBUG=1` in front (it logs every frame) and paste that too.
+      render: text
+  - type: textarea
+    id: probe
+    attributes:
+      label: Probe report
+      description: |
+        If the controller isn't found or behaves oddly, attach the file `padsquire probe --guided` saves. It never changes a setting. It includes the controller's MAC address; you may replace it with `xx`.

@@ -75,6 +75,9 @@ padsquire uboot test-write | restore | flash ... --confirm        # writes (need
   name; switching loads it like a settings file. The Profiles page; the controller's own slots
   (`0x29`, Bluetooth only, untested) are a section of it.
 - `probe.py`: read-only hardware probe. `PROTOCOL.md`: all protocol notes (CC BY-SA 4.0).
+- `CONTRIBUTING.md`: ground rules, the levels of certainty for protocol notes (static analysis,
+  seen once, confirmed, refuted) and what a change needs; `.github/ISSUE_TEMPLATE/` and
+  `pull_request_template.md` follow it. Keep them in step when a rule here changes.
 
 ## Status and open questions
 

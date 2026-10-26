@@ -221,6 +221,12 @@ controller, and include a fake chip in update mode for the firmware writer.
   its frames aren't decoded yet.
 - Other GameSir controllers.
 
+## Contributing
+
+Help is welcome, most of all testing on hardware: Bluetooth, the receiver on a Mac, and other
+GameSir controllers. [CONTRIBUTING.md](CONTRIBUTING.md) has the ground rules, how to report a
+problem, how to document a protocol finding so others can check it, and how to send code.
+
 ## Disclaimer
 
 Unofficial and not affiliated with GameSir. Firmware updates can brick hardware. The safety

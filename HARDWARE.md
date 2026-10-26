@@ -15,6 +15,9 @@ USB IDs, which driver Linux binds, the HID layout of the configuration interface
 Bluetooth the service map and whether replies are read back or notified. **Attach that file to a
 bug report.** The probe never changes a setting; over Bluetooth it sends only three read queries.
 
+Report what you test with the "Hardware test" issue template. Before you start, read the ground
+rules and "How sure it is" in [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Still to test: Bluetooth
 
 Everything else has been tested on a Nova 2 Lite (firmware 7701 and 8201) and its receiver (2800).

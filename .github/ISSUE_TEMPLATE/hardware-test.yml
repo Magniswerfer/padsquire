@@ -1,0 +1,52 @@
+name: Hardware test
+description: Results from testing on a real controller, such as the Bluetooth checklist in HARDWARE.md.
+labels: [hardware]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you. Before you start, read the ground rules in CONTRIBUTING.md: read before you write, note every value you change and set it back, never send `FC 12`, and never send anything to `GameSir-Nova 2 Lite_DFU`.
+  - type: input
+    id: controller
+    attributes:
+      label: Controller and firmware
+      description: Model, and the firmware from `padsquire usb info` or `ble info`. Receiver firmware too, if you used it.
+    validations:
+      required: true
+  - type: input
+    id: setup
+    attributes:
+      label: Setup
+      description: Operating system, PadSquire version, connection and light colour.
+    validations:
+      required: true
+  - type: textarea
+    id: results
+    attributes:
+      label: Results
+      description: |
+        For each item: the HARDWARE.md number (or what you tested), the exact command, what it printed, and whether it worked. A "no" is a result too.
+      value: |
+        1. 
+           Command:
+           Output:
+           Worked: yes / no / partly
+    validations:
+      required: true
+  - type: textarea
+    id: debug
+    attributes:
+      label: Frame log
+      description: The same commands with `PADSQUIRE_DEBUG=1` in front, if anything looked odd.
+      render: text
+  - type: textarea
+    id: probe
+    attributes:
+      label: Probe report
+      description: Attach the file `padsquire probe --guided` saved.
+  - type: checkboxes
+    id: restored
+    attributes:
+      label: Settings
+      options:
+        - label: I set back every setting I changed (or ran `restore --yes`).

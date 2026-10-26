@@ -1,0 +1,39 @@
+name: Protocol finding
+description: Something new about how the controller talks, or something in PROTOCOL.md that's wrong.
+labels: [protocol]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        See "Documenting the protocol" in CONTRIBUTING.md for what makes a finding checkable. Describe what you found in your own words, with the bytes. Please don't paste decompiled code or attach GameSir's files.
+  - type: textarea
+    id: finding
+    attributes:
+      label: The finding
+      description: What it is, with the request and reply bytes in hex and the meaning of each field.
+    validations:
+      required: true
+  - type: dropdown
+    id: level
+    attributes:
+      label: How sure it is
+      options:
+        - Static analysis (read from an app, not seen on hardware)
+        - Seen once on hardware
+        - Confirmed (reproduced, read back, values restored)
+        - Refutes something in PROTOCOL.md
+    validations:
+      required: true
+  - type: textarea
+    id: where
+    attributes:
+      label: Where it was seen
+      description: Connection, light colour or mode, firmware, operating system, date. For static analysis, the app, its version and the class or function.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Commands run and their output (`PADSQUIRE_DEBUG=1` logs every frame), and how you checked the effect.
+      render: text
