@@ -35,6 +35,7 @@ controller behind it.
 | Setup | USB ID | Interfaces |
 |---|---|---|
 | Wired, green (PC/Xbox) | `3537:100F` "2.4G" / "XBOX 360 For Windows" | if00 `ff/5d/01` Xbox 360 (`xpad`, names it "GameSir Nova 2 Lite"); if01 HID keyboard + consumer; if02 HID vendor page `0xFF7A`, 64-byte in/out, no report ID |
+| Via dongle, green (PC/Xbox) | `3537:1098` "2.4G" / "XBOX 360 For Windows" | the same three interfaces as `0x100F`; `xpad` binds if00 by its vendor/class match only and names it "Generic X-Box pad" (see "The 2.4 GHz dongle") |
 | Wired or via dongle, blue (Other Devices) | `054c:09cc` "Sony Computer Entertainment" / "Wireless Controller" | one HID interface, stock DualShock 4 descriptor, `hid-playstation`; no vendor channel |
 | Dongle, no controller linked | `3537:2106` "Zikway" / "HID zk" | one HID interface, the same `0xFF7A` descriptor as if02 above |
 
@@ -42,7 +43,7 @@ The `0xFF7A` interface is the SAPJoy config channel (Connect's table says `Usage
 which does not match the descriptor literally). Its report descriptor:
 `067aff0901a1010902a1000903150025ff75089540810209059102c0c0`.
 `0x2106` is in neither Connect's table nor the DLL's PID list. The dongle through green mode
-(expected `0x1098`) has not been seen yet.
+is `0x1098`, as Connect expects (confirmed 2026-10-23).
 
 **macOS (confirmed 2026-10-25, macOS 26.6, Apple silicon, firmware 8201, by cable).** The cable in
 green mode enumerates the same: `3537:100F`, manufacturer "2.4G", the same three interfaces. Apple's
@@ -557,6 +558,33 @@ its placement (the `app_dir_head` CRC tag) up to `VM`, and refuses a layout that
 boundaries; `jlwrite.burn` handles a header at 0 the way JieLi does (copy into `0x1000` first,
 sector 0 then `0x1000` last); `padsquire uboot enter --receiver` sends `f2 00 04 f6` on
 `0x1098`, and `restart --receiver` waits for the receiver to come back.
+
+### The gamepad's name through the dongle: "Generic X-Box pad" (Linux)
+
+**Confirmed on hardware (2026-10-26, kernel 7.2):** through the dongle in green mode, Linux names
+the gamepad **"Generic X-Box pad"** (evdev and `js` name), and Steam, which shows the kernel's
+name for controllers it doesn't know itself (through SDL), shows that too. By cable the same
+controller is "GameSir Nova 2 Lite". The cause is `xpad`'s device table (`xpad_device[]` in
+`drivers/input/joystick/xpad.c`): it has an entry for `3537:100F` with that name, but none for
+`3537:1098`. `xpad` still binds the dongle, through its vendor match for `0x3537` with an
+Xbox 360 interface (`XPAD_XBOX360_VENDOR(0x3537)`, seen in `modinfo xpad` as
+`usb:v3537p*...icFFisc5Dip01in*`), and falls back to its default name. It's only the name:
+buttons, sticks, triggers and rumble work as by cable. A udev rule can't rename an evdev
+device; in Steam it can be renamed under Settings → Controller.
+
+**Suggested upstream patch (not sent yet):** one line in `xpad_device[]`, in the same form as the
+`0x100f` entry. The table is sorted by ID, so it goes after `{ 0x3537, 0x1040, "GameSir Nova Lite", ... }`
+(checked against `torvalds/linux` master on 2026-10-26: no `0x1098` entry there yet):
+
+```c
+{ 0x3537, 0x1098, "GameSir Nova 2 Lite (2.4G)", 0, XTYPE_XBOX360 },
+```
+
+The vendor match is already in `xpad_table[]` (`XPAD_XBOX360_VENDOR(0x3537)`), so nothing else is
+needed. Before sending: check that nobody has added `0x1098` meanwhile, build and load the
+module, and confirm the name with `cat /proc/bus/input/devices`. Patches go to linux-input@vger.kernel.org (maintainer: Dmitry
+Torokhov), following the kernel's "Submitting patches" guide. The same receiver may serve other
+GameSir controllers, so the name could be kept general; a reviewer may ask.
 
 ## Firmware files
 

@@ -170,6 +170,14 @@ def checks(fw_dir: Path) -> list[dict]:
                      _doc("tee", f"{MAN}/man1/tee.1.html"),
                      _doc("The sg driver", "https://tldp.org/HOWTO/SCSI-Generic-HOWTO/")]))})
 
+    out.append({"id": "play", "title": "Playing games", "ok": True, "need": "optional",
+                "detail": "In PC/Xbox mode (light green) Linux's own Xbox driver (xpad) makes the controller a "
+                          "gamepad for Steam and other games, by cable or through the receiver. Through the "
+                          "receiver Steam calls it \"Generic X-Box pad\": the driver doesn't know the "
+                          "receiver's USB ID yet, so it uses a default name. It works the same; you can rename "
+                          "it in Steam under Settings, Controller.",
+                **_cmd(None)})
+
     out += [_seven_zip_check(), _firmware_check(fw_dir)]
 
     try:
