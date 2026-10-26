@@ -208,8 +208,9 @@ def main(argv=None) -> int:
     pl.add_argument("--backup", type=Path, help="this controller's flash backup (.bin with its .json)")
     pl.set_defaults(func=cmd_plan)
 
-    from . import cli_ble, cli_probe, cli_uboot
+    from . import cli_ble, cli_c2, cli_probe, cli_uboot
     cli_ble.register(sub)
+    cli_c2.register(sub)
     cli_probe.register(sub)
     cli_uboot.register(sub)
 

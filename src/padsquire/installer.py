@@ -81,6 +81,115 @@ def firmware_table(main_js: str) -> list[dict[str, str]]:
     return out
 
 
+# -- device table -----------------------------------------------------------------
+#
+# Connect keeps one object literal per model: {Model:"C2",ProductName:"CYCLONE 2",...,
+# Proxy:(e,t,r)=>new ou(e,t,r),...,Modes:[{Mode:"Wired",ConfigModeVid:13623,
+# ConfigModePid:4125,UsagePage:65520,...},...]}. The proxy class is the model's protocol
+# handler; models that share one speak the same protocol. Colour editions repeat a mode
+# with another AssetsFolder, so modes are listed once per identity.
+
+_MODE_FIELDS = {"Mode": "mode", "ConfigModePid": "pid", "UsagePage": "usage_page",
+                "HandleByDll": "dll", "UdiskProductName": "udisk"}
+
+
+def _skip(js: str, i: int) -> int:
+    """Index just past the string literal or bracketed group that starts at js[i]."""
+    if js[i] in "\"'`":
+        j = i + 1
+        while j < len(js) and js[j] != js[i]:
+            j += 2 if js[j] == "\\" else 1
+        return j + 1
+    depth, j = 0, i
+    while j < len(js):
+        if js[j] in "\"'`":
+            j = _skip(js, j)
+            continue
+        if js[j] in "{[(":
+            depth += 1
+        elif js[j] in "}])":
+            depth -= 1
+            if depth == 0:
+                return j + 1
+        j += 1
+    return len(js)
+
+
+_KEY = re.compile(r"\s*,?\s*([A-Za-z_$][\w$]*)\s*:")
+
+
+def _top_level(obj: str) -> dict[str, str]:
+    """Key -> raw value text at the top level of an object literal."""
+    out, j = {}, 1
+    while (m := _KEY.match(obj, j)):
+        start = j = m.end()
+        while j < len(obj) - 1 and obj[j] != ",":
+            j = _skip(obj, j) if obj[j] in "\"'`{[(" else j + 1
+        out[m.group(1)] = obj[start:j]
+    return out
+
+
+def _value(text: str) -> str | None:
+    text = text.strip()
+    if text[:1] == '"' and text[-1:] == '"':
+        return text[1:-1]
+    return {"!0": "true", "!1": "false", "null": None}.get(text, text) or None
+
+
+def device_table(main_js: str) -> list[dict]:
+    """Every model in Connect's device registry, with its protocol handler and USB identities."""
+    out = []
+    for m in re.finditer(r'\{Model:"', main_js):
+        obj = main_js[m.start():_skip(main_js, m.start())]
+        top = _top_level(obj)
+        if "ProductName" not in top:
+            continue
+        modes, seen = [], set()
+        raw = top.get("Modes", "").strip()
+        if raw.startswith("["):
+            j = 1
+            while (k := raw.find("{", j)) != -1:
+                end = _skip(raw, k)
+                fields = {_MODE_FIELDS[k2]: _value(v) for k2, v in _top_level(raw[k:end]).items()
+                          if k2 in _MODE_FIELDS}
+                if fields.get("pid", "").isdigit():
+                    fields["pid"] = int(fields["pid"])
+                    if fields.get("usage_page", "").lstrip("-").isdigit():
+                        fields["usage_page"] = int(fields["usage_page"])
+                    ident = tuple(sorted(fields.items()))
+                    if ident not in seen:
+                        seen.add(ident)
+                        modes.append(fields)
+                j = end
+        handler = re.search(r"new ([\w$]+)\(", top.get("Proxy", ""))
+        out.append({
+            "model": _value(top["Model"]),
+            "name": _value(top["ProductName"]),
+            "udisk": _value(top.get("UdiskProductName", "")),
+            "udisk_version": (_value(top.get("UDiskVersionId", "")) or "").replace("\\0", "") or None,
+            "handler": handler.group(1) if handler else None,
+            "firmware": sorted(set(re.findall(r'Path:"packages/([^"]+)"', top.get("PackedFirmware", "")))),
+            "modes": modes,
+        })
+    return out
+
+
+def dll_pids(main_js: str) -> dict[str, list[int]]:
+    """GameSir DLL -> the product IDs Connect registers with it (createSAPJoy's pid list)."""
+    out = {}
+    for m in re.finditer(r'getDfuPath\("(sapjoyuniapis[\w.]*)"\)', main_js):
+        pids = re.search(r"pid:\[([\w$,]+)\]", main_js[m.end():m.end() + 800])
+        if not pids:
+            continue
+        values = []
+        for name in pids.group(1).split(","):
+            defs = list(re.finditer(r"(?<![\w$.])" + re.escape(name) + r"=(\d+)\b", main_js[:m.start()]))
+            if defs:
+                values.append(int(defs[-1].group(1)))
+        out[m.group(1)] = values
+    return out
+
+
 # -- manifest -------------------------------------------------------------------
 
 @dataclass
@@ -121,25 +230,31 @@ def _unpack(seven: str, archive: Path, out: Path) -> subprocess.CompletedProcess
     )
 
 
+def unpack(installer: Path, tmp: Path) -> Path:
+    """Unpack the app and its firmware packages from `installer` into `tmp`; returns app.asar."""
+    seven = find_7zip()
+    proc = _unpack(seven, installer, tmp)
+    if not (tmp / "resources" / "app.asar").exists():
+        # Since 1.16.7 the app sits in a nested archive, $PLUGINSDIR/app-32.7z (or app-64.7z).
+        inner = sorted((tmp / "$PLUGINSDIR").glob("app-*.7z"))
+        if inner:
+            proc = _unpack(seven, inner[-1], tmp)
+    asar = tmp / "resources" / "app.asar"
+    if proc.returncode != 0 or not asar.exists():
+        raise ExtractError(
+            "could not unpack the installer; is it a GameSir Connect setup .exe?\n"
+            + proc.stderr.strip()[-500:]
+        )
+    return asar
+
+
 def extract(installer: str | Path, out_dir: str | Path, model: str = "T4N2") -> dict:
     """Unpack `installer`, copy the firmware for `model` into `out_dir`, and
     write out_dir/manifest.json. Returns the manifest."""
     installer, out_dir = Path(installer), Path(out_dir)
-    seven = find_7zip()
     with tempfile.TemporaryDirectory(prefix="gamesir-") as tmp:
         tmp = Path(tmp)
-        proc = _unpack(seven, installer, tmp)
-        if not (tmp / "resources" / "app.asar").exists():
-            # Since 1.16.7 the app sits in a nested archive, $PLUGINSDIR/app-32.7z (or app-64.7z).
-            inner = sorted((tmp / "$PLUGINSDIR").glob("app-*.7z"))
-            if inner:
-                proc = _unpack(seven, inner[-1], tmp)
-        asar = tmp / "resources" / "app.asar"
-        if proc.returncode != 0 or not asar.exists():
-            raise ExtractError(
-                "could not unpack the installer; is it a GameSir Connect setup .exe?\n"
-                + proc.stderr.strip()[-500:]
-            )
+        asar = unpack(installer, tmp)
         app_version = json.loads(asar_file(asar, "package.json")).get("version")
         table = firmware_table(asar_file(asar, MAIN_JS).decode("utf-8", "replace"))
         wanted = [fw for fw in table if fw["Identifier"].startswith(model)]

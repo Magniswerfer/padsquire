@@ -102,3 +102,15 @@ def test_simulated_sticks_come_out_after_the_dead_zones():
     st = sticks.state()
     assert 0.02 < st["lx"] < 0.04 and st["ly"] < 0                          # about (0.03, -0.012)
     assert set(st) == {"lx", "ly", "rx", "ry", "lt", "rt", "pressed"} and sticks.fd is None
+
+
+def test_simulated_cyclone2_answers_reads_and_streams_state_after_a_heartbeat():
+    from padsquire import c2
+    from padsquire.simulator import SimulatedC2
+    sim = SimulatedC2(battery=55)
+    assert sim.read(0) is None                       # silent until the heartbeat
+    sim.write(c2.pad(c2.heartbeat()))
+    assert c2.parse_state(sim.read(0)).battery == 55
+    sim.write(c2.pad(c2.read_profile(c2.LIGHT_PROFILE)[0]))
+    reply = sim.read(0)
+    assert c2.reply_type(reply) == c2.Cmd.READ_PROFILE_ACK and reply[2:6] == bytes([32, 0, 0, 58])

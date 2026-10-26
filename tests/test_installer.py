@@ -74,3 +74,41 @@ def test_real_installer(tmp_path):
         assert fw["jl_vid"] == ("N2DG" if fw["target"] == "dongle" else "N2LT")
         if fw["region"]:
             assert fw["version"] % 10 == (1 if fw["region"] == "international" else 0)
+
+
+# Two entries in the shape of Connect 1.16.7's device registry (main.js, Kv): one handled by the
+# GameSir DLL, one by a JavaScript proxy, with a colour edition repeating a mode.
+DEVICES_JS = (
+    'var Nd=13623,Cd=4111,Md=4417,xd=4186;var qd={init:function(){const e=go.getDfuPath('
+    '"sapjoyuniapis_t4n2_x86_v1");return Jc.defineUtility(e),function(){const e={pcwszName:"x",'
+    'vid:[Nd],pid:[Cd,Md,xd]};Jc.createSAPJoy(e)}(),0}},'
+    'op=[{Model:"T4N2",ProductName:"Nova 2 Lite",UDiskVersionId:"N2LT",UdiskProductName:"AC695X_TRANS",'
+    'PackedFirmware:[{Type:"Internal",Version:"8200",Path:"packages/A.ufw"}],'
+    'Mapping:{L1:"LB",Fake:"Macro"},Proxy:(e,t,r,n)=>new sp(e,t,r,n),ConfigMethods:[],'
+    'Modes:[{Mode:"Wired",AssetsFolder:"T4N2/White",ConfigModeVid:13623,ConfigModePid:4111,'
+    'UsagePage:65535,HandleByDll:!0},{PackedFirmware:ap,Mode:"Wireless",UdiskProductName:"AC632N_TRANS",'
+    'ConfigModeVid:13623,ConfigModePid:4248,UsagePage:65535,HandleByDll:!0}]}],'
+    'Kv=[{Model:"C2",ProductName:"CYCLONE 2",UdiskProductName:"GS_C2_DEVICE",PackedFirmware:{Version:'
+    '"1.2.3",Path:"packages/GS_C2_DEVICE_V123_Key.ufw",Identifier:"C2"},Proxy:(e,t,r)=>new ou(e,t,r),'
+    'Modes:[{Mode:"Wired",AssetsFolder:"C2/White",ConfigModeVid:13623,ConfigModePid:4125,UsagePage:65520},'
+    '{Mode:"Wired",AssetsFolder:"C2/Black",ConfigModeVid:13623,ConfigModePid:4125,UsagePage:65520},'
+    '{UdiskProductName:"GS_C2_ADC_DEVICE",PackedFirmware:{Version:"3.5.6",Path:"packages/B.ufw"},'
+    'Mode:"Wired",ConfigModeVid:13623,ConfigModePid:4179,UsagePage:65520}]},{Model:"GS_C2_Dongle",'
+    'ProductName:"C2 Dongle",Modes:[]}];')
+
+
+def test_device_table_reads_the_registry():
+    table = {d["model"]: d for d in installer.device_table(DEVICES_JS)}
+    assert set(table) == {"T4N2", "C2", "GS_C2_Dongle"}
+    nova, cyclone = table["T4N2"], table["C2"]
+    assert (nova["handler"], nova["udisk_version"], nova["firmware"]) == ("sp", "N2LT", ["A.ufw"])
+    assert [(m["mode"], m["pid"], m["dll"]) for m in nova["modes"]] == [
+        ("Wired", 0x100F, "true"), ("Wireless", 0x1098, "true")]
+    assert cyclone["handler"] == "ou" and cyclone["firmware"] == ["GS_C2_DEVICE_V123_Key.ufw"]
+    assert [(m["pid"], m["usage_page"], m.get("udisk")) for m in cyclone["modes"]] == [
+        (0x101D, 0xFFF0, None), (0x1053, 0xFFF0, "GS_C2_ADC_DEVICE")]
+    assert table["GS_C2_Dongle"]["handler"] is None and table["GS_C2_Dongle"]["modes"] == []
+
+
+def test_dll_pids_resolves_the_registered_ids():
+    assert installer.dll_pids(DEVICES_JS) == {"sapjoyuniapis_t4n2_x86_v1": [0x100F, 0x1141, 0x105A]}

@@ -675,6 +675,32 @@ flashing. `script.ver` holds the JieLi build-tool version (`AC695X-v0.01-cfg_too
    3 times, then reads the whole flash back twice: the code area must equal the image and
    everything above it must be unchanged. It never restarts the controller by itself.
 
+## Other GameSir controllers in Connect (decoded from 1.16.7, 2026-10-26)
+
+**Static analysis only.** GameSir Connect keeps one entry per model in a device registry in
+`main.js` (`Kv`): name, USB identities per mode, update-mode identity, bundled firmware, and
+a "proxy" class that handles the model. Models that share a handler, or the GameSir DLL, speak
+the same protocol. `tools/connect-devices.py <installer.exe>` prints the table from any
+installer (`installer.device_table`, `installer.dll_pids`).
+
+Connect opens a model's vendor HID interface by the usage page in the table. `0xFFFF` there
+means "the DLL opens it" (`isSupportedDevice` skips those), so the Nova 2 Lite's real page,
+`0xFF7A`, doesn't appear. `0xFFF0` is the page Connect opens itself.
+
+| Family | Models (USB `3537:` cable / receiver) | Firmware chip | How Connect talks to it |
+|---|---|---|---|
+| T4N2 DLL (`sapjoyuniapis_t4n2`) | **Nova 2 Lite** T4N2 (`100f` / `1098`); **Nova Vision** N2S (`1141` / `10bd`); **T3XS** (`105a` / `10be`) | AC695X (BR23; the T3XS by Connect's table only); receivers AC632N (T4N2) and AC695X (N2S) | the DLL, ours: GCM on the vendor channel. N2S and T3XS add commands through `N2S_Execute` / `T3XS_Execute` (heartbeat `0x60`, stick centre `0xFB`, profile switch `0xFC`, profile name `0xFD`, fine calibration `0x62`, advanced mapping `0x63`–`0x66`; the T3XS also `0x59` gamepad parameters, `0x61` batch mapping, `0xF9` stick resolution); the DLL also has `N2Lite_Execute` |
+| Generic DLL (`sapjoyuniapis` 1.0.16) | Tarantula Pro T3Pro (`1050` / `103e`), Nova Pro T4NPro (`100e` / `103e`) | other vendor (`pc_update_GDF-*.bin`, not `.ufw`) | an older DLL |
+| `0xFFF0`, profile images (`proxyC2`) | **Cyclone 2** C2 (`101d`, `1053` / `102a`, `100b`); Tegenaria Lite T3Lite (`1093`) shares its command builder | AC695X (BR23) for the Cyclone 2 and its receiver; AD16N for the T3Lite | JavaScript in `main.js` over node-hid: [PROTOCOL-CYCLONE2.md](PROTOCOL-CYCLONE2.md) |
+| `0xFFF0`, own handlers | G7 Pro 8K G7ProCE (13 editions, e.g. `10b7` / `10b9`), G7 Pro S (`0908` / `0909`), K2 8K (`108e` / `109f`), Tarantula CE T3CE (`103d`, `10ff`, `090d`) | JL703N | JavaScript, a newer protocol (not decoded) |
+| update only | G7 SE/HE (`JS_SL3101`), receivers | AC695X | firmware updates, no settings |
+
+So the closest relatives of the Nova 2 Lite are the Nova Vision and the T3XS: the same DLL and
+the GCM commands we use, and the same update-mode identity in Connect's table (`AC695X_TRANS`,
+with VIDs `N2S` and `T3XS`). The Nova Vision's `.ufw` confirms the AC695X; the T3XS's firmware
+ships as `T3XS_Updater-*.dat` files instead, not looked at yet.
+The Cyclone 2 needs its own protocol module, which `c2.py` is a start of.
+
 ## Open questions (need hardware)
 
 - Dongle PID with the controller in green mode (Connect expects `0x1098`); whether settings can

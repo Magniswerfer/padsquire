@@ -15,7 +15,7 @@ import math
 import random
 from collections.abc import Callable
 
-from . import gcm, hid
+from . import c2, gcm, hid
 
 LINKS = ("cable", "receiver", "bluetooth")
 RECEIVER_FIRMWARE = "2800"
@@ -228,3 +228,80 @@ class SimulatedSticks:
 
     def close(self) -> None:
         pass
+
+
+class SimulatedC2:
+    """A Cyclone 2 on its vendor HID interface, answering the read requests the way PROTOCOL.md
+    ("Cyclone 2") reads them from Connect. None of it is confirmed on hardware yet. Plugs into
+    `c2usb.C2Transport(sim.read, sim.write)`; `busy_once` makes the next request answer busy."""
+
+    def __init__(self, firmware: str = "123", receiver: str = "", battery: int = 80, cable: bool = True):
+        self.firmware, self.receiver = firmware, receiver
+        self.battery, self.cable = battery, cable
+        self.current = 1
+        self.profiles = {n: self._default_profile(n) for n in (1, 2, 3, 4, c2.SHIFT_PROFILE)}
+        self.profiles[c2.LIGHT_PROFILE] = self._default_light()
+        self.queue: list[bytes] = []
+        self.writes: list[bytes] = []
+        self.awake = False
+        self.busy_once = False
+
+    @staticmethod
+    def _default_profile(n: int) -> bytes:
+        p = bytearray(c2.PROFILE_SIZE)
+        name = b"Shift" if n == c2.SHIFT_PROFILE else f"Profile {n}".encode()
+        p[0:len(name)] = name
+        p[32:36] = bytes([3, 3, 3, 3])                       # vibration 75 %
+        for stick in (550, 582):                             # left, right: dead zone on, 10 / 100
+            p[stick + 2:stick + 5] = bytes([1, 10, 100])
+        for trigger in (494, 522):                           # LT, RT: 5 / 95
+            p[trigger + 2:trigger + 5] = bytes([1, 5, 95])
+        return bytes(p)
+
+    @staticmethod
+    def _default_light() -> bytes:
+        light = bytearray(c2.LIGHT_PROFILE_SIZE)
+        light[1:5] = bytes([1, 5, 10, 50])                   # effect 0: static, speed 10, 50 %
+        light[5:20] = bytes([255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0, 255, 255, 255])
+        return bytes(light)
+
+    def _reply(self, *data: int | bytes) -> None:
+        out = bytearray([0x10])
+        for d in data:
+            out += d if isinstance(d, bytes) else bytes([d])
+        self.queue.append(bytes(out + bytes(c2.REPORT_SIZE - len(out))))
+
+    def write(self, report: bytes) -> int:
+        assert len(report) == c2.REPORT_SIZE and report[0] == c2.OUT_REPORT
+        self.writes.append(report)
+        if self.busy_once and report[1] != c2.Cmd.HEARTBEAT:
+            self.busy_once = False
+            self._reply(c2.Cmd.ACK, 1)
+            return len(report)
+        cmd = report[1]
+        if cmd == c2.Cmd.HEARTBEAT:
+            self.awake = True
+        elif cmd == c2.Cmd.READ_FIRMWARE_VERSION:
+            self._reply(c2.Cmd.READ_FIRMWARE_VERSION_ACK, 0, 0, self.firmware.encode().ljust(5, b"\0"),
+                        bytes(3), self.receiver.encode().ljust(5, b"\0"))
+        elif cmd == c2.Cmd.READ_CURRENT_PROFILE:
+            self._reply(c2.Cmd.READ_CURRENT_PROFILE_ACK, self.current)
+        elif cmd == c2.Cmd.READ_PROFILE:
+            number, off, n = report[2], report[3] << 8 | report[4], report[5]
+            self._reply(c2.Cmd.READ_PROFILE_ACK, number, off >> 8, off & 0xFF, n,
+                        self.profiles[number][off:off + n])
+        return len(report)
+
+    def state_report(self) -> bytes:
+        r = bytearray(c2.REPORT_SIZE)
+        r[0] = c2.STATE_REPORT
+        r[1:5] = bytes([128, 128, 128, 128])
+        r[5] = 0x08                                          # D-pad released
+        r[35], r[36], r[37] = int(self.cable), self.battery, 0
+        r[38:53] = self.profiles[c2.LIGHT_PROFILE][5:20]
+        return bytes(r)
+
+    def read(self, timeout: float) -> bytes | None:
+        if self.queue:
+            return self.queue.pop(0)
+        return self.state_report() if self.awake else None

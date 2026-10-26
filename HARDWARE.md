@@ -43,6 +43,30 @@ Over Bluetooth (Android mode: hold Home + A until the light flashes yellow, then
 Anything you change, set it back afterwards; `padsquire ble restore --yes` resets every
 setting to factory defaults.
 
+## Still to test: the Cyclone 2
+
+PadSquire can read a Cyclone 2 but not change it yet. Its protocol is in
+[PROTOCOL-CYCLONE2.md](PROTOCOL-CYCLONE2.md), worked out from GameSir Connect and not yet run.
+Everything below only reads. **Don't** try `usb`, `uboot` or a firmware file on it: those are
+for the Nova 2 Lite.
+
+1. **How it shows up.** With the cable, then the receiver, in each mode the controller offers:
+   `padsquire probe --label c2-cable-xinput` (change the label each time). For the PlayStation
+   and Switch modes add `--device 054c:09cc` or `--device 057e:2009`, since those use Sony's and
+   Nintendo's IDs. Expected for the settings: `3537:101d` (or `1053`) by cable, `3537:102a` or
+   `100b` through the receiver, each with an interface on usage page `0xFFF0`.
+2. **Is it found?** `padsquire c2 find` lists it without sending anything. If not, attach the
+   probe report.
+3. **Does it answer?** `PADSQUIRE_DEBUG=1 padsquire c2 info`: firmware, battery and the active
+   profile. The debug log shows every report, so you can see the reply report ID (PROTOCOL-CYCLONE2.md
+   assumes `0x10`). Compare the battery with GameSir Connect or the controller's lights.
+4. **Do the profiles read right?** `padsquire c2 dump` saves every profile, raw and decoded, to
+   a JSON file. Set a few things you can recognise in GameSir Connect on Windows (a profile name,
+   a dead zone, a colour), dump again, and check that the decoded values match.
+5. Both by cable and through the receiver.
+
+Attach the probe reports, the dumps and the debug output to the hardware test report.
+
 ## Firmware updates
 
 Use the app's Firmware page, or the same steps on the command line:
