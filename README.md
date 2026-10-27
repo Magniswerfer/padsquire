@@ -30,6 +30,11 @@ studying how the controller talks over USB and Bluetooth.
   something doesn't work and a guide to every button.
 - **Updates itself.** Help checks for a newer PadSquire when you open it, and an installation
   made by the installer updates in place with one click.
+- **Knows other GameSir controllers.** It recognises every controller and receiver GameSir's own
+  app knows and says what PadSquire can do with it. The **Cyclone 2** connects too: its sticks,
+  triggers, vibration and report rate, in each of its four profiles. That support is new and not
+  yet tested on a real Cyclone 2; it follows [Deadband](https://github.com/broroeror/gamesir-linux-tools),
+  which is.
 
 | | Cable | 2.4 GHz receiver | Bluetooth |
 |---|---|---|---|
@@ -226,7 +231,7 @@ controller, and include a fake chip in update mode for the firmware writer.
 - Send the kernel's Xbox driver (`xpad`) the receiver's USB ID, so it isn't called "Generic
   X-Box pad" on Linux (see PROTOCOL.md).
 - Other GameSir controllers. The Nova Vision and the T3XS work much like the Nova 2 Lite, so
-  they come first; the Cyclone 2 can be read already (`padsquire c2 info`), not yet set up.
+  they come next. For the Cyclone 2: testing on hardware, then its lighting and button remapping.
 
 ## Related projects
 
@@ -235,7 +240,7 @@ Lite, one of these may already support it.
 
 | Project | Controllers | What it does |
 |---|---|---|
-| [Deadband](https://github.com/broroeror/gamesir-linux-tools) | Cyclone 2, G7 Pro, G7 Pro 8K PC, G7 SE, Tarantula Pro 8K, Kaleid (lighting) | A settings app for Linux and macOS: dead zones, curves, triggers, remapping, macros, gyro, lighting, profiles. **For a Cyclone 2, use this today.** |
+| [Deadband](https://github.com/broroeror/gamesir-linux-tools) | Cyclone 2, G7 Pro, G7 Pro 8K PC, G7 SE, Tarantula Pro 8K, Kaleid (lighting) | A settings app for Linux and macOS: dead zones, curves, triggers, remapping, macros, gyro, lighting, profiles. Tested on a Cyclone 2, with more of its settings than PadSquire has; PadSquire's Cyclone 2 support is built on its findings. |
 | [g7ctl](https://github.com/questionablesyntax/g7ctl) | G7 Pro | Settings from Linux: an app, a command line and a Python library. |
 | [gamesir-native-linux](https://github.com/RetroGamerGER/gamesir-native-linux) | G7 Pro (through its receiver) | A kernel driver that adds what the standard Xbox driver leaves out: the four back buttons, gyro, and the trigger motors. Early testing stage. |
 | [cyclone2-linux](https://github.com/vdemonchy/cyclone2-linux) | Cyclone 2 | Battery level and lighting in the GNOME, KDE Plasma and COSMIC panels. |

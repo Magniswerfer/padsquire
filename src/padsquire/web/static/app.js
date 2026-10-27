@@ -280,8 +280,10 @@ function renderChrome() {
       h("span", { class: "long" }, via), h("span", { class: "short", "aria-hidden": "true" }, short)));
     const bat = app.dev && val(app.dev.battery);
     if (bat) {
-      st.append(h("span", { class: "battery", title: bat.charging ? "Charging" : "Battery" },
-        batteryIcon(bat.level), `${bat.level}%${bat.charging ? ", charging" : ""}`));
+      // the Cyclone 2 reports the cable, not charging: it stays set when full
+      const plugged = family() === "c2" ? "on the cable" : "charging";
+      st.append(h("span", { class: "battery", title: bat.charging ? plugged : "Battery" },
+        batteryIcon(bat.level), `${bat.level}%${bat.charging ? `, ${plugged}` : ""}`));
     }
     st.append(h("button", { class: "button small", onclick: disconnect }, "Disconnect"));
   } else {
@@ -451,6 +453,7 @@ function otherDevices() {
     h("a", { href: p.url, target: "_blank", rel: "noopener noreferrer" }, p.name)]).flat();
   const say = (d) => {
     if (d.link && d.link.includes("no controller linked")) return "Turn the controller on so it links to the receiver.";
+    if (d.support === "settings") return "PadSquire supports this one but can't open its settings channel. Check the device permissions on the Help page, then unplug it and plug it in again.";
     if (d.support === "read") return "PadSquire can read this one, but can't change its settings yet.";
     if (d.support === "try" || d.support === "added")
       return "It speaks the same language as the Nova 2 Lite, but PadSquire hasn't been tested with one yet.";
@@ -2134,6 +2137,10 @@ async function panelSetup() {
       p("A profile, on the ", to("profiles", "Profiles page"), ", is a full set of settings kept on this computer, in ~/.local/share/padsquire/profiles. Switching writes only what's different and reads each setting back; the controller then keeps those settings, also on other devices, until something changes them."),
       "A profile saved over one connection can hold settings another can't change: sleep time and the back buttons' Bluetooth mapping aren't available by cable or receiver, and six toggles can't be changed there. A switch leaves those as they are and lists them; the profile still counts as on the controller.",
       "If a profile shows settings different right after a switch, one of them didn't take: the switch says which. Try once more; if the controller stopped responding, see the answer above about restarting it."),
+    qa("A Cyclone 2, or another GameSir controller",
+      p("PadSquire recognises every GameSir controller and receiver GameSir's own app knows, and lists the ones it can't set up yet under Other GameSir devices on the ", to("controller", "Controller page"), ", with a project that supports them where there is one."),
+      "A Cyclone 2 connects by cable or through its receiver; it has no Bluetooth settings channel. Its settings live in four profiles on the controller, and it only answers for the one it is using, so picking a profile on a page switches the controller to it. Every change is read back; if one doesn't stick, the page says so and shows what the controller kept.",
+      "If a Cyclone 2 is found but doesn't answer, unplug it and plug it in again. By cable it has two settings channels and PadSquire picks the one that sends live data. The lighting can't be changed here yet."),
     qa("Bluetooth doesn't find it",
       p("Put the controller in Android mode: hold Home and A for 2 seconds until the light flashes yellow. Pair it once in your system's Bluetooth settings, then use Find controllers on the ", to("controller", "Controller page"), " (it shows while no controller is connected).")),
     onMac() ? qa("Why does my Mac ask for my password?",

@@ -38,6 +38,14 @@ cyclone2-linux also saw these, none of them in Connect's table: DS4 mode as Sony
 `057e:2009` (the `nintendo` driver, coarse battery), HID mode as `3537:0575`, which is also what
 the receiver shows with the controller off.
 
+**Seen on hardware by Deadband**: `0x0575` is a configurable Cyclone 2 identity too (its "extras"
+or keyboard-macro mode), but an idle G7 Pro 8K receiver uses the same ID. The USB product name
+tells them apart: "GameSir-Cyclone 2" against "Gamepad" (`c2.NAMED_PIDS`). It also finds that
+**by cable the Cyclone 2 has two `0xFFF0` interfaces**, one streaming an empty `0x12` report and
+one the live one; it picks the live one, and so does `c2usb.open_device`. A controller in update
+mode reads `GS_C2_ADC_DEVICE` at flash offset `0x1010` (receiver: `GS_C2_Dongle`), across
+firmware 3.26 to 3.52, so "ADC" is not only the `0x1053` edition.
+
 Firmware: the controller (`GS_C2_DEVICE_V123`), the ADC edition (`GS_C2_ADC_DEVICE_V356`) and the
 receiver (`GS_C2_Dongle_V119`, `V121`) are JieLi `.ufw` files for the AC695X family (BR23, the
 Nova 2 Lite's chip), each as a `_Key` and a `_No_Key` build. Their `isd_config.ini` is not
@@ -111,6 +119,13 @@ From `proxyC2.parseGamepadState` and Connect's gamepad view (byte 0 is the repor
 
 ## Profiles
 
+**A profile only takes reads and writes while it is the active one** (seen on hardware by
+Deadband, 2026-10: an older belief that profiles 2-4 were read-only was this). GameSir's app
+sends the switch, `0f 07 <n>`, before it touches profile `n`. So PadSquire reads only the active
+profile and the lighting profile, and switches (and waits until `0f 0b` reports the new number)
+before showing or changing another. Connect's start-up read of all four profiles, above, would
+get the active one's bytes for the others.
+
 The settings are byte images the controller keeps: profiles 1-4 and the Shift layer (5), 680
 bytes each, and the lighting profile (32), 635 bytes. Connect reads each in 58-byte pieces at
 start-up, and writes back only the range of bytes that changed (from the first changed byte to
@@ -168,6 +183,40 @@ subsystem" with registers:
 It also found that writes sent back to back get dropped, and left about 60 ms between them;
 Connect waits for each acknowledgement instead.
 
+## Writing settings
+
+What PadSquire writes, all of it at addresses Deadband writes on hardware (`vendors/gamesir/
+config.py` and `control.py`, MIT; the preset bytes are copied from there, with its notice in
+`LICENSES/MIT-Deadband.txt`). Every write goes to the active profile, at most 48 bytes per
+report and 20 ms apart (the controller drops commands sent back to back), needs no save
+command, and is read back with `04`; a difference is reported, not retried.
+
+| Setting (`c2.FIELDS`) | Offset | Bytes |
+|---|---|---|
+| vibration left, right | `0x20`, `0x21` | percent |
+| report rate | `0x2E` | `0` 250 Hz, `1` 500 Hz, `2` 1000 Hz |
+| LT dead zone | `0x1F1` | start, end, anti start, anti end (percent) |
+| LT quick trigger | `0x1FA` | off `00 0a 5a`, adaptive `81 01 64`, fixed `82` (keeps the stored range) |
+| LT response curve | `0x1FE` | `[type, 64, 00, 00, x1, y1, x2, y2, x3, y3]`: linear `00 64 00 00 28 29 80 80 d7 d6`, concave `01 64 00 00 5e 17 b0 4f e8 a1`, S-curve `02 64 00 00 28 4d 80 80 d7 b3`; type 3 is one drawn by hand |
+| RT | LT + `0x1C` | the same |
+| left stick range | `0x227` | `0` round, `1` raw |
+| left stick dead zone | `0x229` | as the trigger's |
+| left stick response curve | `0x22E` | as the trigger's |
+| right stick | left + `0x20` | the same |
+
+`c2.writable` refuses anything else, in any profile but 1-4, before it is framed; the transport
+sends writes only when opened for the settings app (`writes=True`), never from `padsquire c2`.
+
+Deadband also maps button remapping (two bytes at each button's mapping, `0x42` for up, every 7
+bytes; L4 `0xB2`, R4 `0x151`, LT `0x1F5`, RT `0x211`) and "continuous trigger" (four bytes after
+that), which match the layout above; PadSquire doesn't write them yet.
+
+Lighting, from Deadband: the five colours of a frame are, in order, the left grip, the right
+grip, nothing, the profile light and Home. An effect's first byte is its type: `01` solid (one
+frame repeated), `05` flow and custom key frames (then the first byte is the key frame count,
+1-8), `08` rainbow, `02` pulse, `06` alarm. Play and pause is `0f 0d <1 play, 0 pause> <key
+frame>`. PadSquire shows the lighting and doesn't change it yet.
+
 ## Open (needs a Cyclone 2)
 
 1. Whether every read PadSquire sends gets an answer, by cable and through the receiver
@@ -175,5 +224,5 @@ Connect waits for each acknowledgement instead.
 2. The firmware version reply's layout (bytes 4-8 and 12-16).
 3. The parts of the profiles Deadband hasn't mapped: the button and macro blocks, motion, the
    lighting tail. Set something in GameSir Connect on Windows, dump, compare.
-4. Writes: Deadband does them already; PadSquire would only after the reads are confirmed here,
-   one setting at a time, read back and restored, as for the Nova 2 Lite.
+4. Each write in the table above by PadSquire, by cable and through the receiver, read back and
+   put back (HARDWARE.md has the steps). Deadband writes them; PadSquire hasn't yet.

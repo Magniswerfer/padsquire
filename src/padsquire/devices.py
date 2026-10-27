@@ -57,7 +57,7 @@ NAMES = {"T4N2": "Nova 2 Lite", "N2S": "Nova Vision", "T3XS": "T3XS", "C2": "Cyc
 #   read       read in the app, settings not yet
 #   try        speaks a family PadSquire knows, not tested on one: can be added (Add this controller)
 #   no         not supported; ELSEWHERE may list a project that is
-SUPPORT = {"T4N2": "settings", "C2": "read", "N2S": "try", "T3XS": "try", "NovaFamily": "try"}
+SUPPORT = {"T4N2": "settings", "C2": "settings", "N2S": "try", "T3XS": "try", "NovaFamily": "try"}
 
 DEADBAND = ("Deadband", "https://github.com/broroeror/gamesir-linux-tools")
 G7CTL = ("g7ctl", "https://github.com/questionablesyntax/g7ctl")

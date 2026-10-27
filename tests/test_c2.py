@@ -118,9 +118,10 @@ def test_everything_reads_back_from_the_simulator():
     out = c2usb.read_everything(t)
     assert out["firmware"] == {"controller": "1.2.3", "receiver": "1.2.1"}
     assert out["state"]["battery"] == 64 and out["state"]["charging"] is False
-    assert set(out["profiles"]) == {"1", "2", "3", "4", "5", "32"}
+    # only the active profile (a profile answers only while active) and the lighting profile
+    assert set(out["profiles"]) == {"1", "32"}
     assert bytes.fromhex(out["profiles"]["32"]["raw"]) == sim.profiles[c2.LIGHT_PROFILE]
-    assert out["profiles"]["5"]["decoded"]["name"] == "Shift"
+    assert out["profiles"]["1"]["decoded"]["name"] == "Profile 1"
     assert {w[1] for w in sim.writes} <= c2.READ_ONLY
 
 
@@ -146,3 +147,104 @@ def test_find_picks_the_0xfff0_interface(tmp_path):
     _node(tmp_path, "hidraw6", "0003:00003537:0000100F", bytes.fromhex("067aff0901a101"))  # Nova 2 Lite
     found = c2usb.find(tmp_path, Path("/dev"))
     assert [(d.path, d.pid, d.link) for d in found] == [("/dev/hidraw5", 0x100B, "2.4 GHz receiver")]
+
+
+def _writer(**kw):
+    sim = SimulatedC2(**kw)
+    return sim, c2usb.C2Transport(sim.read, sim.write, writes=True)
+
+
+def test_reads_only_transport_refuses_changes():
+    sim = SimulatedC2()
+    t = c2usb.C2Transport(sim.read, sim.write)
+    for frame in (c2.switch_profile(2), c2.rumble(10, 10), *c2.write_profile(1, 0x20, b"\x32")):
+        with pytest.raises(c2usb.C2UsbError):
+            t.send(frame)
+    assert sim.writes == []
+
+
+@pytest.mark.parametrize("profile,offset,length", [(1, 0x00, 4), (1, 0x1F, 2), (1, 0x2F, 1), (5, 0x20, 1),
+                                                    (32, 0x04, 1), (1, 0x229, 5), (0, 0x20, 1)])
+def test_writes_outside_the_known_fields_are_refused(profile, offset, length):
+    assert not c2.writable(profile, offset, length)
+    with pytest.raises(c2.C2Error):
+        c2.write_profile(profile, offset, bytes(length))
+
+
+def test_field_bytes_validates_values():
+    assert c2.field_bytes("vibration.left", 50) == (0x20, b"\x32")
+    assert c2.field_bytes("report_rate", 500) == (0x2E, b"\x01")
+    assert c2.field_bytes("sticks.right.dead_zone", {"start": 8, "end": 95, "anti_start": 0, "anti_end": 100}) \
+        == (0x249, bytes([8, 95, 0, 100]))
+    assert c2.field_bytes("triggers.RT.quick_trigger", "off") == (0x216, bytes([0, 0x0A, 0x5A]))
+    assert c2.field_bytes("sticks.left.curve", "concave")[1][0] == 1
+    for name, value in [("vibration.left", 101), ("vibration.left", True), ("report_rate", 300),
+                        ("sticks.left.dead_zone", {"start": 50, "end": 40, "anti_start": 0, "anti_end": 100}),
+                        ("sticks.left.range", "square"), ("triggers.LT.curve", "custom"), ("name", "x")]:
+        with pytest.raises(c2.C2Error):
+            c2.field_bytes(name, value)
+
+
+def test_a_write_lands_in_the_active_profile_and_is_read_back():
+    sim, t = _writer()
+    t.heartbeat()
+    t.switch_profile(2)
+    assert sim.current == 2
+    offset, data = c2.field_bytes("sticks.left.dead_zone", {"start": 7, "end": 98, "anti_start": 0, "anti_end": 100})
+    t.write_profile(2, offset, data)
+    assert c2.decode_profile(sim.profiles[2])["sticks"]["left"]["dead_zone"]["start"] == 7
+    assert c2.decode_profile(sim.profiles[1])["sticks"]["left"]["dead_zone"]["start"] == 10   # untouched
+    with pytest.raises(c2usb.C2UsbError, match="isn't the active one"):
+        t.write_profile(1, offset, data)
+
+
+def test_a_switch_the_controller_ignores_is_reported():
+    sim, t = _writer()
+    t.heartbeat()
+    sim.ignore_switch = True
+    with pytest.raises(c2usb.C2UsbError, match="didn't switch"):
+        t.switch_profile(3, tries=1, wait=0.3)
+
+
+def test_a_write_that_does_not_stick_is_reported():
+    sim, t = _writer()
+    t.heartbeat()
+    sim.current = 2            # it moved to profile 2 on its own, after we checked: writes to 1 vanish
+    real = t.current_profile
+    t.current_profile = lambda: 1
+    with pytest.raises(c2usb.C2UsbError, match="kept"):
+        t.write_profile(1, *c2.field_bytes("vibration.left", 25))
+    t.current_profile = real
+
+
+def _c2_node(root: Path, name: str, usb: str, pid: int, product: str, desc: bytes):
+    dev = root / "devices" / usb / f"{usb}:1.{name[-1]}" / f"0003:3537:{pid:04X}.000{name[-1]}"
+    dev.mkdir(parents=True)
+    (dev / "uevent").write_text(f"HID_ID=0003:00003537:0000{pid:04X}\nHID_NAME={product}\n")
+    (dev / "report_descriptor").write_bytes(desc)
+    link = root / "class" / "hidraw" / name
+    link.mkdir(parents=True)
+    (link / "device").symlink_to(dev)
+
+
+def test_find_groups_a_cable_cyclones_two_interfaces(tmp_path):
+    cfg = bytes.fromhex("06f0ff0901a101")
+    _c2_node(tmp_path, "hidraw1", "1-1", 0x101D, "GameSir-Cyclone 2", cfg)
+    _c2_node(tmp_path, "hidraw2", "1-1", 0x101D, "GameSir-Cyclone 2", cfg)
+    _c2_node(tmp_path, "hidraw3", "1-2", 0x0575, "GameSir-Cyclone 2", cfg)
+    _c2_node(tmp_path, "hidraw4", "1-3", 0x0575, "Gamepad", cfg)          # an idle G7 Pro 8K receiver
+    found = c2usb.find(tmp_path, Path("/dev"))
+    assert [(d.pid, d.paths) for d in found] == [(0x101D, ["/dev/hidraw1", "/dev/hidraw2"]),
+                                                 (0x0575, ["/dev/hidraw3"])]
+
+
+def test_open_device_picks_the_interface_with_live_state():
+    quiet, live = SimulatedC2(), SimulatedC2(battery=55)
+    quiet.state_report = lambda: bytes([c2.STATE_REPORT]) + bytes(63)      # streams an empty report
+    sims = {"/dev/hidraw1": quiet, "/dev/hidraw2": live}
+
+    def opener(path, writes):
+        return c2usb.C2Transport(sims[path].read, sims[path].write, writes=writes)
+    t = c2usb.open_device(c2usb.C2Device("/dev/hidraw1", 0x101D, "x", ["/dev/hidraw1", "/dev/hidraw2"]),
+                          writes=True, opener=opener)
+    assert c2.parse_state(t.state()).battery == 55 and t.writes

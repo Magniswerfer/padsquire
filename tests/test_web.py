@@ -482,7 +482,7 @@ def test_a_cyclone_2_connects_and_reads(tmp_path):
         assert d["firmware"]["value"]["controller"] == "1.2.3"
         assert d["battery"]["value"] == {"level": 80, "charging": False}
         assert d["current_profile"]["value"] == 1
-        assert d["profiles"]["1"]["value"]["name"] == "Profile 1"
+        assert d["profile"]["value"]["name"] == "Profile 1"
         assert d["light"]["value"]["effects"][0]["brightness"] == 50
         # the Nova 2 Lite's settings don't apply to it
         r = await post("/api/dead-zone", {"zone": "LEFT_STICK_INNER", "value": 5})
@@ -497,10 +497,10 @@ def test_a_cyclone_2_opens_only_from_a_node_we_found(tmp_path, monkeypatch):
     from padsquire.simulator import SimulatedC2
     opened = []
 
-    def fake_open(path):
+    def fake_open(path, writes=False):
         opened.append(path)
         sim = SimulatedC2()
-        return c2usb.C2Transport(sim.read, sim.write)
+        return c2usb.C2Transport(sim.read, sim.write, writes=writes)
     monkeypatch.setattr(c2usb.C2Transport, "open", staticmethod(fake_open))
 
     async def go(c):
@@ -514,3 +514,28 @@ def test_a_cyclone_2_opens_only_from_a_node_we_found(tmp_path, monkeypatch):
         st = (await (await post("/api/connect", {"address": "/dev/hidraw5", "link": "usb"})).json())["data"]
         assert st["family"] == "c2" and opened == ["/dev/hidraw5"]
     run(go, tmp_path, c2_finder=lambda: [c2usb.C2Device("/dev/hidraw5", 0x100B, "Xbox 360 Controller")])
+
+
+def test_cyclone_2_settings_switch_write_and_test(tmp_path):
+    async def go(c):
+        await login(c)
+        post = lambda path, body: c.post(path, json=body, headers=API)  # noqa: E731
+        await post("/api/connect", {"simulate": True, "family": "c2", "link": "cable"})
+        d = (await (await post("/api/c2/profile", {"number": 3})).json())["data"]
+        assert d["current_profile"]["value"] == 3
+        r = await post("/api/c2/setting", {"name": "sticks.left.dead_zone",
+                                            "value": {"start": 6, "end": 97, "anti_start": 0, "anti_end": 100}})
+        p = (await r.json())["data"]
+        assert p["sticks"]["left"]["dead_zone"]["start"] == 6
+        r = await post("/api/c2/setting", {"name": "sticks.left.dead_zone", "value": {"start": 60, "end": 20}})
+        assert r.status == 400
+        r = await post("/api/c2/setting", {"name": "raw", "value": 1})
+        assert r.status == 400
+        assert (await post("/api/c2/profile", {"number": 5})).status == 400
+        r = await post("/api/c2/setting", {"name": "report_rate", "value": 500, "profile": 2})   # page shows 2, it's on 3
+        assert r.status == 422 and "switched to profile 3" in (await r.json())["error"]
+        assert (await post("/api/c2/vibration-test", {"motor": "left", "strength": 50})).status == 200
+        assert (await post("/api/c2/vibration-test", {"motor": "both"})).status == 400
+        await post("/api/connect", {"simulate": True, "link": "cable"})       # a Nova 2 Lite now
+        assert (await post("/api/c2/profile", {"number": 1})).status == 409
+    run(go, tmp_path)

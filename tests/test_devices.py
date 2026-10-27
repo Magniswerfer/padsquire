@@ -52,7 +52,7 @@ def test_plugged_in_lists_every_gamesir_device(tmp_path):
     found = {d["usb_id"]: d for d in devices.plugged_in(tmp_path, Path("/dev"), added=[])}
     assert found["3537:100f"]["support"] == "settings" and not found["3537:100f"]["can_add"]
     assert found["3537:100f"]["interfaces"][1] == {"path": "/dev/hidraw2", "usage_page": 0xFF7A}
-    assert found["3537:100b"]["name"] == "Cyclone 2" and found["3537:100b"]["support"] == "read"
+    assert found["3537:100b"]["name"] == "Cyclone 2" and found["3537:100b"]["support"] == "settings"
     assert found["3537:100b"]["elsewhere"][0]["name"] == "Deadband"
     eightk = found["3537:10c8"]
     assert (eightk["name"], eightk["support"], eightk["can_add"]) == ("G7 Pro 8K", "no", False)

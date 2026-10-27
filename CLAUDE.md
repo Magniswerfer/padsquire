@@ -15,7 +15,7 @@ helper started via a PadSquire-named osacompile applet and `launchctl asuser`; o
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -e '.[gui,test]'   # no system pip on this box; 7zip for update/extract
-pytest                                   # 324 tests; PADSQUIRE_INSTALLER=<setup.exe> adds a real-installer test,
+pytest                                   # 348 tests; PADSQUIRE_INSTALLER=<setup.exe> adds a real-installer test,
                                          # PADSQUIRE_BACKUP=<dump.bin> PADSQUIRE_UFW=<.ufw> a real layout check
 ruff check src tests tools               # lint (config in pyproject.toml; CI runs it, shellcheck and node --check)
 pre-commit install                       # with '.[dev]': ruff, shellcheck, whitespace, blocks *.ufw/*.exe/*.bin
@@ -27,7 +27,7 @@ padsquire menu [--remove] | udev-rules # app-menu entry; print the packaged udev
 padsquire update | extract | ufw | plan
 padsquire uboot find | enter --confirm | info | backup | restart   # download mode
 padsquire uboot test-write | restore | flash ... --confirm        # writes (need a backup)
-padsquire c2 [--simulate] find | info | dump   # Cyclone 2, read-only (no hardware tested yet)
+padsquire c2 [--simulate] find | info | dump   # Cyclone 2, read-only; its settings are in the app
 tools/connect-devices.py <Connect setup.exe>  # every model in Connect's device table, by protocol
 ```
 
@@ -80,9 +80,16 @@ tools/connect-devices.py <Connect setup.exe>  # every model in Connect's device 
   (`0x29`, Bluetooth only, untested) are a section of it.
 - `probe.py`: read-only hardware probe. `PROTOCOL.md`: all protocol notes (CC BY-SA 4.0), including
   which other GameSir models share our protocol ("Other GameSir controllers in Connect").
-- `c2.py` (frames, parsers, profile layouts), `c2usb.py` (hidraw, refuses anything but the reads in
-  `c2.READ_ONLY`), `cli_c2.py`: the Cyclone 2, a different protocol (`PROTOCOL-CYCLONE2.md`), all
-  static analysis. `SimulatedC2` in `simulator.py`; tests in `tests/test_c2.py`.
+- `c2.py` (frames, parsers, profile layouts, the writable fields), `c2usb.py` (hidraw; reads only,
+  unless opened with `writes=True` by the app: then also profile switches, the vibration test and
+  writes inside `c2.FIELDS`, each read back; `C2Client` for the app), `cli_c2.py` (read-only), and
+  the app's `web/static/c2.js`: the Cyclone 2, its own protocol (`PROTOCOL-CYCLONE2.md`). Built on
+  Deadband's hardware findings (MIT, `LICENSES/MIT-Deadband.txt`); a profile answers only while
+  active, so the app switches first. `SimulatedC2` in `simulator.py`; tests in `tests/test_c2.py`.
+- `devices.py`: recognises every GameSir USB device (`data/connect-devices.json`, from
+  `tools/connect-devices.py --registry`, plus `EXTRA_IDS`), with its protocol family and what
+  PadSquire can do with it; the Controller page lists the ones it can't connect to. App pages
+  declare their `families` in `SECTIONS` (app.js); the server's `Session.family` says which.
 - `installer.device_table` / `dll_pids`: Connect's device registry; `tools/connect-devices.py` prints it.
 - `CONTRIBUTING.md`: ground rules, the levels of certainty for protocol notes (static analysis,
   seen once, confirmed, refuted) and what a change needs; `.github/ISSUE_TEMPLATE/` and
@@ -109,8 +116,8 @@ Open:
    the app's one-go backup, restore and reinstall are confirmed on hardware; the receiver's
    firmware is untested there; the disk-access prompt names "Python". The curl installer from
    padsquire.com installs 0.2.0 from PyPI on a Mac and the app connects (confirmed 2026-10-25).
-6. **Cyclone 2** (static analysis only): the checklist in HARDWARE.md, read-only; writes only after
-   reads are confirmed. The Nova Vision (N2S) and T3XS use our DLL and chip: the next cheapest models.
+6. **Cyclone 2**: settings in the app, built on Deadband's findings, untested by us; the checklist
+   is in HARDWARE.md. The Nova Vision (N2S) and T3XS use our DLL and chip: the next cheapest models.
 
 ## Next steps (as of 2026-10-25)
 

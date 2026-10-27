@@ -231,9 +231,11 @@ class SimulatedSticks:
 
 
 class SimulatedC2:
-    """A Cyclone 2 on its vendor HID interface, answering the read requests the way PROTOCOL.md
-    ("Cyclone 2") reads them from Connect. None of it is confirmed on hardware yet. Plugs into
-    `c2usb.C2Transport(sim.read, sim.write)`; `busy_once` makes the next request answer busy."""
+    """A Cyclone 2 on its vendor HID interface, as PROTOCOL-CYCLONE2.md records it: from Connect,
+    and from what Deadband and cyclone2-linux saw on hardware (a profile only answers while it is
+    the active one; writes are acknowledged with `10 06 00`). Not yet confirmed by PadSquire.
+    Plugs into `c2usb.C2Transport(sim.read, sim.write)`; `busy_once` makes the next request
+    answer busy, `ignore_switch` makes it ignore profile switches."""
 
     def __init__(self, firmware: str = "123", receiver: str = "", battery: int = 80, cable: bool = True):
         self.firmware, self.receiver = firmware, receiver
@@ -245,6 +247,8 @@ class SimulatedC2:
         self.writes: list[bytes] = []
         self.awake = False
         self.busy_once = False
+        self.ignore_switch = False
+        self.rumbling = (0, 0)
 
     @staticmethod
     def _default_profile(n: int) -> bytes:
@@ -289,8 +293,22 @@ class SimulatedC2:
             self._reply(c2.Cmd.READ_CURRENT_PROFILE_ACK, self.current)
         elif cmd == c2.Cmd.READ_PROFILE:
             number, off, n = report[2], report[3] << 8 | report[4], report[5]
+            # profiles 1-4 answer with the active one's bytes, whichever was asked for (Deadband)
+            source = self.current if number in (1, 2, 3, 4) else number
             self._reply(c2.Cmd.READ_PROFILE_ACK, number, off >> 8, off & 0xFF, n,
-                        self.profiles[number][off:off + n])
+                        self.profiles[source][off:off + n])
+        elif cmd == c2.Cmd.SWITCH_PROFILE:
+            if not self.ignore_switch and report[2] in (1, 2, 3, 4):
+                self.current = report[2]
+        elif cmd == c2.Cmd.WRITE_PROFILE:
+            number, off, n = report[2], report[3] << 8 | report[4], report[5]
+            if number == self.current or number == c2.LIGHT_PROFILE:    # others don't take writes
+                image = bytearray(self.profiles[number])
+                image[off:off + n] = report[6:6 + n]
+                self.profiles[number] = bytes(image)
+            self._reply(c2.Cmd.ACK, 0)
+        elif cmd == c2.Cmd.VIBRATE:
+            self.rumbling = (report[4], report[5])
         return len(report)
 
     def state_report(self) -> bytes:

@@ -438,3 +438,4 @@ pad-model.other { display: none; }
 .value { font-weight: var(--weight-bold); }
 .c2-colour { display: inline-block; width: 1.75rem; height: 1.75rem; border-radius: 50%; border: var(--hairline) solid var(--line-strong); }
 .swatches .c2-colour + .c2-colour { margin-left: calc(var(--space-2) - var(--space-3)); }
+.segmented label { white-space: nowrap; }

@@ -125,18 +125,18 @@ class Session:
         """The protocol family of the controller connected (devices.FAMILY)."""
         return "c2" if self.c2 is not None else "gcm" if self.client is not None else None
 
-    async def connect_c2(self, path: str | None, name: str, via: str = "cable"):
-        """A Cyclone 2 on its hidraw node, or a simulated one when `path` is None."""
+    async def connect_c2(self, dev: c2usb.C2Device | None, name: str, via: str = "cable"):
+        """A Cyclone 2 (the interface of it that answers), or a simulated one when `dev` is None."""
         await self.disconnect()
-        if path is None:
+        if dev is None:
             sim = SimulatedC2(cable=via == "cable")
-            transport = c2usb.C2Transport(sim.read, sim.write)
+            transport = c2usb.C2Transport(sim.read, sim.write, writes=True)
         else:
-            transport = await asyncio.to_thread(c2usb.C2Transport.open, path)
+            transport = await asyncio.to_thread(c2usb.open_device, dev, True)
         self.c2 = c2usb.C2Client(transport)
         self.mode, self.via, self.name = "usb", via, name
-        self.address = path or "simulator"
-        self.simulated = path is None
+        self.address = dev.path if dev else "simulator"
+        self.simulated = dev is None
 
     async def connect_simulated(self, link: str = "cable"):
         """A simulated controller that behaves like the real one on `link` (simulator.LINKS)."""
@@ -225,14 +225,17 @@ async def read_state(nova: NovaClient, skip: set[str] = frozenset(), through_don
 
 
 async def read_c2_state(dev: c2usb.C2Client) -> dict:
-    """A Cyclone 2's state for the app: versions, battery, and every profile, decoded."""
+    """A Cyclone 2's state for the app: versions, battery, the active profile and the lighting.
+    Only the active profile: a profile answers only while it is active (Deadband, on hardware)."""
     current = await _try(dev.current_profile())
+    number = current.get("value")
     return {
         "family": "c2",
         "firmware": await _try(dev.firmware()),
         "battery": await _try(dev.battery()),
         "current_profile": current,
-        "profiles": {str(n): await _try(dev.profile(n)) for n in (1, 2, 3, 4, c2.SHIFT_PROFILE)},
+        "profile": await _try(dev.profile(number)) if number in c2.PROFILES else
+        {"error": "the controller is on a profile PadSquire can't read"},
         "light": await _try(dev.profile(c2.LIGHT_PROFILE)),
     }
 
@@ -445,7 +448,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
                     await session.connect_usb(match.path, "GameSir Nova 2 Lite",
                                               "dongle" if match.pid == 0x1098 else "cable")
                 elif cyclone is not None:
-                    await session.connect_c2(cyclone.path, "GameSir Cyclone 2",
+                    await session.connect_c2(cyclone, "GameSir Cyclone 2",
                                              "dongle" if "receiver" in cyclone.link else "cable")
                 else:
                     return fail("that USB controller is no longer connected; search again")
@@ -556,6 +559,49 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
         if session.c2 is not None:
             return ok(await read_c2_state(session.c2))
         return ok({"family": "gcm", **await state_of(need_client())})
+
+    # -- Cyclone 2 ----------------------------------------------------------------
+    def need_c2() -> c2usb.C2Client:
+        if session.c2 is None:
+            raise web.HTTPConflict(text=json.dumps({"ok": False, "error": "no Cyclone 2 connected"}),
+                                   content_type="application/json")
+        return session.c2
+
+    @routes.post("/api/c2/profile")
+    @guarded
+    async def c2_profile(request):
+        number = (await body(request)).get("number")
+        if number not in (1, 2, 3, 4):
+            return fail("profile must be 1 to 4")
+        dev = need_c2()
+        await dev.switch(number)
+        return ok(await read_c2_state(dev))
+
+    @routes.post("/api/c2/setting")
+    @guarded
+    async def c2_setting(request):
+        d = await body(request)
+        if not isinstance(d.get("name"), str):
+            return fail("name required")
+        shown = d.get("profile")
+        if shown is not None and shown not in (1, 2, 3, 4):
+            return fail("profile must be 1 to 4")
+        try:
+            return ok(await need_c2().set(d["name"], d.get("value"), shown))
+        except c2.C2Error as e:
+            return fail(str(e))
+
+    @routes.post("/api/c2/vibration-test")
+    @guarded
+    async def c2_vibration_test(request):
+        d = await body(request)
+        strength = d.get("strength", 75)
+        if d.get("motor") not in ("left", "right") or isinstance(strength, bool) or not isinstance(strength, int) \
+                or not 0 <= strength <= 100:
+            return fail("motor must be left or right, strength 0-100")
+        level = round(strength * 255 / 100)
+        await need_c2().rumble(level if d["motor"] == "left" else 0, level if d["motor"] == "right" else 0)
+        return ok()
 
     # -- settings ---------------------------------------------------------------
     def _byte(v, name):

@@ -26,7 +26,11 @@ from enum import IntEnum
 VENDOR_ID = 0x3537
 # Connect's device table (C2): two cable and two 2.4 GHz identities. 0x1053 is a hardware
 # edition with its own firmware ("C2 ADC", 3.5.6 against 1.2.3).
-PIDS = {0x101D: "cable", 0x1053: "cable", 0x102A: "2.4 GHz receiver", 0x100B: "2.4 GHz receiver"}
+PIDS = {0x101D: "cable", 0x1053: "cable", 0x102A: "2.4 GHz receiver", 0x100B: "2.4 GHz receiver",
+        0x0575: "cable"}
+# 0x0575 (Deadband: its "extras" mode, configurable) is also an idle G7 Pro 8K receiver, which
+# names itself "Gamepad"; a Cyclone 2 names itself "GameSir-Cyclone 2".
+NAMED_PIDS = {0x0575}
 USAGE_PAGE = 0xFFF0
 DESCRIPTOR_PREFIX = bytes.fromhex("06f0ff")      # Usage Page (0xFFF0)
 
@@ -336,3 +340,114 @@ def decode_light(data: bytes) -> dict:
     return {"active_effect": data[0] if data[0] <= 3 else 0, "effects": effects,
             "audio_reactive": t[0] & 1, "user_effect": t[1], "profile_led": tuple(t[2:5]),
             "raise_to_wake": t[5] & 1, "standby_time": t[6]}
+
+
+# -- settings writes ------------------------------------------------------------------
+# From Deadband (github.com/broroeror/gamesir-linux-tools, MIT, copyright 2026 broroeror;
+# LICENSES/MIT-Deadband.txt), which writes these on hardware: `vendors/gamesir/config.py` and
+# `control.py` at commit feeb2d8. What it learned there:
+#   - a profile only takes reads and writes while it is the active one: switch first (0x07);
+#   - the controller drops commands sent back to back: one at a time, 20 ms apart;
+#   - writes carry at most 48 bytes, and need no save command.
+
+WRITE_CHUNK = 48
+WRITE_GAP = 0.02
+
+# Deadband's field addresses inside profiles 1-4; every one agrees with the layout above.
+FIELDS = {
+    "vibration.left": (0x020, 1), "vibration.right": (0x021, 1), "report_rate": (0x02E, 1),
+}
+for _key, _base in (("LT", 0x1EE), ("RT", 0x20A)):
+    FIELDS.update({f"triggers.{_key}.dead_zone": (_base + 3, 4),          # start, end, anti start, anti end
+                   f"triggers.{_key}.quick_trigger": (_base + 12, 3),     # status, start, end
+                   f"triggers.{_key}.curve": (_base + 16, 10)})
+for _key, _base in (("left", 0x226), ("right", 0x246)):
+    FIELDS.update({f"sticks.{_key}.range": (_base + 1, 1),                # 0 round, 1 raw
+                   f"sticks.{_key}.dead_zone": (_base + 3, 4),
+                   f"sticks.{_key}.curve": (_base + 8, 10)})
+
+REPORT_RATE_CODES = {250: 0, 500: 1, 1000: 2}
+
+# Quick trigger ("hair trigger") as Connect writes it: the status byte and the neighbours it
+# rewrites with it. "fixed" keeps the range that is stored.
+QUICK_TRIGGER = {"off": bytes([0x00, 0x0A, 0x5A]), "adaptive": bytes([0x81, 0x01, 0x64]),
+                 "fixed": bytes([0x82])}
+
+# Response curves: [type, strength 0x64, 0, 0, three (x, y) points], as Connect writes them.
+CURVES = {
+    "linear": bytes([0x00, 0x64, 0x00, 0x00, 0x28, 0x29, 0x80, 0x80, 0xD7, 0xD6]),
+    "concave": bytes([0x01, 0x64, 0x00, 0x00, 0x5E, 0x17, 0xB0, 0x4F, 0xE8, 0xA1]),
+    "s-curve": bytes([0x02, 0x64, 0x00, 0x00, 0x28, 0x4D, 0x80, 0x80, 0xD7, 0xB3]),
+}
+CURVE_NAMES = {block[0]: name for name, block in CURVES.items()}     # 3 = drawn by hand
+
+
+def curve_name(curve: dict) -> str:
+    return CURVE_NAMES.get(curve["status"], "custom")
+
+
+def switch_profile(number: int) -> bytes:
+    if number not in (1, 2, 3, 4):
+        raise C2Error("profiles are 1 to 4")
+    return bytes([OUT_REPORT, Cmd.SWITCH_PROFILE, number])
+
+
+def rumble(left: int, right: int) -> bytes:
+    """The vibration test, 0-255 per grip; `rumble(0, 0)` stops it."""
+    if not (0 <= left <= 255 and 0 <= right <= 255):
+        raise C2Error("strength must be 0-255")
+    return bytes([OUT_REPORT, Cmd.VIBRATE, 0x66, 0x55, left, right])
+
+
+def writable(profile: int, offset: int, length: int) -> bool:
+    """Only the fields above, in profiles 1-4: anything else is refused before it is framed."""
+    return profile in (1, 2, 3, 4) and length > 0 and any(
+        start <= offset and offset + length <= start + size for start, size in FIELDS.values())
+
+
+def write_profile(profile: int, offset: int, data: bytes) -> list[bytes]:
+    """`0f 03 <profile> <offset hi> <offset lo> <length> <data>`, in pieces of 48 bytes."""
+    if not writable(profile, offset, len(data)):
+        raise C2Error(f"refusing to write {len(data)} bytes at {offset:#05x} of profile {profile}")
+    return [bytes([OUT_REPORT, Cmd.WRITE_PROFILE, profile, (offset + i) >> 8, (offset + i) & 0xFF,
+                   len(data[i:i + WRITE_CHUNK])]) + data[i:i + WRITE_CHUNK]
+            for i in range(0, len(data), WRITE_CHUNK)]
+
+
+def field_bytes(name: str, value) -> tuple[int, bytes]:
+    """The offset and bytes for one setting from the app: a validated value, not raw bytes."""
+    if name not in FIELDS:
+        raise C2Error(f"unknown setting {name}")
+    offset, size = FIELDS[name]
+
+    def percent(v) -> int:
+        if isinstance(v, bool) or not isinstance(v, int) or not 0 <= v <= 100:
+            raise C2Error(f"{name} must be 0-100")
+        return v
+
+    if name.startswith("vibration."):
+        return offset, bytes([percent(value)])
+    if name == "report_rate":
+        if value not in REPORT_RATE_CODES:
+            raise C2Error("report rate must be 250, 500 or 1000")
+        return offset, bytes([REPORT_RATE_CODES[value]])
+    if name.endswith(".range"):
+        if value not in ("round", "raw"):
+            raise C2Error("range must be round or raw")
+        return offset, bytes([0 if value == "round" else 1])
+    if name.endswith(".dead_zone"):
+        if not isinstance(value, dict):
+            raise C2Error("a dead zone is start, end, anti_start, anti_end")
+        v = [percent(value.get(k)) for k in ("start", "end", "anti_start", "anti_end")]
+        if v[0] >= v[1] or v[2] > v[3]:
+            raise C2Error("a dead zone's start must be below its end")
+        return offset, bytes(v)
+    if name.endswith(".quick_trigger"):
+        if value not in QUICK_TRIGGER:
+            raise C2Error("quick trigger must be off, adaptive or fixed")
+        return offset, QUICK_TRIGGER[value]
+    if name.endswith(".curve"):
+        if value not in CURVES:
+            raise C2Error("curve must be linear, concave or s-curve")
+        return offset, CURVES[value]
+    raise C2Error(f"unknown setting {name}")

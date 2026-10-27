@@ -45,26 +45,37 @@ setting to factory defaults.
 
 ## Still to test: the Cyclone 2
 
-PadSquire can read a Cyclone 2 but not change it yet; to set one up today, use
-[Deadband](https://github.com/broroeror/gamesir-linux-tools). Its protocol is in
-[PROTOCOL-CYCLONE2.md](PROTOCOL-CYCLONE2.md), worked out from GameSir Connect and checked against
-what Deadband and cyclone2-linux saw on hardware; PadSquire hasn't run it yet.
-Everything below only reads. **Don't** try `usb`, `uboot` or a firmware file on it: those are
-for the Nova 2 Lite.
+The settings app connects to a Cyclone 2 and changes its sticks, triggers, vibration and report
+rate, following [Deadband](https://github.com/broroeror/gamesir-linux-tools), which does this on
+real controllers; PadSquire itself hasn't run on one yet. The protocol is in
+[PROTOCOL-CYCLONE2.md](PROTOCOL-CYCLONE2.md). **Don't** try `usb`, `uboot` or a firmware file on
+it: those are for the Nova 2 Lite.
+
+Reading first (the command line only reads):
 
 1. **How it shows up.** With the cable, then the receiver, in each mode the controller offers:
    `padsquire probe --label c2-cable-xinput` (change the label each time). For the PlayStation
    and Switch modes add `--device 054c:09cc` or `--device 057e:2009`, since those use Sony's and
-   Nintendo's IDs. Expected for the settings: `3537:101d` (or `1053`) by cable, `3537:102a` or
-   `100b` through the receiver, each with an interface on usage page `0xFFF0`.
+   Nintendo's IDs. Expected for the settings: `3537:101d`, `1053` or `0575` by cable, `3537:102a`
+   or `100b` through the receiver, each with an interface on usage page `0xFFF0` (two by cable).
 2. **Is it found?** `padsquire c2 find` lists it without sending anything. If not, attach the
    probe report.
 3. **Does it answer?** `PADSQUIRE_DEBUG=1 padsquire c2 info`: firmware, battery and the active
-   profile. The debug log shows every report (replies should start with `10`). Compare the battery with GameSir Connect or the controller's lights.
-4. **Do the profiles read right?** `padsquire c2 dump` saves every profile, raw and decoded, to
-   a JSON file. Set a few things you can recognise in GameSir Connect on Windows (a profile name,
-   a dead zone, a colour), dump again, and check that the decoded values match.
-5. Both by cable and through the receiver.
+   profile. The debug log shows every report (replies should start with `10`). Compare the
+   battery with GameSir Connect or the controller's lights.
+4. **Does the profile read right?** `padsquire c2 dump` saves the active profile and the
+   lighting, raw and decoded. Set a few things you can recognise in GameSir Connect on Windows (a
+   dead zone, the report rate, a colour), dump again, and check that the decoded values match.
+
+Then changing, in the app (`PADSQUIRE_DEBUG=1 padsquire gui` logs every report):
+
+5. **Profiles.** Pick another profile on any page: the controller's profile light should change,
+   and the page should show that profile's settings. Pick the first one again.
+6. **One setting at a time**, noting the value first and putting it back afterwards: a stick's
+   dead zone (then check it in a game or `evtest`), a trigger's quick trigger, a response curve,
+   the vibration strength (with Test), the report rate. After each, "Read settings again" on the
+   Controller page should show the new value.
+7. Both by cable and through the receiver.
 
 Attach the probe reports, the dumps and the debug output to the hardware test report.
 

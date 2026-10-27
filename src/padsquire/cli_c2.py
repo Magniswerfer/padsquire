@@ -38,7 +38,7 @@ def _open(args) -> c2usb.C2Transport | None:
         sim = SimulatedC2()
         return c2usb.C2Transport(sim.read, sim.write)
     dev = _device(args)
-    return c2usb.C2Transport.open(dev.path) if dev else None
+    return c2usb.open_device(dev) if dev else None      # reads only: no writes=True here
 
 
 def a_find(args) -> int:
