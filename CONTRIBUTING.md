@@ -70,7 +70,8 @@ the exact command, and paste what it printed. "It didn't work" is a result too, 
 important one: say so, with the output.
 
 Other GameSir controllers are welcome, but start read-only. Run `padsquire probe --guided` and
-post the report. Don't try a firmware command on a controller PadSquire doesn't know, and don't
+post the report. If the app offers Add this controller for it, add it, run its tests on the
+Controller page, and attach the report it saves (HARDWARE.md, "Another GameSir controller"). Don't try a firmware command on a controller PadSquire doesn't know, and don't
 flash firmware meant for another model: the T4N2 (Nova 2 Lite) and the T4N lite (the original
 Nova Lite) are different hardware, and one's firmware bricks the other.
 

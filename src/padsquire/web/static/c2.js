@@ -136,6 +136,7 @@ function c2Controller() {
       row("Report rate", "How often it tells the computer where everything is. Higher reacts sooner and uses a little more battery.",
         segmented("report-rate", [["250", "250 Hz"], ["500", "500 Hz"], ["1000", "1000 Hz"]], String(p.report_rate),
           (v) => c2Set("report_rate", +v)))) : null,
+    window.addedPanel ? addedPanel() : null,
     c2NewNote(),
     h("div", { class: "button-row" },
       h("button", { class: "button", onclick: (e) => working(e.currentTarget, "Reading…", () => reload(true)) }, "Read settings again")));

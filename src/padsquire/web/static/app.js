@@ -81,16 +81,17 @@ function confirmDialog(title, text, okLabel) {
 // state
 
 // `families`: the protocol families (devices.py) a page is for; none means every family.
+// `notAdded`: not for a controller added on this computer (no test unlocks its settings).
 const SECTIONS = [
   { id: "controller", label: "Controller" },
-  { id: "buttons", label: "Buttons", families: ["gcm"] },
+  { id: "buttons", label: "Buttons", families: ["gcm"], notAdded: true },
   { id: "sticks", label: "Sticks" },
   { id: "triggers", label: "Triggers" },
   { id: "vibration", label: "Vibration" },
   { id: "lighting", label: "Home light", labels: { c2: "Lighting" } },
-  { id: "profiles", label: "Profiles", families: ["gcm"] },
-  { id: "power", label: "Power", families: ["gcm"] },
-  { id: "firmware", label: "Firmware", offline: true, under: "controller", families: ["gcm"] },   // a tab of Controller
+  { id: "profiles", label: "Profiles", families: ["gcm"], notAdded: true },
+  { id: "power", label: "Power", families: ["gcm"], notAdded: true },
+  { id: "firmware", label: "Firmware", offline: true, under: "controller", families: ["gcm"], notAdded: true },   // a tab of Controller
   { id: "setup", label: "Help", offline: true, apart: true },             // set apart from the settings
   { id: "guide", label: "Button guide", offline: true, under: "setup" },   // a tab of Help, not in the list
 ];
@@ -120,7 +121,8 @@ const errOf = (entry) => (entry && entry.error) || null;
 
 // The connected controller's protocol family; the Nova 2 Lite's when none is connected.
 const family = () => (app.status.connected && app.status.family) || "gcm";
-const forFamily = (sec) => !sec.families || sec.families.includes(family());
+const forFamily = (sec) => (!sec.families || sec.families.includes(family()))
+  && !(sec.notAdded && app.status.connected && app.status.added);
 const labelOf = (sec) => (sec.labels && sec.labels[family()]) || sec.label;
 
 function sectionFromHash() {
@@ -307,7 +309,7 @@ function renderChrome() {
   navToCurrent();
 
   $("#pad").classList.toggle("offline", !app.status.connected);
-  $("#pad").classList.toggle("other", family() !== "gcm");     // the model is a Nova 2 Lite
+  $("#pad").classList.toggle("other", family() !== "gcm" || !!app.status.added);     // the model is a Nova 2 Lite
   $(".app-device").textContent = app.status.connected && app.status.name
     ? app.status.name.replace(/^GameSir /, "").replace(/ \(simulated\)$/, "") : "Nova 2 Lite";
   // The Home light colour is the user's own: it colours the preview and the model's Home light.
@@ -466,7 +468,8 @@ function otherDevices() {
       h("span", {}, d.name ? `GameSir ${d.name}` : "Unknown GameSir device",
         h("span", { class: "addr" }, [d.link, d.usb_id].filter(Boolean).join(", ")),
         h("span", { class: "note" }, say(d),
-          d.elsewhere.length > 0 && d.support !== "settings" ? [" It works with ", ...links(d), " today."] : null))))));
+          d.elsewhere.length > 0 && d.support !== "settings" ? [" It works with ", ...links(d), " today."] : null),
+        d.can_add && window.addFlow ? addFlow(d) : null)))));
 }
 
 function panelController() {
@@ -496,6 +499,7 @@ function panelController() {
       fact("Made", info && info.production_date),
       fact("Bluetooth address", info && info.mac),
       fact("Protocol", info && `GCM ${info.gcm_version}`)),
+    window.addedPanel ? addedPanel() : null,
     h("div", { class: "button-row" },
       h("button", { class: "button", onclick: (e) => working(e.currentTarget, "Reading…", () => reload(true)) }, "Read settings again")),
   );
@@ -2082,8 +2086,10 @@ const PAGE_TABS = {
 };
 
 function pageTabs(group, current) {
+  const shown = PAGE_TABS[group].filter(([id]) => { const sec = SECTIONS.find((x) => x.id === id); return !sec || forFamily(sec); });
+  if (shown.length < 2) return null;
   const tabs = h("div", { class: "segmented page-tabs", role: "radiogroup", "aria-label": "Pages" });
-  for (const [id, label] of PAGE_TABS[group]) {
+  for (const [id, label] of shown) {
     tabs.append(h("input", { type: "radio", name: `tab-${group}`, id: `tab-${id}`, value: id, checked: id === current,
       onchange: () => { location.hash = `#${id}`; } }), h("label", { for: `tab-${id}` }, label));
   }
@@ -2139,6 +2145,7 @@ async function panelSetup() {
       "If a profile shows settings different right after a switch, one of them didn't take: the switch says which. Try once more; if the controller stopped responding, see the answer above about restarting it."),
     qa("A Cyclone 2, or another GameSir controller",
       p("PadSquire recognises every GameSir controller and receiver GameSir's own app knows, and lists the ones it can't set up yet under Other GameSir devices on the ", to("controller", "Controller page"), ", with a project that supports them where there is one."),
+      "If one of them, or a GameSir controller PadSquire doesn't know, speaks the same language as the Nova 2 Lite or the Cyclone 2, Add this controller appears next to it. PadSquire first only asks it who it is. Once added, it connects like the controller it resembles, with each group of settings locked until a test on the Controller page shows it works: the test changes one setting, reads it back and puts it back. Firmware updates are never offered for it. Save a report there and attach it to a hardware test report, so it can be added for everyone.",
       "A Cyclone 2 connects by cable or through its receiver; it has no Bluetooth settings channel. Its settings live in four profiles on the controller, and it only answers for the one it is using, so picking a profile on a page switches the controller to it. Every change is read back; if one doesn't stick, the page says so and shows what the controller kept.",
       "If a Cyclone 2 is found but doesn't answer, unplug it and plug it in again. By cable it has two settings channels and PadSquire picks the one that sends live data. The lighting can't be changed here yet."),
     qa("Bluetooth doesn't find it",

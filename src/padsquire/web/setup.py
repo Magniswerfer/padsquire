@@ -289,13 +289,22 @@ def _macos_checks(fw_dir: Path) -> list[dict]:
     return out
 
 
-def connectable(find_usb=hid.find, find_c2=None) -> list[dict]:
-    """The controllers the app can connect to over USB: a Nova 2 Lite, or a Cyclone 2."""
+def connectable(find_usb=hid.find, find_c2=None, gamesir: list[dict] | None = None) -> list[dict]:
+    """The controllers the app can connect to over USB: a Nova 2 Lite, a Cyclone 2, or one added
+    on this computer (`gamesir`: devices.plugged_in(), whose added entries come with a family)."""
     out = [{"address": d.path, "name": "GameSir Nova 2 Lite", "link": "usb",
             "via": "dongle" if d.pid == 0x1098 else "cable", "family": "gcm"} for d in find_usb()]
     out += [{"address": d.path, "name": "GameSir Cyclone 2", "link": "usb",
              "via": "dongle" if "receiver" in d.link else "cable", "family": "c2"}
             for d in (find_c2 or c2usb.find)()]
+    taken = {d["address"] for d in out}
+    for d in gamesir or []:
+        page = gamesir_devices.SPOKEN.get(d.get("family"))
+        iface = next((i for i in d["interfaces"] if i["usage_page"] == page), None)
+        if d.get("added") and iface and iface["path"] not in taken:
+            out.append({"address": iface["path"], "name": d["name"], "link": "usb",
+                        "via": "dongle" if "receiver" in (d.get("link") or "") else "cable",
+                        "family": d["family"], "added": True})
     return out
 
 
@@ -303,9 +312,9 @@ def devices(find_usb=hid.find, find_gamesir=None, find_c2=None) -> dict:
     """What is plugged in right now, from sysfs: cheap enough to poll every couple of seconds.
     `usb` lists what the app can connect to; `gamesir` every other GameSir device, recognised
     from the device table (devices.py), so the page can say what it is and what can be done."""
-    usb = connectable(find_usb, find_c2)
+    gamesir = (find_gamesir or gamesir_devices.plugged_in)()
+    usb = connectable(find_usb, find_c2, gamesir)
     taken = {d["address"] for d in usb}
-    others = [d for d in (find_gamesir or gamesir_devices.plugged_in)()
-              if not any(i["path"] in taken for i in d["interfaces"])]
+    others = [d for d in gamesir if not any(i["path"] in taken for i in d["interfaces"])]
     return {"usb": usb, "gamesir": others,
             "download": [{"path": d.path, "chip": d.vendor} for d in jlboot.find()]}

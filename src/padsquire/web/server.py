@@ -23,6 +23,7 @@ from aiohttp import web
 
 from .. import (
     __version__,
+    addcontroller,
     appupdate,
     ble,
     c2,
@@ -37,6 +38,7 @@ from .. import (
     stickcheck,
     updater,
 )
+from .. import devices as gamesir_devices
 from ..client import NotApplied, NovaClient
 from ..gcm import DeadZone, Feature, Key, ProtocolError, Vibration
 from ..simulator import LINKS, SimulatedC2, SimulatedSticks, simulated
@@ -108,6 +110,7 @@ class Session:
     def __init__(self):
         self.client: NovaClient | None = None   # a Nova 2 Lite (GCM)
         self.c2: c2usb.C2Client | None = None   # or a Cyclone 2
+        self.added: dict | None = None          # its entry, for a controller added on this computer
         self.mode: str | None = None          # "ble" | "usb", also for a simulated controller
         self.simulated = False
         self.via: str | None = None           # for "usb": "cable" or "dongle" (the 2.4 GHz receiver)
@@ -170,7 +173,7 @@ class Session:
         self._ctx = None
         if self.c2 is not None:
             self.c2.close()
-        self.client = self.c2 = self.mode = self.address = self.name = self.via = None
+        self.client = self.c2 = self.mode = self.address = self.name = self.via = self.added = None
         self.simulated = False
 
     @property
@@ -181,7 +184,11 @@ class Session:
 
     def status(self) -> dict:
         return {"connected": self.connected, "mode": self.mode, "address": self.address, "name": self.name,
-                "via": self.via, "simulated": self.simulated, "family": self.family}
+                "via": self.via, "simulated": self.simulated, "family": self.family,
+                "added": self.added is not None,
+                "tests": None if self.added is None else {
+                    g: {"label": label, "result": self.added.get("tested", {}).get(g)}
+                    for g, label in addcontroller.GROUPS.get(self.added.get("family"), {}).items()}}
 
 
 async def _try(coro):
@@ -289,6 +296,7 @@ PRESENCE = web.AppKey("presence", Presence)
 
 def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
               simulate: str | None = None, scanner=None, usb_finder=None, gamesir_finder=None, c2_finder=None,
+              identifiers=None, added_file: Path | None = None,
               backup_dir: Path | None = None, loader_cache: Path | None = None,
               live_open=None, profiles_dir: Path | None = None,
               app_update_url: str = appupdate.PYPI) -> web.Application:
@@ -298,6 +306,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     scan = scanner or ble.scan
     find_usb = usb_finder or hid.find
     find_c2 = c2_finder or c2usb.find
+    find_gamesir = gamesir_finder or (lambda: gamesir_devices.plugged_in(added=gamesir_devices.load_added(added_file)))
 
     @web.middleware
     async def guard(request: web.Request, handler):
@@ -412,7 +421,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     async def do_scan(_):
         # By ID, as Steam and the kernel's xpad do: the USB name is "2.4G XBOX 360 For Windows".
         from . import setup
-        usb = setup.connectable(find_usb, find_c2)
+        usb = setup.connectable(find_usb, find_c2, find_gamesir())
         try:
             found = await scan()
         except ble.BleError:
@@ -444,7 +453,11 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
                 # Only open device nodes we found ourselves, never a path from the request.
                 match = next((d for d in find_usb() if d.path == address), None)
                 cyclone = next((d for d in find_c2() if d.path == address), None)
-                if match is not None:
+                added = next((d for d in find_gamesir() if d.get("added")
+                              and any(i["path"] == address for i in d["interfaces"])), None)
+                if match is None and cyclone is None and added is not None:
+                    await connect_added(added, address)
+                elif match is not None:
                     await session.connect_usb(match.path, "GameSir Nova 2 Lite",
                                               "dongle" if match.pid == 0x1098 else "cable")
                 elif cyclone is not None:
@@ -455,6 +468,96 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
             else:
                 await session.connect_ble(address, data.get("name"))
         return ok(session.status())
+
+    async def connect_added(dev: dict, address: str):
+        entry = next((c for c in gamesir_devices.load_added(added_file)
+                      if f"3537:{c['pid']:04x}" == dev["usb_id"]), None)
+        if entry is None or entry.get("family") not in gamesir_devices.SPOKEN:
+            raise web.HTTPBadRequest(text=json.dumps({"ok": False, "error": "that controller isn't added"}),
+                                     content_type="application/json")
+        via = "dongle" if "receiver" in entry.get("link", "") else "cable"
+        name = f"GameSir {entry['name']}" if not entry["name"].lower().startswith("gamesir") else entry["name"]
+        if entry["family"] == "gcm":
+            await session.connect_usb(address, name, via)
+        else:
+            page = gamesir_devices.SPOKEN["c2"]
+            paths = [i["path"] for i in dev["interfaces"] if i["usage_page"] == page]
+            await session.connect_c2(c2usb.C2Device(address, entry["pid"], name, paths), name, via)
+        session.added = entry
+
+    # -- adding a controller --------------------------------------------------------
+    def addable(address) -> dict:
+        if not isinstance(address, str):
+            raise web.HTTPBadRequest(text=json.dumps({"ok": False, "error": "address required"}),
+                                     content_type="application/json")
+        dev = next((d for d in find_gamesir() if any(i["path"] == address for i in d["interfaces"])), None)
+        if dev is None or not (dev.get("can_add") or dev.get("added")):
+            raise web.HTTPBadRequest(text=json.dumps({"ok": False, "error":
+                                     "that device isn't plugged in, or isn't one that can be added"}),
+                                     content_type="application/json")
+        return dev
+
+    @routes.post("/api/add/identify")
+    @guarded
+    async def add_identify(request):
+        dev = addable((await body(request)).get("address"))
+        try:
+            return ok(await addcontroller.identify(dev, identifiers))
+        except addcontroller.AddError as e:
+            return fail(str(e), 422)
+
+    @routes.post("/api/add/save")
+    @guarded
+    async def add_save(request):
+        d = await body(request)
+        dev = addable(d.get("address"))
+        try:
+            found = await addcontroller.identify(dev, identifiers)     # again: never trust the page
+            link = "receiver" if d.get("link") == "receiver" else "cable"
+            entry = addcontroller.save(found, str(d.get("name") or ""), link, added_file)
+        except addcontroller.AddError as e:
+            return fail(str(e), 422)
+        return ok(entry)
+
+    @routes.post("/api/add/remove")
+    @guarded
+    async def add_remove(request):
+        usb_id = (await body(request)).get("usb_id")
+        entry = next((c for c in gamesir_devices.load_added(added_file) if f"3537:{c['pid']:04x}" == usb_id), None)
+        if entry is None:
+            return fail("that controller isn't added")
+        if session.added is not None and session.added.get("pid") == entry["pid"]:
+            await session.disconnect()
+        addcontroller.remove(entry["pid"], added_file)
+        return ok(session.status())
+
+    @routes.post("/api/add/test")
+    @guarded
+    async def add_test(request):
+        group = (await body(request)).get("group")
+        entry = session.added
+        if entry is None:
+            return fail("no added controller connected", 409)
+        if group not in addcontroller.GROUPS.get(entry["family"], {}):
+            return fail("no such test")
+        try:
+            if entry["family"] == "gcm":
+                await addcontroller.test_gcm(session.client, group)
+            else:
+                await addcontroller.test_c2(session.c2, group)
+            result = "works"
+        except (addcontroller.AddError, *ERRORS) as e:
+            result = str(e) or type(e).__name__
+        session.added = addcontroller.record_test(entry["pid"], group, result, added_file)
+        return ok({"result": result, "status": session.status()})
+
+    @routes.get("/api/add/report")
+    async def add_report(_):
+        if session.added is None:
+            return fail("no added controller connected", 409)
+        usb_id = f"3537:{session.added['pid']:04x}"
+        dev = next((d for d in find_gamesir() if d["usb_id"] == usb_id), None)
+        return ok(addcontroller.report(session.added, dev))
 
     @routes.get("/api/input")
     async def input_stream(request):
@@ -534,7 +637,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
         """What is plugged in (sysfs only), for the page to notice plugging and unplugging. A USB
         session whose device has gone is closed here."""
         from . import setup
-        found = setup.devices(find_usb, gamesir_finder, find_c2)
+        found = setup.devices(find_usb, find_gamesir, find_c2)
         lost = False
         if session.mode == "usb" and not session.simulated and session.address not in {d["address"] for d in found["usb"]}:
             async with session.lock:
@@ -560,6 +663,19 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
             return ok(await read_c2_state(session.c2))
         return ok({"family": "gcm", **await state_of(need_client())})
 
+    def need_group(group: str | None) -> None:
+        """For a controller added on this computer: writes only to groups whose test passed."""
+        entry = session.added
+        if entry is None:
+            return
+        if group is None or group not in addcontroller.GROUPS.get(entry.get("family"), {}):
+            raise web.HTTPConflict(text=json.dumps({"ok": False, "error":
+                                   "not available for a controller you added yet"}), content_type="application/json")
+        if not addcontroller.unlocked(entry, group):
+            label = addcontroller.GROUPS[entry["family"]][group]
+            raise web.HTTPConflict(text=json.dumps({"ok": False, "error":
+                                   f"test {label} first, on the Controller page"}), content_type="application/json")
+
     # -- Cyclone 2 ----------------------------------------------------------------
     def need_c2() -> c2usb.C2Client:
         if session.c2 is None:
@@ -583,6 +699,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
         d = await body(request)
         if not isinstance(d.get("name"), str):
             return fail("name required")
+        need_group(d["name"].split(".")[0])
         shown = d.get("profile")
         if shown is not None and shown not in (1, 2, 3, 4):
             return fail("profile must be 1 to 4")
@@ -594,6 +711,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     @routes.post("/api/c2/vibration-test")
     @guarded
     async def c2_vibration_test(request):
+        need_group('vibration')
         d = await body(request)
         strength = d.get("strength", 75)
         if d.get("motor") not in ("left", "right") or isinstance(strength, bool) or not isinstance(strength, int) \
@@ -612,6 +730,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     @routes.post("/api/dead-zone")
     @guarded
     async def set_dead_zone(request):
+        need_group('dead_zones')
         d = await body(request)
         zone = DeadZone[d["zone"]]
         nova = need_client()
@@ -621,6 +740,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     @routes.post("/api/feature")
     @guarded
     async def set_feature(request):
+        need_group('features')
         d = await body(request)
         feature = Feature[d["feature"]]
         nova = need_client()
@@ -630,6 +750,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     @routes.post("/api/vibration")
     @guarded
     async def set_vibration(request):
+        need_group('vibration')
         d = await body(request)
         nova = need_client()
         current = await nova.vibration()
@@ -644,6 +765,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     @routes.post("/api/vibration/test")
     @guarded
     async def vibration_test(request):
+        need_group('vibration')
         d = await body(request)
         motor, strength = d.get("motor"), _byte(d.get("strength", 75), "strength")
         if motor not in ("left", "right") or strength > 100:
@@ -655,6 +777,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     @routes.post("/api/auto-sleep")
     @guarded
     async def set_sleep(request):
+        need_group(None)
         d = await body(request)
         nova = need_client()
         await nova.set_auto_sleep(_byte(d.get("value"), "value"))
@@ -663,6 +786,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     @routes.post("/api/mapping")
     @guarded
     async def set_mapping(request):
+        need_group(None)
         d = await body(request)
         source = Key[d["source"]]
         if source not in gcm.NOVA_REMAPPABLE:
@@ -682,6 +806,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     @routes.post("/api/remap")
     @guarded
     async def set_remap(request):
+        need_group(None)
         d = await body(request)
         key = Key[d["key"]]
         if key not in gcm.NOVA_REMAP_SOURCES:
@@ -700,6 +825,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     @routes.post("/api/trigger-quick")
     @guarded
     async def set_quick(request):
+        need_group('quick_trigger')
         d = await body(request)
         nova = need_client()
         await nova.set_trigger_quick(bool(d.get("left")), bool(d.get("right")))
@@ -708,6 +834,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     @routes.post("/api/slot")
     @guarded
     async def set_slot(request):
+        need_group(None)
         d = await body(request)
         nova = need_client()
         await nova.switch_slot(_byte(d.get("slot"), "slot"))
@@ -716,6 +843,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     @routes.post("/api/light")
     @guarded
     async def set_light(request):
+        need_group('light')
         d = await body(request)
         rgb = d.get("rgb")
         if not isinstance(rgb, list) or len(rgb) != 3:
@@ -727,6 +855,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     @routes.post("/api/restore")
     @guarded
     async def restore(request):
+        need_group(None)
         d = await body(request)
         if d.get("confirm") is not True:
             return fail("confirmation required")
@@ -738,6 +867,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     @routes.post("/api/stick-check")
     @guarded
     async def stick_check(request):
+        need_group('dead_zones')
         """Measure drift ("drift": sticks left alone) or reach ("reach": turned around the edge)
         from the live input. The dead zones that would hide it are 0 for the test, then put back."""
         d = await body(request)
@@ -800,6 +930,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     @routes.post("/api/settings/import")
     @guarded
     async def settings_import(request):
+        need_group(None)
         """Check a settings file and list what loading it changes; with "apply": true, write those
         changes. Nothing is written unless the whole file is valid."""
         d = await body(request)
@@ -895,6 +1026,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     @routes.post("/api/profiles/switch")
     @guarded
     async def profile_switch(request):
+        need_group(None)
         """Write a profile to the controller: only what differs, each setting read back."""
         d = await body(request)
         doc = store.get(d.get("id"))

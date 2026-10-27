@@ -15,7 +15,7 @@ helper started via a PadSquire-named osacompile applet and `launchctl asuser`; o
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -e '.[gui,test]'   # no system pip on this box; 7zip for update/extract
-pytest                                   # 348 tests; PADSQUIRE_INSTALLER=<setup.exe> adds a real-installer test,
+pytest                                   # 361 tests; PADSQUIRE_INSTALLER=<setup.exe> adds a real-installer test,
                                          # PADSQUIRE_BACKUP=<dump.bin> PADSQUIRE_UFW=<.ufw> a real layout check
 ruff check src tests tools               # lint (config in pyproject.toml; CI runs it, shellcheck and node --check)
 pre-commit install                       # with '.[dev]': ruff, shellcheck, whitespace, blocks *.ufw/*.exe/*.bin
@@ -86,6 +86,10 @@ tools/connect-devices.py <Connect setup.exe>  # every model in Connect's device 
   the app's `web/static/c2.js`: the Cyclone 2, its own protocol (`PROTOCOL-CYCLONE2.md`). Built on
   Deadband's hardware findings (MIT, `LICENSES/MIT-Deadband.txt`); a profile answers only while
   active, so the app switches first. `SimulatedC2` in `simulator.py`; tests in `tests/test_c2.py`.
+- `addcontroller.py` + `web/static/added.js`: adding a controller PadSquire doesn't know, on this
+  computer (`added-controllers.json`): a read-only identity query per usage page it speaks, then
+  each settings group (`GROUPS`) unlocked by a change-read-restore test; the server's `need_group`
+  refuses other writes, and `notAdded` pages and firmware stay off (hid.find doesn't list it).
 - `devices.py`: recognises every GameSir USB device (`data/connect-devices.json`, from
   `tools/connect-devices.py --registry`, plus `EXTRA_IDS`), with its protocol family and what
   PadSquire can do with it; the Controller page lists the ones it can't connect to. App pages

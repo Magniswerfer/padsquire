@@ -22,7 +22,7 @@ jobs:
       - name: Shell scripts (the installer runs under plain sh)
         run: shellcheck --shell=sh install.sh tools/*.sh
       - name: The settings app's script parses
-        run: for f in src/padsquire/web/static/app.js src/padsquire/web/static/c2.js; do node --check "$f"; done
+        run: for f in src/padsquire/web/static/app.js src/padsquire/web/static/c2.js src/padsquire/web/static/added.js; do node --check "$f"; done
 
   test:
     runs-on: ubuntu-latest

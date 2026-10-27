@@ -539,3 +539,56 @@ def test_cyclone_2_settings_switch_write_and_test(tmp_path):
         await post("/api/connect", {"simulate": True, "link": "cable"})       # a Nova 2 Lite now
         assert (await post("/api/c2/profile", {"number": 1})).status == 409
     run(go, tmp_path)
+
+
+def test_adding_a_controller_identifies_tests_and_unlocks(tmp_path, monkeypatch):
+    import contextlib
+
+    from padsquire import devices, gcm, hid
+    from padsquire.simulator import simulated
+    pad = simulated("cable")
+
+    @contextlib.asynccontextmanager
+    async def fake_connect(path):
+        assert path == "/dev/hidraw7"
+        yield pad
+    monkeypatch.setattr(hid, "connect", fake_connect)
+    added = tmp_path / "added.json"
+
+    def plugged():
+        dev = devices.UsbDevice(0x7777, "Gamepad", [devices.Interface("/dev/hidraw6", 0x01),
+                                                    devices.Interface("/dev/hidraw7", 0xFF7A)])
+        return [devices.recognise(dev, devices.load_added(added)).as_dict()]
+
+    async def go(c):
+        await login(c)
+        post = lambda path, body: c.post(path, json=body, headers=API)  # noqa: E731
+        found = (await (await post("/api/add/identify", {"address": "/dev/hidraw7"})).json())["data"]
+        assert (found["family"], found["firmware"], found["path"]) == ("gcm", "8201", "/dev/hidraw7")
+        assert (await post("/api/add/identify", {"address": "/dev/sda"})).status == 400
+        assert (await post("/api/add/save", {"address": "/dev/hidraw7", "name": " "})).status == 422
+        entry = (await (await post("/api/add/save", {"address": "/dev/hidraw7", "name": "My pad"})).json())["data"]
+        assert (entry["pid"], entry["family"], entry["tested"]) == (0x7777, "gcm", {})
+
+        d = (await (await c.get("/api/devices", headers=API)).json())["data"]
+        assert d["usb"] == [{"address": "/dev/hidraw7", "name": "My pad", "link": "usb", "via": "cable",
+                             "family": "gcm", "added": True}] and d["gamesir"] == []
+        st = (await (await post("/api/connect", {"address": "/dev/hidraw7", "link": "usb"})).json())["data"]
+        assert st["added"] and st["name"] == "GameSir My pad" and st["tests"]["dead_zones"]["result"] is None
+
+        r = await post("/api/dead-zone", {"zone": "LEFT_STICK_INNER", "value": 7})
+        assert r.status == 409 and "test Dead zones first" in (await r.json())["error"]
+        r = await post("/api/auto-sleep", {"minutes": 5})
+        assert r.status == 409 and "not available for a controller you added" in (await r.json())["error"]
+        t = (await (await post("/api/add/test", {"group": "dead_zones"})).json())["data"]
+        assert t["result"] == "works" and t["status"]["tests"]["dead_zones"]["result"] == "works"
+        assert pad.dead_zones[gcm.DeadZone.LEFT_STICK_INNER] == 5                  # put back
+        assert (await post("/api/dead-zone", {"zone": "LEFT_STICK_INNER", "value": 7})).status == 200
+        assert (await post("/api/add/test", {"group": "slots"})).status == 400
+
+        rep = (await (await c.get("/api/add/report", headers=API)).json())["data"]
+        assert rep["controller"]["usb_id"] == "3537:7777" and rep["controller"]["tested"] == {"dead_zones": "works"}
+        assert "mac" not in json.dumps(rep).lower()
+        st = (await (await post("/api/add/remove", {"usb_id": "3537:7777"})).json())["data"]
+        assert st["connected"] is False and devices.load_added(added) == []
+    run(go, tmp_path, gamesir_finder=plugged, added_file=added)

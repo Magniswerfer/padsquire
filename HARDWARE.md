@@ -79,6 +79,22 @@ Then changing, in the app (`PADSQUIRE_DEBUG=1 padsquire gui` logs every report):
 
 Attach the probe reports, the dumps and the debug output to the hardware test report.
 
+## Another GameSir controller
+
+The app's Controller page lists every GameSir device plugged in, named from GameSir's own device
+list. If one speaks the same language as the Nova 2 Lite or the Cyclone 2 (the Nova Vision and the
+T3XS should), **Add this controller** appears next to it:
+
+1. It asks the controller who it is, nothing else, and says what answered. Give it a name.
+2. It connects like the controller it resembles. Every group of settings is locked; on the
+   Controller page, **Test** each group. A test changes one setting, reads it back and puts the
+   original back. Check the controller afterwards: does it still work normally?
+3. Change a setting you unlocked and check the effect in a game or `evtest`, then put it back.
+4. **Save a report** and attach it to a "Hardware test" issue, with the probe report
+   (`padsquire probe`), so the controller can join the built-in list.
+
+Firmware updates are never offered for an added controller.
+
 ## Firmware updates
 
 Use the app's Firmware page, or the same steps on the command line:
