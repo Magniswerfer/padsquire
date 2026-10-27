@@ -225,7 +225,23 @@ controller, and include a fake chip in update mode for the firmware writer.
   its frames aren't decoded yet.
 - Send the kernel's Xbox driver (`xpad`) the receiver's USB ID, so it isn't called "Generic
   X-Box pad" on Linux (see PROTOCOL.md).
-- Other GameSir controllers.
+- Other GameSir controllers. The Nova Vision and the T3XS work much like the Nova 2 Lite, so
+  they come first; the Cyclone 2 can be read already (`padsquire c2 info`), not yet set up.
+
+## Related projects
+
+Other open-source projects that make GameSir controllers work on Linux. If yours isn't a Nova 2
+Lite, one of these may already support it.
+
+| Project | Controllers | What it does |
+|---|---|---|
+| [Deadband](https://github.com/broroeror/gamesir-linux-tools) | Cyclone 2, G7 Pro, G7 Pro 8K PC, G7 SE, Tarantula Pro 8K, Kaleid (lighting) | A settings app for Linux and macOS: dead zones, curves, triggers, remapping, macros, gyro, lighting, profiles. **For a Cyclone 2, use this today.** |
+| [g7ctl](https://github.com/questionablesyntax/g7ctl) | G7 Pro | Settings from Linux: an app, a command line and a Python library. |
+| [gamesir-native-linux](https://github.com/RetroGamerGER/gamesir-native-linux) | G7 Pro (through its receiver) | A kernel driver that adds what the standard Xbox driver leaves out: the four back buttons, gyro, and the trigger motors. Early testing stage. |
+| [cyclone2-linux](https://github.com/vdemonchy/cyclone2-linux) | Cyclone 2 | Battery level and lighting in the GNOME, KDE Plasma and COSMIC panels. |
+
+PadSquire's notes on the Cyclone 2 ([PROTOCOL-CYCLONE2.md](PROTOCOL-CYCLONE2.md)) say where these
+projects' findings on hardware match ours.
 
 ## Contributing
 

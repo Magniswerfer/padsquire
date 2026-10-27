@@ -251,7 +251,8 @@ class SimulatedC2:
         p = bytearray(c2.PROFILE_SIZE)
         name = b"Shift" if n == c2.SHIFT_PROFILE else f"Profile {n}".encode()
         p[0:len(name)] = name
-        p[32:36] = bytes([3, 3, 3, 3])                       # vibration 75 %
+        p[32:36] = bytes([75, 75, 75, 75])                   # vibration 75 %
+        p[46] = 2                                            # 1000 Hz
         for stick in (550, 582):                             # left, right: dead zone on, 10 / 100
             p[stick + 2:stick + 5] = bytes([1, 10, 100])
         for trigger in (494, 522):                           # LT, RT: 5 / 95

@@ -45,8 +45,10 @@ setting to factory defaults.
 
 ## Still to test: the Cyclone 2
 
-PadSquire can read a Cyclone 2 but not change it yet. Its protocol is in
-[PROTOCOL-CYCLONE2.md](PROTOCOL-CYCLONE2.md), worked out from GameSir Connect and not yet run.
+PadSquire can read a Cyclone 2 but not change it yet; to set one up today, use
+[Deadband](https://github.com/broroeror/gamesir-linux-tools). Its protocol is in
+[PROTOCOL-CYCLONE2.md](PROTOCOL-CYCLONE2.md), worked out from GameSir Connect and checked against
+what Deadband and cyclone2-linux saw on hardware; PadSquire hasn't run it yet.
 Everything below only reads. **Don't** try `usb`, `uboot` or a firmware file on it: those are
 for the Nova 2 Lite.
 
@@ -58,8 +60,7 @@ for the Nova 2 Lite.
 2. **Is it found?** `padsquire c2 find` lists it without sending anything. If not, attach the
    probe report.
 3. **Does it answer?** `PADSQUIRE_DEBUG=1 padsquire c2 info`: firmware, battery and the active
-   profile. The debug log shows every report, so you can see the reply report ID (PROTOCOL-CYCLONE2.md
-   assumes `0x10`). Compare the battery with GameSir Connect or the controller's lights.
+   profile. The debug log shows every report (replies should start with `10`). Compare the battery with GameSir Connect or the controller's lights.
 4. **Do the profiles read right?** `padsquire c2 dump` saves every profile, raw and decoded, to
    a JSON file. Set a few things you can recognise in GameSir Connect on Windows (a profile name,
    a dead zone, a colour), dump again, and check that the decoded values match.

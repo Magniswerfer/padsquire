@@ -3,8 +3,9 @@
 
 Decoded from GameSir Connect 1.16.7 (`main.js`: the Cyclone 2's handler `proxyC2`, its command
 builder and its profile layout); none of it has been run yet. PROTOCOL.md, "Cyclone 2", has the
-details and how sure each part is. cyclone2-linux (github.com/vdemonchy/cyclone2-linux) saw the
-battery bytes and four lighting writes on hardware, and those agree with what is here.
+details and how sure each part is. Two other projects have used it on hardware, and agree with
+what is here: Deadband (github.com/broroeror/gamesir-linux-tools, which configures the Cyclone 2
+in full) and cyclone2-linux (github.com/vdemonchy/cyclone2-linux: battery and lighting).
 
 Everything goes through one vendor HID interface (usage page 0xFFF0) as 64-byte reports with
 report IDs: requests are output report 0x0F `[0F, command, args...]`, replies come back with the
@@ -14,7 +15,7 @@ The settings live in profiles the controller keeps as byte images: four profiles
 (1-4), the Shift layer (5, same layout) and the lighting profile (32, 635 bytes). Connect reads
 a profile in 58-byte pieces and writes back only the bytes that changed.
 
-ASSUMPTION: replies use input report 0x10 (cyclone2-linux saw `10 06 00`, an acknowledgement).
+Replies use input report 0x10: seen on hardware by Deadband and cyclone2-linux, not yet by us.
 """
 
 from __future__ import annotations
@@ -230,9 +231,9 @@ def parse_state(report: bytes) -> State:
 # Connect's Uo.fromBytes: name 32, function data 32, 16 buttons x 7, L4 and R4 x 159 (mapping
 # plus a 30-step macro), LT and RT x 28, left and right stick x 32, aim and tilt motion x 33.
 
+REPORT_RATES = {0: 250, 1: 500, 2: 1000}    # Deadband, on hardware
 BUTTON_ORDER = ("up", "down", "left", "right", "LB", "RB", "LS", "RS", "A", "B", "X", "Y",
                 "Home", "View", "Menu", "Capture")
-_MOTOR_LEVELS = (0, 25, 50, 75, 100)    # stored 0-4, shown as percent
 
 
 def _curve(b: bytes) -> dict:
@@ -270,12 +271,13 @@ def decode_profile(data: bytes) -> dict:
     f = take(32)
     out = {
         "name": name,
-        "vibration": {k: _MOTOR_LEVELS[min(v, 4)] for k, v in zip(("left", "right", "LT", "RT"), f[0:4], strict=True)},
+        # percent; Connect offers 0/25/50/75/100, Deadband reads 75 by default
+        "vibration": dict(zip(("left", "right", "LT", "RT"), f[0:4], strict=True)),
         "audio": {"enabled": f[4] & 1, "volume": f[5], "mixer": f[6], "mic_mute": f[7],
                   "mic_sensitivity": f[8]},
         "shift": {"enabled": f[9] & 1, "button": f[10]},
         "dpad_diagonal_lock": f[11] & 1, "swap_abxy_xinput": f[12] & 1, "swap_abxy_switch": f[13] & 1,
-        "report_rate": f[14],
+        "report_rate": REPORT_RATES.get(f[14], f[14]),     # Hz
         "buttons": {}, "macros": {}, "triggers": {}, "sticks": {}, "motion": {},
     }
     for key in BUTTON_ORDER:

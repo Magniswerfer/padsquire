@@ -53,7 +53,8 @@ def test_firmware_version_reply():
 def test_profile_layout_adds_up():
     p = bytearray(c2.PROFILE_SIZE)
     p[0:4] = b"Test"
-    p[32:36] = bytes([4, 2, 0, 1])
+    p[32:36] = bytes([100, 50, 0, 25])
+    p[46] = 1
     p[550 + 2:550 + 5] = bytes([1, 12, 97])      # left stick dead zone
     p[494 + 12:494 + 15] = bytes([0x81, 3, 60])  # LT quick trigger: on, mode 1
     p[176 + 10] = 1                              # L4 macro: one step
@@ -61,6 +62,7 @@ def test_profile_layout_adds_up():
     d = c2.decode_profile(bytes(p))
     assert d["name"] == "Test"
     assert d["vibration"] == {"left": 100, "right": 50, "LT": 0, "RT": 25}
+    assert d["report_rate"] == 500
     assert d["sticks"]["left"]["dead_zone"] == {"enabled": 1, "start": 12, "end": 97,
                                                 "anti_start": 0, "anti_end": 0}
     assert d["triggers"]["LT"]["quick_trigger"] == {"enabled": 1, "mode": 1, "start": 3, "end": 60}

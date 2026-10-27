@@ -9,9 +9,15 @@ AGPL-3.0-or-later. The Nova 2 Lite's notes, and the levels of certainty used her
 
 **Status: static analysis**, decoded on 2026-10-26 from GameSir Connect 1.16.7 (`main.js`: the
 device table entry `C2`, the handler `proxyC2`, its command builder and its profile layout).
-Nothing here has been run by PadSquire yet. Where
-[cyclone2-linux](https://github.com/vdemonchy/cyclone2-linux) (GPL-3.0; its `docs/protocol.md`)
-saw something on hardware, the note says so; those observations agree with Connect's code.
+Nothing here has been run by PadSquire yet. Two other projects have used this protocol on
+hardware, and where they did, the note says "seen on hardware by" them. Everything they saw agrees
+with Connect's code:
+
+- [Deadband](https://github.com/broroeror/gamesir-linux-tools) (MIT) configures the Cyclone 2 in
+  full, writes included, from captures of GameSir's app (checked 2026-10-27). Its register map
+  (`vendors/gamesir/config.py`) gives offsets inside these same profile images.
+- [cyclone2-linux](https://github.com/vdemonchy/cyclone2-linux) (GPL-3.0; its `docs/protocol.md`)
+  reads the battery and sets the lighting.
 
 Code: `src/padsquire/c2.py` (frames and parsers), `src/padsquire/c2usb.py` (hidraw transport,
 read-only), `padsquire c2 find | info | dump`, `SimulatedC2` in `simulator.py`.
@@ -46,8 +52,9 @@ none of this.
 
 - **Requests**: output report `0x0F`: `0f <command> <arguments...>`, zero-padded to 64 bytes
   (report ID included; cyclone2-linux writes 64 bytes on hidraw and the controller answers).
-- **Replies**: the command type in byte 1. ASSUMPTION: on input report `0x10`. cyclone2-linux
-  saw `10 06 00` after its writes, which is an acknowledgement (`06`) in Connect's table.
+- **Replies**: the command type in byte 1, on input report `0x10`. **Seen on hardware** by
+  Deadband (it reads profiles from `10 05` replies) and cyclone2-linux (`10 06 00`, an
+  acknowledgement, after its writes).
 - **State**: input report `0x12`, streamed after the host sends anything (cyclone2-linux:
   nothing arrives before; Connect sends a heartbeat when it opens the device).
 
@@ -97,7 +104,7 @@ From `proxyC2.parseGamepadState` and Connect's gamepad view (byte 0 is the repor
 | 7 | bits: 0 Home, 1 Capture, 3 L4, 4 R4, 5 M |
 | 8, 9 | LT, RT, 0-255 |
 | 35 | charge state. **Seen on hardware** (cyclone2-linux, 2026-06-05): `1` on the cable, `0` on battery, set even when full |
-| 36 | battery level. **Seen on hardware** (cyclone2-linux): `0x64` = 100 at full charge |
+| 36 | battery level in percent. **Seen on hardware** by cyclone2-linux (`0x64` = 100 at full charge) and Deadband |
 | 37 | the active lighting effect |
 | 38-52 | the five light colours now shown, RGB |
 | 53 | bits 0-1: a macro is being recorded; bit 4: on L4, bit 5: on R4 |
@@ -114,7 +121,7 @@ the last), in 58-byte pieces.
 | Offset | Size | Content |
 |---|---|---|
 | 0 | 32 | name, UTF-8, zero-padded |
-| 32 | 32 | vibration left, right, LT, RT (0-4, shown as 0/25/50/75/100%); audio: on, volume, mixer, mic mute, mic sensitivity; Shift on, Shift button; D-pad diagonal lock; swap A/B and X/Y in XInput; the same in Switch mode; report rate; 17 reserved |
+| 32 | 32 | vibration left, right, LT, RT (percent; Connect offers 0/25/50/75/100); audio: on, volume, mixer, mic mute, mic sensitivity; Shift on, Shift button; D-pad diagonal lock; swap A/B and X/Y in XInput; the same in Switch mode; report rate (0 = 250, 1 = 500, 2 = 1000 Hz); 17 reserved |
 | 64 | 16 × 7 | buttons, in this order: up, down, left, right, LB, RB, LS, RS, A, B, X, Y, Home, View, Menu, Capture. Each: turbo, turbo speed, mapping on, three mapping targets, toggle |
 | 176 | 159 | L4: the 7 button bytes, then a macro: flags (bit 0 on, bit 1 run while held, bit 2 repeat), repeat time (2 bytes, big-endian), number of steps, 30 steps of key, hold time (2), delay (2; none after the last step) |
 | 335 | 159 | R4, the same |
@@ -124,6 +131,13 @@ the last), in 58-byte pieces.
 | 582 | 32 | right stick, the same |
 | 614 | 33 | motion "aim": mode, trigger key, active axes (bit 0, bit 1), then the stick's 30 bytes from the dead zone on |
 | 647 | 33 | motion "tilt", the same |
+
+**Seen on hardware by Deadband**, at these same offsets: vibration left and right (32, 33;
+default 75), report rate (46, values above), LT dead zone start, end, anti start, anti end
+(`0x1F1`–`0x1F4`), its quick trigger (`0x1FA`) and curve (`0x1FE`), RT the same at +`0x1C`, the
+left stick's square / circle switch (`0x227`), dead zones (`0x229`–`0x22C`) and curve (`0x22E`),
+the right stick the same at +`0x20`. It writes with `03` into profiles 1-4 directly, and finds
+that writes persist without a save command.
 
 Dead zones are percentages of travel as Connect shows them: output starts at "start" and is full
 at "end". Connect's reset values are 10-100 for the sticks and 5-95 for the triggers. Button codes
@@ -156,10 +170,10 @@ Connect waits for each acknowledgement instead.
 
 ## Open (needs a Cyclone 2)
 
-1. The reply report ID, and whether every read gets an answer by cable and through the
-   receiver (`padsquire c2 dump` saves everything it reads).
+1. Whether every read PadSquire sends gets an answer, by cable and through the receiver
+   (`padsquire c2 dump` saves everything it reads).
 2. The firmware version reply's layout (bytes 4-8 and 12-16).
-3. That the profiles read back match what Connect shows, field by field (set something in
-   Connect on Windows, dump, compare).
-4. Units: dead zones in percent, vibration levels, speeds, the report rate's values.
-5. Only then: writes, one setting at a time, read back and restored, as for the Nova 2 Lite.
+3. The parts of the profiles Deadband hasn't mapped: the button and macro blocks, motion, the
+   lighting tail. Set something in GameSir Connect on Windows, dump, compare.
+4. Writes: Deadband does them already; PadSquire would only after the reads are confirmed here,
+   one setting at a time, read back and restored, as for the Nova 2 Lite.
