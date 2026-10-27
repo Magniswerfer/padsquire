@@ -25,8 +25,10 @@ function addFlow(d) {
   const f = st.found;
   const kind = f.family === "c2" ? "a Cyclone 2" : "the Nova 2 Lite";
   const name = h("input", { class: "input", type: "text", maxlength: 60, value: d.name || "", "aria-label": "Name for this controller", placeholder: "Name, like Nova Vision" });
+  const wireless = (d.link || "").includes("receiver");      // from GameSir's device list, where known
   const link = h("select", { class: "input", "aria-label": "How it is connected" },
-    h("option", { value: "cable" }, "by cable"), h("option", { value: "receiver" }, "through a receiver"));
+    h("option", { value: "cable", selected: !wireless }, "by cable"),
+    h("option", { value: "receiver", selected: wireless }, "through a receiver"));
   return h("div", { class: "add-flow" },
     notice("ok", h("p", {}, `It answered like ${kind}: ${f.protocol}${f.firmware ? `, firmware ${f.firmware}` : ""}.`),
       h("p", {}, "Give it a name and add it. It then connects like ", kind, ", with every setting locked until a test shows it works on this controller.")),

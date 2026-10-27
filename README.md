@@ -31,7 +31,7 @@ studying how the controller talks over USB and Bluetooth.
 - **Updates itself.** Help checks for a newer PadSquire when you open it, and an installation
   made by the installer updates in place with one click.
 - **Knows other GameSir controllers.** It recognises every controller and receiver GameSir's own
-  app knows and says what PadSquire can do with it. The **Cyclone 2** connects too: its sticks,
+  app knows and says what PadSquire can do with it. On Linux the **Cyclone 2** connects too: its sticks,
   triggers, vibration and report rate, in each of its four profiles. That support is new and not
   yet tested on a real Cyclone 2; it follows [Deadband](https://github.com/broroeror/gamesir-linux-tools),
   which is. A GameSir controller that speaks the same language as one of these can be **added**:
