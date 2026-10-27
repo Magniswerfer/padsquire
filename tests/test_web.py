@@ -16,6 +16,7 @@ API = {"X-PadSquire": "1"}
 def run(fn, fw_dir, **kw):
     kw.setdefault("usb_finder", lambda: [])   # never the real controller, if one is plugged in
     kw.setdefault("gamesir_finder", lambda: [])
+    kw.setdefault("c2_finder", lambda: [])
     async def go():
         app = build_app(TOKEN, fw_dir, **kw)
         async with TestClient(TestServer(app, host="127.0.0.1")) as client:
@@ -138,8 +139,8 @@ def test_usb_controllers_are_listed_and_only_found_paths_open(tmp_path):
         h = {**API, "Content-Type": "application/json"}
         r = await c.post("/api/scan", data="{}", headers=h)
         assert (await r.json())["data"] == [
-            {"address": "/dev/hidraw99", "name": "GameSir Nova 2 Lite", "link": "usb", "via": "cable"},
-            {"address": "/dev/hidraw98", "name": "GameSir Nova 2 Lite", "link": "usb", "via": "dongle"}]
+            {"address": "/dev/hidraw99", "name": "GameSir Nova 2 Lite", "link": "usb", "via": "cable", "family": "gcm"},
+            {"address": "/dev/hidraw98", "name": "GameSir Nova 2 Lite", "link": "usb", "via": "dongle", "family": "gcm"}]
         r = await c.post("/api/connect", data=json.dumps({"address": "/dev/sda", "link": "usb"}), headers=h)
         assert r.status == 400 and "no longer connected" in (await r.json())["error"]
     run(go, tmp_path, scanner=no_bluetooth, usb_finder=lambda: found)
@@ -229,7 +230,7 @@ def test_devices_lists_what_is_plugged_in(tmp_path):
         await login(c)
         d = (await (await c.get("/api/devices", headers=API)).json())["data"]
         assert d["usb"] == [{"address": "/dev/hidraw98", "name": "GameSir Nova 2 Lite", "link": "usb",
-                             "via": "dongle"}] and d["lost"] is False
+                             "via": "dongle", "family": "gcm"}] and d["lost"] is False
         plugged.clear()
         d = (await (await c.get("/api/devices", headers=API)).json())["data"]
         assert d["usb"] == [] and d["lost"] is False         # nothing was connected, nothing lost
@@ -468,3 +469,48 @@ def test_profile_switch_skips_what_the_connection_cant_change(tmp_path):
         listed = (await (await c.get("/api/profiles", headers=API)).json())["data"]["profiles"]
         assert listed[0]["active"]                         # nothing left that this connection can change
     run(go, tmp_path, profiles_dir=tmp_path / "profiles")
+
+
+def test_a_cyclone_2_connects_and_reads(tmp_path):
+    async def go(c):
+        await login(c)
+        post = lambda path, body: c.post(path, json=body, headers=API)  # noqa: E731
+        st = (await (await post("/api/connect", {"simulate": True, "family": "c2", "link": "receiver"})).json())["data"]
+        assert (st["family"], st["via"], st["simulated"]) == ("c2", "dongle", True)
+        d = (await (await c.get("/api/state", headers=API)).json())["data"]
+        assert d["family"] == "c2"
+        assert d["firmware"]["value"]["controller"] == "1.2.3"
+        assert d["battery"]["value"] == {"level": 80, "charging": False}
+        assert d["current_profile"]["value"] == 1
+        assert d["profiles"]["1"]["value"]["name"] == "Profile 1"
+        assert d["light"]["value"]["effects"][0]["brightness"] == 50
+        # the Nova 2 Lite's settings don't apply to it
+        r = await post("/api/dead-zone", {"zone": "LEFT_STICK_INNER", "value": 5})
+        assert r.status == 409 and "not available for this controller" in (await r.json())["error"]
+        r = await post("/api/connect", {"simulate": True, "family": "c2", "link": "bluetooth"})
+        assert r.status == 400
+    run(go, tmp_path)
+
+
+def test_a_cyclone_2_opens_only_from_a_node_we_found(tmp_path, monkeypatch):
+    from padsquire import c2usb
+    from padsquire.simulator import SimulatedC2
+    opened = []
+
+    def fake_open(path):
+        opened.append(path)
+        sim = SimulatedC2()
+        return c2usb.C2Transport(sim.read, sim.write)
+    monkeypatch.setattr(c2usb.C2Transport, "open", staticmethod(fake_open))
+
+    async def go(c):
+        await login(c)
+        post = lambda path, body: c.post(path, json=body, headers=API)  # noqa: E731
+        d = (await (await c.get("/api/devices", headers=API)).json())["data"]
+        assert d["usb"] == [{"address": "/dev/hidraw5", "name": "GameSir Cyclone 2", "link": "usb",
+                             "via": "dongle", "family": "c2"}]
+        r = await post("/api/connect", {"address": "/dev/hidraw7", "link": "usb"})
+        assert r.status == 400 and opened == []
+        st = (await (await post("/api/connect", {"address": "/dev/hidraw5", "link": "usb"})).json())["data"]
+        assert st["family"] == "c2" and opened == ["/dev/hidraw5"]
+    run(go, tmp_path, c2_finder=lambda: [c2usb.C2Device("/dev/hidraw5", 0x100B, "Xbox 360 Controller")])

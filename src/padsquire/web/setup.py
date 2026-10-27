@@ -12,7 +12,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from .. import desktop, hid, installer, jlboot
+from .. import c2usb, desktop, hid, installer, jlboot
 from .. import devices as gamesir_devices
 
 RULES_NAME = desktop.RULES_NAME
@@ -289,12 +289,21 @@ def _macos_checks(fw_dir: Path) -> list[dict]:
     return out
 
 
-def devices(find_usb=hid.find, find_gamesir=None) -> dict:
+def connectable(find_usb=hid.find, find_c2=None) -> list[dict]:
+    """The controllers the app can connect to over USB: a Nova 2 Lite, or a Cyclone 2."""
+    out = [{"address": d.path, "name": "GameSir Nova 2 Lite", "link": "usb",
+            "via": "dongle" if d.pid == 0x1098 else "cable", "family": "gcm"} for d in find_usb()]
+    out += [{"address": d.path, "name": "GameSir Cyclone 2", "link": "usb",
+             "via": "dongle" if "receiver" in d.link else "cable", "family": "c2"}
+            for d in (find_c2 or c2usb.find)()]
+    return out
+
+
+def devices(find_usb=hid.find, find_gamesir=None, find_c2=None) -> dict:
     """What is plugged in right now, from sysfs: cheap enough to poll every couple of seconds.
     `usb` lists what the app can connect to; `gamesir` every other GameSir device, recognised
     from the device table (devices.py), so the page can say what it is and what can be done."""
-    usb = [{"address": d.path, "name": "GameSir Nova 2 Lite", "link": "usb",
-            "via": "dongle" if d.pid == 0x1098 else "cable"} for d in find_usb()]
+    usb = connectable(find_usb, find_c2)
     taken = {d["address"] for d in usb}
     others = [d for d in (find_gamesir or gamesir_devices.plugged_in)()
               if not any(i["path"] in taken for i in d["interfaces"])]

@@ -207,7 +207,7 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
             async with session.lock:
                 # Read the version while it still answers (through the receiver: the receiver's own),
                 # then free the device node.
-                if session.connected and session.address == path:
+                if session.client is not None and session.address == path:
                     info = await session.client.info()
                     await session.disconnect()
                 else:
@@ -282,7 +282,7 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
     async def read_installed_version() -> None:
         """The firmware version of the controller connected by cable, before switching (macOS's
         one-go actions check and install without a separate switch step)."""
-        if st.installed_version is not None or not (session.connected and session.mode == "usb"):
+        if st.installed_version is not None or not (session.client is not None and session.mode == "usb"):
             return
         try:
             async with session.lock:
@@ -343,7 +343,7 @@ def add_routes(routes: web.RouteTableDef, session, fw_dir: Path, find_usb, ok, f
         b = backup_named(d.get("backup")) if action != "backup" else None
         try:
             async with session.lock:
-                if session.connected and session.address == path:
+                if session.client is not None and session.address == path:
                     info = await session.client.info()
                     await session.disconnect()
                 else:

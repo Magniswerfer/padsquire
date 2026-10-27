@@ -11,6 +11,7 @@ controller is never put into update mode, until the protocol is confirmed on har
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import select
@@ -97,6 +98,7 @@ class C2Transport:
         return bytes(report) if report else None
 
     def request(self, frame: bytes, accept: Callable[[bytes], bool]) -> bytes:
+        self.drain()
         for _ in range(SENDS):
             self.send(frame)
             deadline = time.monotonic() + RESEND_AFTER
@@ -110,8 +112,15 @@ class C2Transport:
                     return report
         raise C2UsbError(f"no reply to {frame.hex(' ')}")
 
+    def drain(self) -> None:
+        """Read what is queued (mostly 0x12 state reports, about a thousand a second)."""
+        for _ in range(256):
+            if self._next(0) is None:
+                return
+
     def state(self, timeout: float = 1.0) -> bytes | None:
         """The newest 0x12 state report, waiting up to `timeout` for one."""
+        self.drain()
         deadline = time.monotonic() + timeout
         while self.last_state is None and (left := deadline - time.monotonic()) > 0:
             self._next(left)
@@ -160,3 +169,42 @@ def read_everything(t: C2Transport) -> dict:
         decoded = c2.decode_light(raw) if number == c2.LIGHT_PROFILE else c2.decode_profile(raw)
         out["profiles"][str(number)] = {"raw": raw.hex(), "decoded": decoded}
     return out
+
+
+class C2Client:
+    """The settings app's handle on a Cyclone 2: the transport's reads, run in a thread, and the
+    profile images as last read (writes will be checked against them)."""
+
+    family = "c2"
+
+    def __init__(self, transport: C2Transport):
+        self.t = transport
+        self.images: dict[int, bytes] = {}
+        self._awake = False
+
+    async def _run(self, fn, *args):
+        if not self._awake:
+            await asyncio.to_thread(self.t.heartbeat)
+            self._awake = True
+        return await asyncio.to_thread(fn, *args)
+
+    async def firmware(self) -> c2.FirmwareVersion:
+        return await self._run(self.t.firmware_version)
+
+    async def current_profile(self) -> int:
+        return await self._run(self.t.current_profile)
+
+    async def battery(self) -> dict:
+        report = await self._run(self.t.state)
+        if report is None:
+            raise C2UsbError("the controller sent no state report")
+        s = c2.parse_state(report)
+        return {"level": s.battery, "charging": s.charging}
+
+    async def profile(self, number: int) -> dict:
+        raw = await self._run(self.t.profile, number)
+        self.images[number] = raw
+        return c2.decode_light(raw) if number == c2.LIGHT_PROFILE else c2.decode_profile(raw)
+
+    def close(self) -> None:
+        self.t.close()

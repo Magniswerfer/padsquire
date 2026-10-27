@@ -145,7 +145,7 @@ pad-model.offline { opacity: .55; filter: grayscale(1); }
 .live-readout { min-height: 1.3em; color: var(--ink-faint); font-size: var(--text-xs); text-align: center; }
 
 
-.sim-link { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--ink-soft); font-size: var(--text-sm); }
+.sim-link { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--ink-soft); font-size: var(--text-sm); white-space: nowrap; }
 
 /* stick check: one box per test, a result per stick */
 .stick-check { display: grid; gap: var(--space-3); margin-top: var(--space-6); }
@@ -430,3 +430,11 @@ input[type="color"] {
   .setting .input { min-width: 0; width: 100%; }
   .toasts { left: var(--space-3); right: var(--space-3); bottom: var(--space-3); max-width: none; }
 }
+
+/* a controller other than the Nova 2 Lite: the 3D model would show the wrong one */
+pad-model.other { display: none; }
+
+/* the Cyclone 2's pages (c2.js) */
+.value { font-weight: var(--weight-bold); }
+.c2-colour { display: inline-block; width: 1.75rem; height: 1.75rem; border-radius: 50%; border: var(--hairline) solid var(--line-strong); }
+.swatches .c2-colour + .c2-colour { margin-left: calc(var(--space-2) - var(--space-3)); }

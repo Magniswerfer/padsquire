@@ -80,16 +80,17 @@ function confirmDialog(title, text, okLabel) {
 // ---------------------------------------------------------------------------
 // state
 
+// `families`: the protocol families (devices.py) a page is for; none means every family.
 const SECTIONS = [
   { id: "controller", label: "Controller" },
-  { id: "buttons", label: "Buttons" },
+  { id: "buttons", label: "Buttons", families: ["gcm"] },
   { id: "sticks", label: "Sticks" },
   { id: "triggers", label: "Triggers" },
   { id: "vibration", label: "Vibration" },
-  { id: "lighting", label: "Home light" },
-  { id: "profiles", label: "Profiles" },
-  { id: "power", label: "Power" },
-  { id: "firmware", label: "Firmware", offline: true, under: "controller" },   // a tab of Controller
+  { id: "lighting", label: "Home light", labels: { c2: "Lighting" } },
+  { id: "profiles", label: "Profiles", families: ["gcm"] },
+  { id: "power", label: "Power", families: ["gcm"] },
+  { id: "firmware", label: "Firmware", offline: true, under: "controller", families: ["gcm"] },   // a tab of Controller
   { id: "setup", label: "Help", offline: true, apart: true },             // set apart from the settings
   { id: "guide", label: "Button guide", offline: true, under: "setup" },   // a tab of Help, not in the list
 ];
@@ -107,6 +108,7 @@ const app = {
   userDisconnected: false,
   polls: 0,
   simLink: "cable",
+  simFamily: "gcm",       // which controller the simulator imitates
   profiles: null,         // the profiles on this computer, as the Profiles page last read them
   renaming: null,         // the id of the profile whose name is being edited
   switched: null,         // the last switch: the profile's name and what was skipped or failed       // the connection the simulator imitates
@@ -116,9 +118,15 @@ const app = {
 const val = (entry) => (entry && "value" in entry ? entry.value : undefined);
 const errOf = (entry) => (entry && entry.error) || null;
 
+// The connected controller's protocol family; the Nova 2 Lite's when none is connected.
+const family = () => (app.status.connected && app.status.family) || "gcm";
+const forFamily = (sec) => !sec.families || sec.families.includes(family());
+const labelOf = (sec) => (sec.labels && sec.labels[family()]) || sec.label;
+
 function sectionFromHash() {
   const id = location.hash.replace("#", "");
-  return SECTIONS.some((x) => x.id === id) ? id : "controller";
+  const sec = SECTIONS.find((x) => x.id === id);
+  return sec && forFamily(sec) ? id : "controller";
 }
 
 function go(id) {
@@ -285,20 +293,23 @@ function renderChrome() {
   nav.replaceChildren();
   const here = SECTIONS.find((x) => x.id === app.section);
   for (const sec of SECTIONS) {
-    if (sec.under) continue;
+    if (sec.under || !forFamily(sec)) continue;
     const usable = app.status.connected || sec.offline || sec.id === "controller";
     nav.append(h("li", { class: sec.apart ? "apart" : null }, h("a", {
       href: usable ? `#${sec.id}` : null,
       "aria-current": app.section === sec.id || (here && here.under === sec.id) ? "page" : null,
       "aria-disabled": usable ? null : "true",
-    }, sec.label, sectionHint(sec.id))));
+    }, labelOf(sec), sectionHint(sec.id))));
   }
 
   navToCurrent();
 
   $("#pad").classList.toggle("offline", !app.status.connected);
+  $("#pad").classList.toggle("other", family() !== "gcm");     // the model is a Nova 2 Lite
+  $(".app-device").textContent = app.status.connected && app.status.name
+    ? app.status.name.replace(/^GameSir /, "").replace(/ \(simulated\)$/, "") : "Nova 2 Lite";
   // The Home light colour is the user's own: it colours the preview and the model's Home light.
-  const light = app.dev && val(app.dev.light);
+  const light = family() === "gcm" && app.dev && val(app.dev.light);
   const colour = light ? hex(light.rgb) : null;
   if (colour) document.documentElement.style.setProperty("--home-light", colour);
   else document.documentElement.style.removeProperty("--home-light");
@@ -403,8 +414,12 @@ function panelConnect() {
   const findBtn = h("button", { class: `button primary${app.scanning ? " working" : ""}`, onclick: scan, disabled: app.scanning },
     app.scanning ? "Searching…" : "Find controllers");
   wrap.append(h("div", { class: "button-row" }, findBtn,
-    h("button", { class: "button", onclick: () => connect({ simulate: true, link: app.simLink }) }, "Use the simulator"),
-    h("label", { class: "sim-link" }, "as on",
+    h("button", { class: "button", onclick: () => connect({ simulate: true, link: app.simLink, family: app.simFamily }) }, "Use the simulator"),
+    h("label", { class: "sim-link" }, "a",
+      h("select", { class: "input", "aria-label": "Simulate this controller", onchange: (e) => { app.simFamily = e.target.value; } },
+        [["gcm", "Nova 2 Lite"], ["c2", "Cyclone 2"]].map(([v, t]) =>
+          h("option", { value: v, selected: v === app.simFamily }, t)))),
+    h("label", { class: "sim-link" }, "on",
       h("select", { class: "input", "aria-label": "Simulate the controller as on", onchange: (e) => { app.simLink = e.target.value; } },
         [["cable", "the cable"], ["receiver", "the 2.4 GHz receiver"], ["bluetooth", "Bluetooth"]].map(([v, t]) =>
           h("option", { value: v, selected: v === app.simLink }, t))))));
@@ -1093,7 +1108,7 @@ function liveWatch(check) {
 // One stream while connected by cable or receiver, for the model on every page and for the
 // page's own readouts (app.live) where it has them. It stops when the connection goes.
 function ensureLive() {
-  const wanted = app.status.connected && app.status.mode === "usb";
+  const wanted = app.status.connected && app.status.mode === "usb" && family() === "gcm";
   if (!wanted && liveAbort) { liveAbort.abort(); liveAbort = null; releaseModel(); }
   if (wanted && !liveAbort) startLive();
 }
@@ -1870,7 +1885,7 @@ function loadingView(def) {
   const parent = def.under ? SECTIONS.find((x) => x.id === def.under) : def;
   const via = app.status.via === "dongle" ? "through the receiver, a little slower" : "a few seconds";
   return h("div", { class: "loading", "aria-busy": "true" },
-    h("h1", {}, parent.label),
+    h("h1", {}, labelOf(parent)),
     h("p", { class: "busy" }, "Reading the settings from the controller…"),
     h("p", { class: "note" }, `Every value shown here is read from the controller itself, one setting at a time; that takes ${via}.`),
     h("div", { class: "bones", "aria-hidden": "true" }, ...Array.from({ length: 3 }, () => h("span", { class: "bone fact" }))),
@@ -1889,7 +1904,7 @@ async function render() {
   const def = SECTIONS.find((x) => x.id === app.section);
   if (!app.status.connected && !def.offline) content = panelConnect();
   else if (app.status.connected && !app.dev) content = loadingView(def);
-  else content = await PANELS[app.section]();
+  else content = await ((family() === "c2" && window.C2_PANELS && C2_PANELS[app.section]) || PANELS[app.section])();
   if (seq !== renderSeq) return;
   panel.replaceChildren(content);
   ensureLive();

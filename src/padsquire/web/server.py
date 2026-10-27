@@ -25,6 +25,8 @@ from .. import (
     __version__,
     appupdate,
     ble,
+    c2,
+    c2usb,
     gcm,
     hid,
     installer,
@@ -37,14 +39,14 @@ from .. import (
 )
 from ..client import NotApplied, NovaClient
 from ..gcm import DeadZone, Feature, Key, ProtocolError, Vibration
-from ..simulator import LINKS, SimulatedSticks, simulated
+from ..simulator import LINKS, SimulatedC2, SimulatedSticks, simulated
 
 STATIC = Path(__file__).parent / "static"
 COOKIE = "padsquire_session"
 API_HEADER = "X-PadSquire"
 
 ERRORS = (NotApplied, ProtocolError, ble.BleError, hid.HidError, ValueError, KeyError,
-          asyncio.TimeoutError)
+          asyncio.TimeoutError, c2usb.C2UsbError, OSError)
 STICK_CHECK_MAX_SECONDS = 15
 
 # Reads that get no reply over the USB cable (firmware 7701). Asking costs 11 x 200 ms each,
@@ -104,7 +106,8 @@ class Session:
     """The one controller this server talks to."""
 
     def __init__(self):
-        self.client: NovaClient | None = None
+        self.client: NovaClient | None = None   # a Nova 2 Lite (GCM)
+        self.c2: c2usb.C2Client | None = None   # or a Cyclone 2
         self.mode: str | None = None          # "ble" | "usb", also for a simulated controller
         self.simulated = False
         self.via: str | None = None           # for "usb": "cable" or "dongle" (the 2.4 GHz receiver)
@@ -115,7 +118,25 @@ class Session:
 
     @property
     def connected(self) -> bool:
-        return self.client is not None
+        return self.client is not None or self.c2 is not None
+
+    @property
+    def family(self) -> str | None:
+        """The protocol family of the controller connected (devices.FAMILY)."""
+        return "c2" if self.c2 is not None else "gcm" if self.client is not None else None
+
+    async def connect_c2(self, path: str | None, name: str, via: str = "cable"):
+        """A Cyclone 2 on its hidraw node, or a simulated one when `path` is None."""
+        await self.disconnect()
+        if path is None:
+            sim = SimulatedC2(cable=via == "cable")
+            transport = c2usb.C2Transport(sim.read, sim.write)
+        else:
+            transport = await asyncio.to_thread(c2usb.C2Transport.open, path)
+        self.c2 = c2usb.C2Client(transport)
+        self.mode, self.via, self.name = "usb", via, name
+        self.address = path or "simulator"
+        self.simulated = path is None
 
     async def connect_simulated(self, link: str = "cable"):
         """A simulated controller that behaves like the real one on `link` (simulator.LINKS)."""
@@ -147,7 +168,9 @@ class Session:
             except Exception:
                 pass
         self._ctx = None
-        self.client = self.mode = self.address = self.name = self.via = None
+        if self.c2 is not None:
+            self.c2.close()
+        self.client = self.c2 = self.mode = self.address = self.name = self.via = None
         self.simulated = False
 
     @property
@@ -158,7 +181,7 @@ class Session:
 
     def status(self) -> dict:
         return {"connected": self.connected, "mode": self.mode, "address": self.address, "name": self.name,
-                "via": self.via, "simulated": self.simulated}
+                "via": self.via, "simulated": self.simulated, "family": self.family}
 
 
 async def _try(coro):
@@ -199,6 +222,19 @@ async def read_state(nova: NovaClient, skip: set[str] = frozenset(), through_don
         "stick_targets": bool(fw and fw.isdigit() and int(fw) >= gcm.STICK_TARGETS_MIN_FIRMWARE),
     }
     return state
+
+
+async def read_c2_state(dev: c2usb.C2Client) -> dict:
+    """A Cyclone 2's state for the app: versions, battery, and every profile, decoded."""
+    current = await _try(dev.current_profile())
+    return {
+        "family": "c2",
+        "firmware": await _try(dev.firmware()),
+        "battery": await _try(dev.battery()),
+        "current_profile": current,
+        "profiles": {str(n): await _try(dev.profile(n)) for n in (1, 2, 3, 4, c2.SHIFT_PROFILE)},
+        "light": await _try(dev.profile(c2.LIGHT_PROFILE)),
+    }
 
 
 def _firmware_status(fw_dir: Path, device_version: str | None) -> dict:
@@ -249,7 +285,7 @@ PRESENCE = web.AppKey("presence", Presence)
 
 
 def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
-              simulate: str | None = None, scanner=None, usb_finder=None, gamesir_finder=None,
+              simulate: str | None = None, scanner=None, usb_finder=None, gamesir_finder=None, c2_finder=None,
               backup_dir: Path | None = None, loader_cache: Path | None = None,
               live_open=None, profiles_dir: Path | None = None,
               app_update_url: str = appupdate.PYPI) -> web.Application:
@@ -258,6 +294,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     presence = Presence()
     scan = scanner or ble.scan
     find_usb = usb_finder or hid.find
+    find_c2 = c2_finder or c2usb.find
 
     @web.middleware
     async def guard(request: web.Request, handler):
@@ -297,6 +334,8 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
         """The gamepad device of the connected controller (cable or receiver only)."""
         if live_open is not None:
             return live_open(session)
+        if session.c2 is not None:
+            raise liveinput.Unavailable("live input isn't available for this controller yet")
         if session.mode != "usb":
             raise liveinput.Unavailable("live input is only available by cable or through the receiver")
         if session.simulated:
@@ -314,6 +353,9 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     def need_client():
         if not session.connected:
             raise web.HTTPConflict(text=json.dumps({"ok": False, "error": "no controller connected"}),
+                                   content_type="application/json")
+        if session.client is None:
+            raise web.HTTPConflict(text=json.dumps({"ok": False, "error": "not available for this controller"}),
                                    content_type="application/json")
         return session.client
 
@@ -366,8 +408,8 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     @guarded
     async def do_scan(_):
         # By ID, as Steam and the kernel's xpad do: the USB name is "2.4G XBOX 360 For Windows".
-        usb = [{"address": d.path, "name": "GameSir Nova 2 Lite", "link": "usb",
-                "via": "dongle" if d.pid == 0x1098 else "cable"} for d in find_usb()]
+        from . import setup
+        usb = setup.connectable(find_usb, find_c2)
         try:
             found = await scan()
         except ble.BleError:
@@ -384,7 +426,13 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
             link = data.get("link", "cable")
             if link not in LINKS:
                 return fail(f"link must be one of {', '.join(LINKS)}")
-            await session.connect_simulated(link)
+            if data.get("family") == "c2":
+                if link == "bluetooth":
+                    return fail("the Cyclone 2 is only simulated by cable or receiver")
+                await session.connect_c2(None, "GameSir Cyclone 2 (simulated)",
+                                         "cable" if link == "cable" else "dongle")
+            else:
+                await session.connect_simulated(link)
         else:
             address = data.get("address")
             if not isinstance(address, str) or not address:
@@ -392,10 +440,15 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
             if data.get("link") == "usb":
                 # Only open device nodes we found ourselves, never a path from the request.
                 match = next((d for d in find_usb() if d.path == address), None)
-                if match is None:
+                cyclone = next((d for d in find_c2() if d.path == address), None)
+                if match is not None:
+                    await session.connect_usb(match.path, "GameSir Nova 2 Lite",
+                                              "dongle" if match.pid == 0x1098 else "cable")
+                elif cyclone is not None:
+                    await session.connect_c2(cyclone.path, "GameSir Cyclone 2",
+                                             "dongle" if "receiver" in cyclone.link else "cable")
+                else:
                     return fail("that USB controller is no longer connected; search again")
-                await session.connect_usb(match.path, "GameSir Nova 2 Lite",
-                                          "dongle" if match.pid == 0x1098 else "cable")
             else:
                 await session.connect_ble(address, data.get("name"))
         return ok(session.status())
@@ -478,7 +531,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
         """What is plugged in (sysfs only), for the page to notice plugging and unplugging. A USB
         session whose device has gone is closed here."""
         from . import setup
-        found = setup.devices(find_usb, gamesir_finder)
+        found = setup.devices(find_usb, gamesir_finder, find_c2)
         lost = False
         if session.mode == "usb" and not session.simulated and session.address not in {d["address"] for d in found["usb"]}:
             async with session.lock:
@@ -500,7 +553,9 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     @routes.get("/api/state")
     @guarded
     async def state(_):
-        return ok(await state_of(need_client()))
+        if session.c2 is not None:
+            return ok(await read_c2_state(session.c2))
+        return ok({"family": "gcm", **await state_of(need_client())})
 
     # -- settings ---------------------------------------------------------------
     def _byte(v, name):
@@ -741,7 +796,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     @guarded
     async def profile_list(_):
         """The profiles on this computer; connected, also which one the controller has now."""
-        current = await current_settings(session.client) if session.connected else None
+        current = await current_settings(session.client) if session.client is not None else None
         return ok({"profiles": [profile_summary(p, current) for p in store.list()], "dir": str(store.root)})
 
     @routes.post("/api/profiles")
@@ -804,7 +859,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
     @guarded
     async def firmware(_):
         version = dongle = None
-        if session.connected:
+        if session.client is not None:
             try:
                 info = (await session.client.info()).firmware_version
                 if session.through_dongle:
