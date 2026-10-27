@@ -249,7 +249,7 @@ PRESENCE = web.AppKey("presence", Presence)
 
 
 def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
-              simulate: str | None = None, scanner=None, usb_finder=None,
+              simulate: str | None = None, scanner=None, usb_finder=None, gamesir_finder=None,
               backup_dir: Path | None = None, loader_cache: Path | None = None,
               live_open=None, profiles_dir: Path | None = None,
               app_update_url: str = appupdate.PYPI) -> web.Application:
@@ -478,7 +478,7 @@ def build_app(token: str, fw_dir: Path, *, feed_url: str = updater.FEED_URL,
         """What is plugged in (sysfs only), for the page to notice plugging and unplugging. A USB
         session whose device has gone is closed here."""
         from . import setup
-        found = setup.devices(find_usb)
+        found = setup.devices(find_usb, gamesir_finder)
         lost = False
         if session.mode == "usb" and not session.simulated and session.address not in {d["address"] for d in found["usb"]}:
             async with session.lock:

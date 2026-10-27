@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 from .. import desktop, hid, installer, jlboot
+from .. import devices as gamesir_devices
 
 RULES_NAME = desktop.RULES_NAME
 RULES_DIRS = [Path("/etc/udev/rules.d"), Path("/usr/lib/udev/rules.d"), Path("/lib/udev/rules.d")]
@@ -288,8 +289,14 @@ def _macos_checks(fw_dir: Path) -> list[dict]:
     return out
 
 
-def devices(find_usb=hid.find) -> dict:
-    """What is plugged in right now, from sysfs: cheap enough to poll every couple of seconds."""
-    return {"usb": [{"address": d.path, "name": "GameSir Nova 2 Lite", "link": "usb",
-                     "via": "dongle" if d.pid == 0x1098 else "cable"} for d in find_usb()],
+def devices(find_usb=hid.find, find_gamesir=None) -> dict:
+    """What is plugged in right now, from sysfs: cheap enough to poll every couple of seconds.
+    `usb` lists what the app can connect to; `gamesir` every other GameSir device, recognised
+    from the device table (devices.py), so the page can say what it is and what can be done."""
+    usb = [{"address": d.path, "name": "GameSir Nova 2 Lite", "link": "usb",
+            "via": "dongle" if d.pid == 0x1098 else "cable"} for d in find_usb()]
+    taken = {d["address"] for d in usb}
+    others = [d for d in (find_gamesir or gamesir_devices.plugged_in)()
+              if not any(i["path"] in taken for i in d["interfaces"])]
+    return {"usb": usb, "gamesir": others,
             "download": [{"path": d.path, "chip": d.vendor} for d in jlboot.find()]}

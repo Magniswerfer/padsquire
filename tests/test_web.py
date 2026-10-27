@@ -15,6 +15,7 @@ API = {"X-PadSquire": "1"}
 
 def run(fn, fw_dir, **kw):
     kw.setdefault("usb_finder", lambda: [])   # never the real controller, if one is plugged in
+    kw.setdefault("gamesir_finder", lambda: [])
     async def go():
         app = build_app(TOKEN, fw_dir, **kw)
         async with TestClient(TestServer(app, host="127.0.0.1")) as client:
@@ -233,6 +234,22 @@ def test_devices_lists_what_is_plugged_in(tmp_path):
         d = (await (await c.get("/api/devices", headers=API)).json())["data"]
         assert d["usb"] == [] and d["lost"] is False         # nothing was connected, nothing lost
     run(go, tmp_path, usb_finder=lambda: plugged)
+
+
+def test_devices_lists_other_gamesir_devices(tmp_path):
+    from padsquire import hid
+    nova = {"usb_id": "3537:100f", "name": "Nova 2 Lite", "support": "settings",
+            "interfaces": [{"path": "/dev/hidraw2", "usage_page": 0xFF7A}]}
+    cyclone = {"usb_id": "3537:100b", "name": "Cyclone 2", "support": "read",
+               "interfaces": [{"path": "/dev/hidraw5", "usage_page": 0xFFF0}]}
+
+    async def go(c):
+        await login(c)
+        d = (await (await c.get("/api/devices", headers=API)).json())["data"]
+        assert [x["address"] for x in d["usb"]] == ["/dev/hidraw2"]
+        assert d["gamesir"] == [cyclone]            # the Nova 2 Lite is connectable, so not repeated
+    run(go, tmp_path, usb_finder=lambda: [hid.HidDevice("/dev/hidraw2", 0x100F, "x")],
+        gamesir_finder=lambda: [nova, cyclone])
 
 
 def test_app_links_its_source_code():

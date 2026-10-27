@@ -1,0 +1,342 @@
+{
+ "source": "GameSir Connect 1.16.7",
+ "models": [
+  {
+   "model": "T4N2",
+   "name": "Nova 2 Lite",
+   "udisk": "AC695X_TRANS",
+   "ids": [
+    {
+     "pid": 4111,
+     "mode": "Wired",
+     "usage_page": 65535
+    },
+    {
+     "pid": 4248,
+     "mode": "Wireless",
+     "usage_page": 65535
+    }
+   ]
+  },
+  {
+   "model": "T3CE",
+   "name": "Tarantula CE",
+   "udisk": "GS_T3CE",
+   "ids": [
+    {
+     "pid": 4157,
+     "mode": "Wired",
+     "usage_page": 65520
+    },
+    {
+     "pid": 4351,
+     "mode": "Wired",
+     "usage_page": 65520
+    },
+    {
+     "pid": 2317,
+     "mode": "Wired",
+     "usage_page": 65520
+    }
+   ]
+  },
+  {
+   "model": "G7ProCE",
+   "name": "G7 Pro 8K",
+   "udisk": "GS_G7_Pro_CE_DV",
+   "ids": [
+    {
+     "pid": 4279,
+     "mode": "Wired",
+     "usage_page": 65520
+    },
+    {
+     "pid": 4281,
+     "mode": "Wireless",
+     "usage_page": 65520
+    },
+    {
+     "pid": 4301,
+     "mode": "Wired",
+     "usage_page": 65520
+    },
+    {
+     "pid": 4302,
+     "mode": "Wireless",
+     "usage_page": 65520
+    },
+    {
+     "pid": 4293,
+     "mode": "Wired",
+     "usage_page": 65520
+    },
+    {
+     "pid": 4294,
+     "mode": "Wireless",
+     "usage_page": 65520
+    },
+    {
+     "pid": 4349,
+     "mode": "Wired",
+     "usage_page": 65520
+    },
+    {
+     "pid": 4350,
+     "mode": "Wireless",
+     "usage_page": 65520
+    },
+    {
+     "pid": 4295,
+     "mode": "Wired",
+     "usage_page": 65520
+    },
+    {
+     "pid": 4296,
+     "mode": "Wireless",
+     "usage_page": 65520
+    },
+    {
+     "pid": 4297,
+     "mode": "Wired",
+     "usage_page": 65520
+    },
+    {
+     "pid": 4298,
+     "mode": "Wireless",
+     "usage_page": 65520
+    },
+    {
+     "pid": 4299,
+     "mode": "Wired",
+     "usage_page": 65520
+    },
+    {
+     "pid": 4300,
+     "mode": "Wireless",
+     "usage_page": 65520
+    },
+    {
+     "pid": 4146,
+     "mode": "Wired",
+     "usage_page": 65520
+    },
+    {
+     "pid": 4147,
+     "mode": "Wireless",
+     "usage_page": 65520
+    },
+    {
+     "pid": 4148,
+     "mode": "Wired",
+     "usage_page": 65520
+    },
+    {
+     "pid": 4149,
+     "mode": "Wireless",
+     "usage_page": 65520
+    },
+    {
+     "pid": 4150,
+     "mode": "Wired",
+     "usage_page": 65520
+    },
+    {
+     "pid": 4151,
+     "mode": "Wireless",
+     "usage_page": 65520
+    },
+    {
+     "pid": 2323,
+     "mode": "Wired",
+     "usage_page": 65520
+    },
+    {
+     "pid": 2324,
+     "mode": "Wireless",
+     "usage_page": 65520
+    },
+    {
+     "pid": 2345,
+     "mode": "Wired",
+     "usage_page": 65520
+    },
+    {
+     "pid": 2346,
+     "mode": "Wireless",
+     "usage_page": 65520
+    },
+    {
+     "pid": 2343,
+     "mode": "Wired",
+     "usage_page": 65520
+    },
+    {
+     "pid": 2344,
+     "mode": "Wireless",
+     "usage_page": 65520
+    },
+    {
+     "pid": 4347,
+     "mode": "Wired",
+     "usage_page": 65520
+    },
+    {
+     "pid": 4348,
+     "mode": "Wireless",
+     "usage_page": 65520
+    }
+   ]
+  },
+  {
+   "model": "G7ProS",
+   "name": "G7 Pro S",
+   "udisk": null,
+   "ids": [
+    {
+     "pid": 2312,
+     "mode": "Wired",
+     "usage_page": 65520
+    },
+    {
+     "pid": 2313,
+     "mode": "Wireless",
+     "usage_page": 65520
+    },
+    {
+     "pid": 2337,
+     "mode": "Wired",
+     "usage_page": 65520
+    },
+    {
+     "pid": 2338,
+     "mode": "Wireless",
+     "usage_page": 65520
+    }
+   ]
+  },
+  {
+   "model": "K2_8K",
+   "name": "K2 8K",
+   "udisk": "GS_K2_DV",
+   "ids": [
+    {
+     "pid": 4238,
+     "mode": "Wired",
+     "usage_page": 65520
+    },
+    {
+     "pid": 4255,
+     "mode": "Wireless",
+     "usage_page": 65520
+    }
+   ]
+  },
+  {
+   "model": "C2",
+   "name": "CYCLONE 2",
+   "udisk": "GS_C2_DEVICE",
+   "ids": [
+    {
+     "pid": 4125,
+     "mode": "Wired",
+     "usage_page": 65520
+    },
+    {
+     "pid": 4138,
+     "mode": "Wireless",
+     "usage_page": 65520
+    },
+    {
+     "pid": 4179,
+     "mode": "Wired",
+     "usage_page": 65520
+    },
+    {
+     "pid": 4107,
+     "mode": "Wireless",
+     "usage_page": 65520
+    }
+   ]
+  },
+  {
+   "model": "T3Pro",
+   "name": "Tarantula Pro",
+   "udisk": null,
+   "ids": [
+    {
+     "pid": 4176,
+     "mode": "Wired",
+     "usage_page": 65535
+    },
+    {
+     "pid": 4158,
+     "mode": "Wireless",
+     "usage_page": 65520
+    }
+   ]
+  },
+  {
+   "model": "T4NPro",
+   "name": "NovaPro",
+   "udisk": null,
+   "ids": [
+    {
+     "pid": 4110,
+     "mode": "Wired",
+     "usage_page": 65535
+    },
+    {
+     "pid": 4158,
+     "mode": "Wireless",
+     "usage_page": 65520
+    }
+   ]
+  },
+  {
+   "model": "T3Lite",
+   "name": "Tegenaria Lite",
+   "udisk": "T3_Lite",
+   "ids": [
+    {
+     "pid": 4243,
+     "mode": "Wired",
+     "usage_page": 65520
+    }
+   ]
+  },
+  {
+   "model": "N2S",
+   "name": "NOVA VISION",
+   "udisk": "AC695X_TRANS",
+   "ids": [
+    {
+     "pid": 4417,
+     "mode": "Wired",
+     "usage_page": 65535
+    },
+    {
+     "pid": 4285,
+     "mode": "Wireless",
+     "usage_page": 65535
+    }
+   ]
+  },
+  {
+   "model": "T3XS",
+   "name": "T3XS",
+   "udisk": "AC695X_TRANS",
+   "ids": [
+    {
+     "pid": 4186,
+     "mode": "Wired",
+     "usage_page": 65535
+    },
+    {
+     "pid": 4286,
+     "mode": "Wireless",
+     "usage_page": 65535
+    }
+   ]
+  }
+ ]
+}

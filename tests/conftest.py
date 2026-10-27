@@ -24,12 +24,13 @@ def _no_real_devices(monkeypatch):
     """Tests run the Linux code paths with fakes, on any machine. On macOS the real ones would
     read the device registry and start the administrator helper, whose password dialog would
     pop up on the desktop. The macOS tests switch MACOS on themselves, without running jobs."""
-    from padsquire import hid, jlboot, macos_helper
+    from padsquire import devices, hid, jlboot, macos_helper
 
     def no_helper(*args, **kwargs):
         raise RuntimeError("tests never start the administrator helper")
     monkeypatch.setattr(jlboot, "MACOS", False)
     monkeypatch.setattr(hid, "MACOS", False)
+    monkeypatch.setattr(devices, "MACOS", False)
     monkeypatch.setattr(macos_helper, "start", no_helper)
 
 

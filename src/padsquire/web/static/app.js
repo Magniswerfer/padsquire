@@ -420,9 +420,35 @@ function panelConnect() {
             () => connect({ address: d.address, name: d.name, link: d.link })) }, "Connect")))));
     }
   }
+  const others = otherDevices();
+  if (others) wrap.append(others);
   wrap.append(notice("",
     "The simulator behaves like the controller on the connection you pick, refusals and all, so you can try every setting without one. Over Bluetooth it follows the GameSir app, which isn't tested on hardware yet."));
   return wrap;
+}
+
+// Every other GameSir device on USB, recognised from GameSir's own device list (devices.py):
+// what it is, and what PadSquire can or can't do with it yet.
+function otherDevices() {
+  const list = (app.devices && app.devices.gamesir) || [];
+  if (!list.length) return null;
+  const links = (d) => d.elsewhere.map((p, i) => [i ? " or " : "",
+    h("a", { href: p.url, target: "_blank", rel: "noopener noreferrer" }, p.name)]).flat();
+  const say = (d) => {
+    if (d.link && d.link.includes("no controller linked")) return "Turn the controller on so it links to the receiver.";
+    if (d.support === "read") return "PadSquire can read this one, but can't change its settings yet.";
+    if (d.support === "try" || d.support === "added")
+      return "It speaks the same language as the Nova 2 Lite, but PadSquire hasn't been tested with one yet.";
+    if (d.support === "unknown") return "PadSquire doesn't know this GameSir device yet.";
+    return "PadSquire doesn't support this one yet.";
+  };
+  return h("div", {},
+    h("h2", {}, "Other GameSir devices"),
+    h("ul", { class: "found" }, list.map((d) => h("li", {},
+      h("span", {}, d.name ? `GameSir ${d.name}` : "Unknown GameSir device",
+        h("span", { class: "addr" }, [d.link, d.usb_id].filter(Boolean).join(", ")),
+        h("span", { class: "note" }, say(d),
+          d.elsewhere.length > 0 && d.support !== "settings" ? [" It works with ", ...links(d), " today."] : null))))));
 }
 
 function panelController() {
@@ -1913,6 +1939,7 @@ async function watchDevices() {
   try {
     const d = await api("/api/devices");
     const before = JSON.stringify(app.devices && app.devices.usb);
+    const beforeOthers = JSON.stringify(app.devices && app.devices.gamesir);
     app.devices = d;
     const updating = (upd.data && upd.data.job && upd.data.job.state === "running") || d.download.length > 0;
     if (!d.usb.length) app.userDisconnected = false;
@@ -1924,7 +1951,7 @@ async function watchDevices() {
       if (d.usb.length === 1 && !app.userDisconnected && !app.connecting) {
         toast(d.usb[0].via === "dongle" ? "Found the controller through the 2.4 GHz receiver" : "Found the controller on the cable");
         await connect(d.usb[0]);
-      } else if (JSON.stringify(d.usb) !== before) {
+      } else if (JSON.stringify(d.usb) !== before || JSON.stringify(d.gamesir) !== beforeOthers) {
         app.found = d.usb.concat((app.found || []).filter((x) => x.link === "ble"));
         if (!SECTIONS.find((x) => x.id === app.section).offline) render();
       }

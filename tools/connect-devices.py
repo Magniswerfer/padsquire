@@ -2,11 +2,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """List every model in a GameSir Connect installer's device registry, grouped by protocol handler.
 
-    tools/connect-devices.py "GameSir Connect Setup 1.16.7.exe" [--json]
+    tools/connect-devices.py "GameSir Connect Setup 1.16.7.exe" [--json | --registry]
 
 Models that share a handler class speak the same protocol. Reads the installer you point it at;
 nothing is copied anywhere. Needs 7-Zip, like `padsquire extract`. DEVICES.md holds the result
-for 1.16.7.
+for 1.16.7. `--registry` writes what PadSquire ships to recognise controllers:
+
+    tools/connect-devices.py <setup.exe> --registry > src/padsquire/data/connect-devices.json
 """
 
 import argparse
@@ -23,6 +25,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("installer", type=Path)
     ap.add_argument("--json", action="store_true", help="print the raw table as JSON")
+    ap.add_argument("--registry", action="store_true",
+                    help="print the table PadSquire ships (src/padsquire/data/connect-devices.json)")
     args = ap.parse_args()
     with tempfile.TemporaryDirectory(prefix="gamesir-") as tmp:
         tmp = Path(tmp)
@@ -36,6 +40,13 @@ def main() -> int:
             except ufw.UfwError:
                 chips[f.name] = "?"
     table, dlls = installer.device_table(js), installer.dll_pids(js)
+    if args.registry:
+        models = [{"model": d["model"], "name": d["name"], "udisk": d["udisk"],
+                   "ids": [{"pid": m["pid"], "mode": m["mode"], "usage_page": m.get("usage_page")}
+                           for m in d["modes"]]}
+                  for d in table if d["modes"]]
+        print(json.dumps({"source": f"GameSir Connect {version}", "models": models}, indent=1))
+        return 0
     if args.json:
         print(json.dumps({"connect": version, "devices": table, "dll_pids": dlls, "ufw_chips": chips},
                          indent=1))

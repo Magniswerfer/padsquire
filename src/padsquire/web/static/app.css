@@ -295,6 +295,7 @@ input[type="color"] {
 .found { list-style: none; margin: 0; padding: 0; max-width: 40rem; }
 .found li { display: flex; justify-content: space-between; align-items: center; gap: var(--space-4); padding: var(--space-3) 0; border-bottom: var(--hairline) solid var(--line); font-weight: var(--weight-bold); }
 .found .addr { display: block; color: var(--ink-faint); font-size: var(--text-xs); font-weight: var(--weight-regular); }
+.found .note { display: block; margin: var(--space-1) 0 0; font-weight: var(--weight-regular); }
 
 .update { display: grid; gap: var(--space-4); }
 .problems, .warnings { margin: 0; padding-left: var(--space-5); font-size: var(--text-sm); }
